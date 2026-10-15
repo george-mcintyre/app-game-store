@@ -7,7 +7,7 @@ Never derive the repo from the folder name.
 
 ## Branch model
 
-- `main` is deployable; the Pages workflow runs on every push to it.
+- `main` is deployable. Deploy is manual: `wrangler deploy` from a clean `main`.
 - Work on `feat/<topic>`, `fix/<topic>`, `chore/<topic>` branches. One feature per PR.
 - Commit small and often, imperative subject, one line. No em dashes anywhere.
 - Open PRs with `gh pr create --repo george-mcintyre/app-game-store --base main`.
@@ -17,13 +17,20 @@ Never derive the repo from the folder name.
 
 - `npm run typecheck` and `npm test` green at the root.
 - `npm run build -w site` succeeds.
-- No secrets in tree: Apple key, admin token, build token and GitHub token live only in
-  Worker secrets (`npx wrangler secret put <NAME>` in `worker/`).
+- No secrets in tree. Worker secrets: `LINK_SECRET`, `MASTER_KEY`,
+  `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` via `npx wrangler secret put`.
+  Developer credentials (Apple key, GitHub token) are entered in the dashboard, never in config.
 
 ## Deploy
 
-- Worker: `npm run deploy -w worker`. First time: create the KV namespace with
-  `npx wrangler kv namespace create ENROLMENTS` in `worker/` and paste the id into
-  `worker/wrangler.jsonc`.
-- Site: merge to `main`. Repo setting Pages > Source must be "GitHub Actions".
-- Site reads the worker URL from `VITE_WORKER_URL` at build time (set in `pages.yml`).
+1. `npm run build -w site`.
+2. `cd worker`; first time: `npx wrangler d1 create app-game-store` and paste the id into
+   `wrangler.jsonc`; then `npx wrangler d1 migrations apply app-game-store --remote`.
+3. `npx wrangler deploy`.
+4. `PUBLIC_ORIGIN` in `wrangler.jsonc` must equal the live origin; the GitHub OAuth App
+   callback must be `<PUBLIC_ORIGIN>/api/auth/callback`.
+
+## Schema changes
+
+Add a new numbered file under `worker/migrations/`; never edit an applied one. Tests apply
+all migrations to a fresh D1 before each file runs.

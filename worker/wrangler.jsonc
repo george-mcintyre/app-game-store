@@ -13,14 +13,16 @@
     "directory": "../site/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/dl/*"]
+    "run_worker_first": true
   },
   "vars": {
     // Public origin of this deployment; OAuth callbacks and links are built from it.
     "PUBLIC_ORIGIN": "https://ourapps.app",
     "APPLE_API_BASE": "https://api.appstoreconnect.apple.com",
     "GITHUB_API_BASE": "https://api.github.com",
-    "GITHUB_OAUTH_BASE": "https://github.com"
+    "GITHUB_OAUTH_BASE": "https://github.com",
+    // Google Search Console HTML file name, for example google1234abcd.html; blank disables the route.
+    "GOOGLE_SITE_VERIFICATION": ""
   },
   "observability": { "enabled": true }
 }

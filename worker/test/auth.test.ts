@@ -101,3 +101,23 @@ describe("account settings", () => {
     expect(await cleared.json()).toEqual({ secrets: { apple: true, appleTeamId: "TEAM", github: false } });
   });
 });
+
+describe("response hygiene", () => {
+  it("adds security headers to every response", async () => {
+    const res = await handle(new Request(`${BASE}/api/health`), env);
+    expect(res.headers.get("Strict-Transport-Security")).toMatch(/max-age=31536000/);
+    expect(res.headers.get("Content-Security-Policy")).toMatch(/frame-ancestors 'none'/);
+    expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    const err = await handle(new Request(`${BASE}/api/nope`), env);
+    expect(err.status).toBe(404);
+    expect(err.headers.get("X-Frame-Options")).toBe("DENY");
+  });
+
+  it("serves the Search Console verification file only when configured", async () => {
+    const unset = await handle(new Request(`${BASE}/google1234.html`), env);
+    expect(await unset.text()).not.toContain("google-site-verification");
+    const res = await handle(new Request(`${BASE}/google1234.html`), testEnv({ GOOGLE_SITE_VERIFICATION: "google1234.html" }));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("google-site-verification: google1234.html");
+  });
+});

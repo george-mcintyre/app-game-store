@@ -5,6 +5,7 @@ export interface Env {
   APPLE_API_BASE: string;
   GITHUB_API_BASE: string;
   GITHUB_OAUTH_BASE: string;
+  GOOGLE_SITE_VERIFICATION?: string;
   LINK_SECRET?: string;
   MASTER_KEY?: string;
   GITHUB_OAUTH_CLIENT_ID?: string;

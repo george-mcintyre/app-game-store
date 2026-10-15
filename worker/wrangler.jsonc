@@ -4,6 +4,8 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
+  "routes": [{ "pattern": "ourapps.app", "custom_domain": true }],
+  "workers_dev": false,
   "d1_databases": [
     { "binding": "DB", "database_name": "app-game-store", "database_id": "5b0d8d7d-eae4-4bdb-967a-9bb1c49e076c", "migrations_dir": "migrations" }
   ],
@@ -15,7 +17,7 @@
   },
   "vars": {
     // Public origin of this deployment; OAuth callbacks and links are built from it.
-    "PUBLIC_ORIGIN": "https://app-game-store.georgemcintyre.workers.dev",
+    "PUBLIC_ORIGIN": "https://ourapps.app",
     "APPLE_API_BASE": "https://api.appstoreconnect.apple.com",
     "GITHUB_API_BASE": "https://api.github.com",
     "GITHUB_OAUTH_BASE": "https://github.com"

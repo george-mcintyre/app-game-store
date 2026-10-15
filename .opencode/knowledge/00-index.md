@@ -1,42 +1,41 @@
-# app-game-store - private link-only installer
+# app-game-store (product name ourapps) - private link-only installer
 
-Repo: github.com/george-mcintyre/app-game-store (confirm with `git remote -v`). Public repo
-because GitHub Pages on a free account needs one; privacy comes from the link being unlisted.
+Repo: github.com/george-mcintyre/app-game-store (confirm with `git remote -v`). Public repo;
+privacy comes from unlisted share links, not from the code being hidden. Product definition:
+`../../.opencode/knowledge/ourapps.md`.
 
 ## What it is
 
-A friend taps a link or QR code and ends up with an app on their home screen. No search, no
-browsing. The store reads each app's `/my-app.json` (schema 1, owned by `@my:orchestrator`,
-see `../../.opencode/knowledge/app-manifest.md`) and offers the install path for the
-friend's platform.
+Developers sign in with GitHub, add apps, and create share links. A friend taps `/l/<id>`
+and ends up with the app on their home screen. The store reads each app's `my-app.json`
+(schema 1, owned by `@my:orchestrator`, see `../../.opencode/knowledge/app-manifest.md`)
+from the latest GitHub Release and serves artefacts through signed one-hour links.
 
 ## Layout
 
-| path        | what                                                                 |
-|-------------|----------------------------------------------------------------------|
-| `worker/`   | Cloudflare Worker: enrolment, long poll status, build-ready, admin   |
-| `site/`     | Vite + TypeScript static site, GitHub Pages, hash routes             |
-| `CONTRACT.md` | what an app repo must implement (dispatch, profile, publish, build-ready) |
-| `README.md` | how to add an app, share, limits                                     |
+| path          | what                                                              |
+|---------------|-------------------------------------------------------------------|
+| `worker/`     | Cloudflare Worker: serves `site/dist`, `/api/*`, `/dl/*`; D1 data |
+| `site/`       | Vite + TypeScript, no framework, history routing                  |
+| `shared/`     | `validateManifest`, enrolment state machine                       |
+| `CONTRACT.md` | what an app repo implements (dispatch, profile, publish, build-ready) |
 
 ## Where to change X
 
-- Enrolment states or transitions: `worker/src/enrolment.ts`.
-- HTTP routes: `worker/src/index.ts`; Apple calls `worker/src/apple.ts`; GitHub `worker/src/github.ts`.
-- Which apps the worker may rebuild (repo, profile name): `worker/apps.json`.
-- Which apps the site shows: `site/public/apps.json` (list of my-app.json URLs).
-- Manifest validation: `site/src/manifest.ts`. Platform and in-app browser detection: `site/src/platform.ts`.
-- Install flow copy: `site/src/pages/app.ts`, `site/src/pages/wait.ts`.
+- Routes: `worker/src/index.ts`. Handlers: `worker/src/routes/{public,enrol,build,dev}.ts`.
+- Sign-in and sessions: `worker/src/auth.ts`. Encrypted credentials: `worker/src/secrets.ts`, `worker/src/crypto.ts`.
+- Approve flow (Apple register, profile recreate, dispatch): `worker/src/flow.ts`, `worker/src/apple.ts`, `worker/src/github.ts`.
+- Schema: `worker/migrations/*.sql`; queries: `worker/src/db.ts`.
+- Enrolment states: `shared/src/enrolment.ts`.
+- Site pages: `site/src/pages/public.ts` (landing, developer page, install, wait), `site/src/pages/dev.ts` (dashboard).
+- Platform and in-app browser detection: `site/src/platform.ts`. Paths: `site/src/router.ts`.
 
 ## Build, test, run
 
-- Install: `npm install` at repo root (npm workspaces: `worker`, `site`).
-- Test all: `npm test`. Worker only: `npm test -w worker`. Site only: `npm test -w site`.
-- Typecheck: `npm run typecheck`.
-- Worker local: `npm run dev -w worker` (wrangler dev on http://localhost:8787).
-- Site local: `npm run dev -w site` with `VITE_WORKER_URL=http://localhost:8787`.
-- Deploy worker: `npm run deploy -w worker` (needs `npx wrangler login`).
-- Deploy site: push to `main`; `.github/workflows/pages.yml` publishes to
-  https://george-mcintyre.github.io/app-game-store/.
+- `npm install` at the root (workspaces `shared`, `worker`, `site`).
+- `npm test` runs all three; `npm run typecheck` likewise.
+- Local: `cd worker && npx wrangler d1 migrations apply app-game-store --local`, then
+  `npm run build -w site && npm run dev -w worker` on http://localhost:8787.
+- Deploy: `npm run build -w site && cd worker && npx wrangler deploy`. See `workflow.md`.
 
 Details: `workflow.md`, `gotchas.md`.

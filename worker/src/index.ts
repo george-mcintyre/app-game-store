@@ -6,15 +6,30 @@ import * as dev from "./routes/dev.js";
 import { enrolCallback, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkPage, serveArtefact } from "./routes/public.js";
 
+// Sent on every response so browsers and scanners see a locked-down site.
+export const SECURITY_HEADERS: Record<string, string> = {
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
+};
+
 export async function handle(request: Request, env: Env, deps: Deps = defaultDeps): Promise<Response> {
+  let res: Response;
   try {
-    return await route(request, env, deps);
+    res = await route(request, env, deps);
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500;
     const message = err instanceof Error ? err.message : "unknown error";
     if (status >= 500) console.error(message);
-    return json({ error: message }, status);
+    res = json({ error: message }, status);
   }
+  res = new Response(res.body, res);
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!res.headers.has(k)) res.headers.set(k, v);
+  return res;
 }
 
 async function route(request: Request, env: Env, deps: Deps): Promise<Response> {
@@ -24,6 +39,10 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
 
   if (parts[0] === "dl" && parts.length === 2 && m === "GET") return serveArtefact(env, deps, parts[1]);
   if (parts[0] !== "api") {
+    const verification = env.GOOGLE_SITE_VERIFICATION;
+    if (verification && parts.length === 1 && parts[0] === verification && m === "GET") {
+      return new Response(`google-site-verification: ${verification}`, { headers: { "Content-Type": "text/html" } });
+    }
     if (env.ASSETS) return env.ASSETS.fetch(request);
     throw new HttpError(404, "not found");
   }

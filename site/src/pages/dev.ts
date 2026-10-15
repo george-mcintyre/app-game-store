@@ -153,9 +153,15 @@ function showToken(root: HTMLElement, appId: string, token: string): void {
   root.querySelector("#token")!.innerHTML = html`
     <div class="card">
       <h2>Build token (shown once)</h2>
-      <p>Add these two secrets to the app's GitHub repository:</p>
+      <p>Copy it now; the store keeps only a hash. If you lose it, make a new one with "New build token".</p>
       <p><code>STORE_BUILD_TOKEN</code> = <code>${token}</code></p>
-      <p><code>STORE_APP_ID</code> = <code>${appId}</code> (also sent in every rebuild request)</p>
+      <p><code>STORE_APP_ID</code> = <code>${appId}</code></p>
+      <p class="small">STORE_APP_ID is the opaque id of this app. The store sends it as "app" in every rebuild request and the workflow echoes it back in /api/build-ready and the profile route.</p>
+      <p><b>Add both as Actions secrets on the app's GitHub repository.</b> Either route works:</p>
+      <ol class="steps small">
+        <li>On GitHub: open the repository, then <b>Settings</b>, <b>Secrets and variables</b>, <b>Actions</b>, <b>Repository secrets</b>, <b>New repository secret</b>. Create <code>STORE_BUILD_TOKEN</code> and <code>STORE_APP_ID</code>.</li>
+        <li>In a terminal inside a checkout of the repository: <code>gh secret set STORE_BUILD_TOKEN</code> then <code>gh secret set STORE_APP_ID</code>, pasting each value when asked.</li>
+      </ol>
       <p class="small muted">See CONTRACT.md in the store repository for the workflow the app needs.</p>
       <a class="button" href="/dev/apps/${appId}/links">Create a share link</a>
     </div>

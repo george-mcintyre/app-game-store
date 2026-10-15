@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import type { Deps, Env } from "../src/env.js";
 import { handle } from "../src/index.js";
 
-export const BASE = "https://app-game-store.georgemcintyre.workers.dev";
+export const BASE = "https://ourapps.app";
 
 export const manifest = {
   schema: 1,

@@ -1,6 +1,12 @@
 // App Store Connect API: ES256 tokens, device registration, Ad Hoc profile recreation.
 import type { Deps, Env } from "./env.js";
 
+export interface AppleCredentials {
+  issuerId: string;
+  keyId: string;
+  privateKey: string;
+}
+
 const encoder = new TextEncoder();
 
 function base64url(bytes: Uint8Array): string {
@@ -14,17 +20,12 @@ function pemToDer(pem: string): Uint8Array {
   return Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
 }
 
-export function appleConfigured(env: Env): boolean {
-  return Boolean(env.APPLE_ISSUER_ID && env.APPLE_KEY_ID && env.APPLE_PRIVATE_KEY);
-}
-
 // Token lifetime stays under Apple's 20 minute ceiling.
-export async function makeToken(env: Env, now: Date): Promise<string> {
-  if (!appleConfigured(env)) throw new Error("Apple API secrets are not set");
-  const key = await crypto.subtle.importKey("pkcs8", pemToDer(env.APPLE_PRIVATE_KEY!), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+export async function makeToken(creds: AppleCredentials, now: Date): Promise<string> {
+  const key = await crypto.subtle.importKey("pkcs8", pemToDer(creds.privateKey), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
   const iat = Math.floor(now.getTime() / 1000);
-  const header = base64url(encoder.encode(JSON.stringify({ alg: "ES256", kid: env.APPLE_KEY_ID, typ: "JWT" })));
-  const payload = base64url(encoder.encode(JSON.stringify({ iss: env.APPLE_ISSUER_ID, iat, exp: iat + 10 * 60, aud: "appstoreconnect-v1" })));
+  const header = base64url(encoder.encode(JSON.stringify({ alg: "ES256", kid: creds.keyId, typ: "JWT" })));
+  const payload = base64url(encoder.encode(JSON.stringify({ iss: creds.issuerId, iat, exp: iat + 10 * 60, aud: "appstoreconnect-v1" })));
   const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, encoder.encode(`${header}.${payload}`));
   return `${header}.${payload}.${base64url(new Uint8Array(signature))}`;
 }
@@ -37,10 +38,10 @@ interface Resource<A = Record<string, unknown>> {
 }
 
 export class AppleClient {
-  constructor(private env: Env, private deps: Deps) {}
+  constructor(private env: Env, private deps: Deps, private creds: AppleCredentials) {}
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = await makeToken(this.env, this.deps.now());
+    const token = await makeToken(this.creds, this.deps.now());
     const res = await this.deps.fetch(`${this.env.APPLE_API_BASE}${path}`, {
       method,
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },

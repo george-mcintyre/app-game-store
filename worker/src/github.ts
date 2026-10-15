@@ -15,15 +15,15 @@ export interface RebuildPayload {
   profileUrl: string;
 }
 
-export async function dispatchRebuild(env: Env, deps: Deps, repo: string, payload: RebuildPayload): Promise<void> {
-  if (!env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN secret is not set");
+export async function dispatchRebuild(env: Env, deps: Deps, token: string | undefined, repo: string, payload: RebuildPayload): Promise<void> {
+  if (!token) throw new Error("no GitHub token saved in account settings");
   const res = await deps.fetch(`${env.GITHUB_API_BASE}/repos/${repo}/dispatches`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      Authorization: `Bearer ${token}`,
       Accept: "application/vnd.github+json",
       "Content-Type": "application/json",
-      "User-Agent": "app-game-store",
+      "User-Agent": "ourapps",
     },
     body: JSON.stringify({ event_type: REBUILD_EVENT, client_payload: payload }),
   });

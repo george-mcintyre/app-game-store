@@ -1,19 +1,9 @@
 // Short-lived signed links for artefacts served through /dl/<token>.
+import { fromBase64url, toBase64url } from "./crypto.js";
 
 const encoder = new TextEncoder();
 
 export const LINK_TTL_SECONDS = 60 * 60;
-
-function base64url(bytes: Uint8Array): string {
-  let s = "";
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
-
-function fromBase64url(text: string): Uint8Array {
-  const padded = text.replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - (text.length % 4)) % 4);
-  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
-}
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
@@ -22,13 +12,15 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
 export interface LinkPayload {
   url: string;
   kind: "apk" | "manifest" | "ipa";
+  // Developer whose GitHub token may be used to fetch the url.
+  dev: string;
   exp: number;
 }
 
 export async function signLink(secret: string, payload: LinkPayload): Promise<string> {
-  const body = base64url(encoder.encode(JSON.stringify(payload)));
+  const body = toBase64url(encoder.encode(JSON.stringify(payload)));
   const sig = await crypto.subtle.sign("HMAC", await hmacKey(secret), encoder.encode(body));
-  return `${body}.${base64url(new Uint8Array(sig))}`;
+  return `${body}.${toBase64url(new Uint8Array(sig))}`;
 }
 
 export async function verifyLink(secret: string, token: string, now: Date): Promise<LinkPayload | null> {
@@ -49,7 +41,7 @@ export async function verifyLink(secret: string, token: string, now: Date): Prom
   } catch {
     return null;
   }
-  if (typeof payload.url !== "string" || typeof payload.exp !== "number") return null;
+  if (typeof payload.url !== "string" || typeof payload.exp !== "number" || typeof payload.dev !== "string") return null;
   if (payload.exp * 1000 < now.getTime()) return null;
   return payload;
 }

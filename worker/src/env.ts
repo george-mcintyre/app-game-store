@@ -1,17 +1,14 @@
 export interface Env {
-  STORE: KVNamespace;
-  SITE_ORIGIN: string;
-  SITE_BASE: string;
+  DB: D1Database;
+  ASSETS?: Fetcher;
+  PUBLIC_ORIGIN: string;
   APPLE_API_BASE: string;
   GITHUB_API_BASE: string;
-  ADMIN_TOKEN?: string;
-  BUILD_TOKEN?: string;
+  GITHUB_OAUTH_BASE: string;
   LINK_SECRET?: string;
-  GITHUB_TOKEN?: string;
-  APPLE_ISSUER_ID?: string;
-  APPLE_KEY_ID?: string;
-  APPLE_PRIVATE_KEY?: string;
-  APPLE_TEAM_ID?: string;
+  MASTER_KEY?: string;
+  GITHUB_OAUTH_CLIENT_ID?: string;
+  GITHUB_OAUTH_CLIENT_SECRET?: string;
 }
 
 // Outbound calls go through this so tests can replace them.

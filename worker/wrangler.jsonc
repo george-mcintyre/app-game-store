@@ -4,16 +4,21 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "kv_namespaces": [
-    { "binding": "STORE", "id": "REPLACE_WITH_KV_ID" }
+  "d1_databases": [
+    { "binding": "DB", "database_name": "app-game-store", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
   ],
+  "assets": {
+    "directory": "../site/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/dl/*"]
+  },
   "vars": {
-    // Origin of the static site, used for CORS and redirects after enrolment.
-    "SITE_ORIGIN": "https://george-mcintyre.github.io",
-    // Path prefix of the site on that origin.
-    "SITE_BASE": "/app-game-store/",
+    // Public origin of this deployment; OAuth callbacks and links are built from it.
+    "PUBLIC_ORIGIN": "https://app-game-store.george-level-n.workers.dev",
     "APPLE_API_BASE": "https://api.appstoreconnect.apple.com",
-    "GITHUB_API_BASE": "https://api.github.com"
+    "GITHUB_API_BASE": "https://api.github.com",
+    "GITHUB_OAUTH_BASE": "https://github.com"
   },
   "observability": { "enabled": true }
 }

@@ -29,7 +29,7 @@ describe("GitHub sign-in", () => {
     expect(me.status).toBe(200);
     const body = (await me.json()) as { developer: { slug: string; displayName: string; githubLogin: string }; secrets: { apple: boolean; github: boolean } };
     expect(body.developer).toMatchObject({ slug: "george", displayName: "George", githubLogin: "george" });
-    expect(body.secrets).toEqual({ apple: false, appleTeamId: "", github: false });
+    expect(body.secrets).toEqual({ apple: false, appleSavedAt: null, appleTeamId: "", appleTeamIdSavedAt: null, github: false, githubSavedAt: null });
 
     const again = await signIn(env, deps);
     const me2 = (await (await handle(api(again, "GET", "/api/dev/me"), env, deps)).json()) as { developer: { id: string } };
@@ -93,12 +93,13 @@ describe("account settings", () => {
     const bad = await handle(api(cookie, "PUT", "/api/dev/secrets", { applePrivateKey: "not a key" }), env, deps);
     expect(bad.status).toBe(400);
     const res = await handle(api(cookie, "PUT", "/api/dev/secrets", { appleIssuerId: "iss", appleKeyId: "kid", applePrivateKey: "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----", githubToken: "ghp_x" }), env, deps);
-    expect(await res.json()).toEqual({ secrets: { apple: true, appleTeamId: "", github: true } });
+    const saved = "2026-10-16T10:00:00.000Z";
+    expect(await res.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "", appleTeamIdSavedAt: null, github: true, githubSavedAt: saved } });
     const row = await env.DB.prepare("SELECT blob FROM developer_secrets").first<{ blob: string }>();
     expect(row!.blob).not.toContain("ghp_x");
     expect(row!.blob).not.toContain("iss");
     const cleared = await handle(api(cookie, "PUT", "/api/dev/secrets", { githubToken: "-", appleTeamId: "TEAM" }), env, deps);
-    expect(await cleared.json()).toEqual({ secrets: { apple: true, appleTeamId: "TEAM", github: false } });
+    expect(await cleared.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "TEAM", appleTeamIdSavedAt: saved, github: false, githubSavedAt: null } });
   });
 });
 

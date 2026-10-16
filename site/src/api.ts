@@ -81,5 +81,5 @@ export interface Enrolment {
 
 export interface Me {
   developer: { id: string; slug: string; displayName: string; githubLogin: string };
-  secrets: { apple: boolean; appleTeamId: string; github: boolean };
+  secrets: { apple: boolean; appleSavedAt: string | null; appleTeamId: string; appleTeamIdSavedAt: string | null; github: boolean; githubSavedAt: string | null };
 }

@@ -283,7 +283,19 @@ export async function devices(root: HTMLElement): Promise<void> {
   root.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((b) => (b.onclick = () => confirm("Remove this record?") && act(b, () => api("DELETE", `/api/dev/devices/${b.dataset.remove}`))));
 }
 
-export async function settings(root: HTMLElement): Promise<void> {
+function savedMarker(present: boolean, savedAt: string | null, group: string): Raw {
+  if (!present) return html`<span class="state">not saved</span>`;
+  const when = savedAt ? new Date(savedAt).toLocaleString() : "";
+  return html`<span class="state ready">Saved ${when}</span> <button type="button" class="button secondary" style="padding:2px 10px;font-size:12px" data-remove-secret="${group}">Remove</button>`;
+}
+
+const SECRET_GROUPS: Record<string, string[]> = {
+  apple: ["appleIssuerId", "appleKeyId", "applePrivateKey"],
+  appleTeamId: ["appleTeamId"],
+  githubToken: ["githubToken"],
+};
+
+export async function settings(root: HTMLElement, savedNote = ""): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
   mount(
@@ -303,18 +315,20 @@ export async function settings(root: HTMLElement): Promise<void> {
       </form>
       <form id="secrets-form" class="card">
         <h2>Credentials</h2>
-        <p class="small muted">Stored encrypted. Leave a field blank to keep the current value; enter a single hyphen to clear it.</p>
-        <p class="small">Apple key: <b>${me.secrets.apple ? "saved" : "missing"}</b>. GitHub token: <b>${me.secrets.github ? "saved" : "missing"}</b>.</p>
-        <label>App Store Connect issuer id</label>
-        <input type="text" name="appleIssuerId" autocomplete="off" />
-        <label>App Store Connect key id</label>
-        <input type="text" name="appleKeyId" autocomplete="off" />
-        <label>App Store Connect private key (.p8 contents)</label>
-        <textarea name="applePrivateKey" autocomplete="off"></textarea>
-        <label>Apple team id</label>
+        <p class="small muted">Stored encrypted and never shown again. Leave a field blank to keep what is saved.</p>
+        ${savedNote ? html`<div class="notice">${savedNote}</div>` : ""}
+        <h2 class="small">App Store Connect API key ${savedMarker(me.secrets.apple, me.secrets.appleSavedAt, "apple")}</h2>
+        <label>Issuer id</label>
+        <input type="text" name="appleIssuerId" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : ""}" />
+        <label>Key id</label>
+        <input type="text" name="appleKeyId" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : ""}" />
+        <label>Private key (.p8 contents)</label>
+        <textarea name="applePrivateKey" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : ""}"></textarea>
+        <h2 class="small">Apple team id ${savedMarker(Boolean(me.secrets.appleTeamId), me.secrets.appleTeamIdSavedAt, "appleTeamId")}</h2>
         <input type="text" name="appleTeamId" value="${me.secrets.appleTeamId}" autocomplete="off" />
-        <label>GitHub fine-grained token (Contents: read and write on your app repositories)</label>
-        <input type="text" name="githubToken" autocomplete="off" />
+        <h2 class="small">GitHub fine-grained token ${savedMarker(me.secrets.github, me.secrets.githubSavedAt, "githubToken")}</h2>
+        <div class="small muted">Contents: read and write on your app repositories.</div>
+        <input type="text" name="githubToken" autocomplete="off" placeholder="${me.secrets.github ? "saved" : ""}" />
         <div id="secrets-error"></div>
         <button class="button" type="submit" style="margin-top:12px">Save credentials</button>
       </form>
@@ -337,11 +351,20 @@ export async function settings(root: HTMLElement): Promise<void> {
     const fd = new FormData(secretsForm);
     const body: Record<string, unknown> = {};
     for (const k of ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken"]) body[k] = fd.get(k);
+    const changed = Object.entries(body).filter(([, v]) => String(v ?? "").trim() !== "").length;
     try {
       await api("PUT", "/api/dev/secrets", body);
-      await settings(root);
+      await settings(root, changed > 0 ? "Credentials saved." : "Nothing to save; all fields were blank.");
     } catch (err) {
       root.querySelector("#secrets-error")!.innerHTML = raw(`<div class="error">${String(err instanceof Error ? err.message : err).replace(/</g, "&lt;")}</div>`).html;
     }
   };
+  root.querySelectorAll<HTMLButtonElement>("[data-remove-secret]").forEach((b) => (b.onclick = async () => {
+    const group = b.dataset.removeSecret!;
+    if (!confirm("Remove this credential? Approvals and release reads that need it will stop working.")) return;
+    const body: Record<string, string> = {};
+    for (const k of SECRET_GROUPS[group]) body[k] = "-";
+    await api("PUT", "/api/dev/secrets", body);
+    await settings(root, "Credential removed.");
+  }));
 }

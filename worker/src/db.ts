@@ -17,6 +17,8 @@ export interface DeveloperSecrets {
   applePrivateKey?: string;
   appleTeamId?: string;
   githubToken?: string;
+  // When each field was last saved, keyed by field name.
+  savedAt?: Partial<Record<"appleIssuerId" | "appleKeyId" | "applePrivateKey" | "appleTeamId" | "githubToken", string>>;
 }
 
 export interface AppRow {

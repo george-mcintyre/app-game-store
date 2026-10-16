@@ -11,6 +11,7 @@ export interface AppManifest {
   icon: string;
   minPlayers: number;
   maxPlayers: number;
+  screenshots?: string[];
   install: {
     pwa: string | null;
     android: { apk: string } | null;
@@ -52,6 +53,10 @@ export function validateManifest(input: unknown): ManifestResult {
   if (!Number.isInteger(min) || (min as number) < 1) errors.push("minPlayers must be an integer of at least 1");
   if (!Number.isInteger(max) || (max as number) < 1) errors.push("maxPlayers must be an integer of at least 1");
   if (Number.isInteger(min) && Number.isInteger(max) && (min as number) > (max as number)) errors.push("minPlayers must not exceed maxPlayers");
+
+  if (input.screenshots !== undefined) {
+    if (!Array.isArray(input.screenshots) || !input.screenshots.every(isHttpsUrl)) errors.push("screenshots must be a list of https URLs");
+  }
 
   const install = input.install;
   if (!isRecord(install)) {

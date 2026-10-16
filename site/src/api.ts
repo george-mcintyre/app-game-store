@@ -37,6 +37,7 @@ export interface DevApp extends AppDetails {
   manifestUrl: string;
   profileName: string;
   showOnPage: boolean;
+  releaseIcon?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,7 +52,7 @@ export interface LinkPage {
   linkId: string;
   developer: { slug: string; displayName: string };
   app: AppDetails;
-  release: { version: string; minPlayers: number; maxPlayers: number; install: Install; fallbackName: string; fallbackIcon: string; fallbackDescription: string } | null;
+  release: { version: string; minPlayers: number; maxPlayers: number; install: Install; fallbackName: string; fallbackIcon: string; fallbackDescription: string; fallbackScreenshots: string[] } | null;
   releaseError: string | null;
 }
 

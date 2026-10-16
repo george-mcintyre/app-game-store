@@ -77,7 +77,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     if (p[1] === "me" && m === "PUT") return dev.updateMe(request, env, me);
     if (p[1] === "secrets" && m === "PUT") return dev.updateSecrets(request, env, deps, me);
     if (p[1] === "apps") {
-      if (p.length === 2 && m === "GET") return dev.listApps(env, me);
+      if (p.length === 2 && m === "GET") return dev.listApps(env, deps, me);
       if (p.length === 2 && m === "POST") return dev.createApp(request, env, deps, me);
       if (p.length === 3 && m === "GET") return dev.getApp(env, me, p[2]);
       if (p.length === 3 && m === "PUT") return dev.updateApp(request, env, deps, me, p[2]);

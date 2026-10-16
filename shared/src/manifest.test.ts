@@ -81,6 +81,15 @@ describe("validateManifest", () => {
     if (!result.ok) expect(result.errors).toContain("install.ios needs adhoc or testflight");
   });
 
+  it("accepts optional screenshots and rejects bad ones", () => {
+    expect(validateManifest(withPatch({ screenshots: ["https://example.com/1.png"] })).ok).toBe(true);
+    expect(validateManifest(withPatch({ screenshots: [] })).ok).toBe(true);
+    const bad = validateManifest(withPatch({ screenshots: ["http://example.com/1.png"] }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors).toContain("screenshots must be a list of https URLs");
+    expect(validateManifest(withPatch({ screenshots: "x" })).ok).toBe(false);
+  });
+
   it("collects several errors at once", () => {
     const result = validateManifest(withPatch({ name: "", version: "", icon: "nope" }));
     expect(result.ok).toBe(false);

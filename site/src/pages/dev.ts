@@ -52,7 +52,7 @@ export async function dashboard(root: HTMLElement): Promise<void> {
       ${apps.map(
         (a) => html`
           <div class="card row">
-            ${a.iconUrl ? html`<img class="icon small" src="${a.iconUrl}" alt="" />` : html`<div class="icon small"></div>`}
+            ${a.iconUrl || a.releaseIcon ? html`<img class="icon small" src="${a.iconUrl || a.releaseIcon}" alt="" />` : html`<div class="icon small"></div>`}
             <div class="grow">
               <b><a href="/dev/apps/${a.id}">${a.name}</a></b>
               <div class="muted small">${a.repo}${a.showOnPage ? " · on your page" : ""}</div>
@@ -103,7 +103,7 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
           const input = f.type === "textarea" ? html`<textarea name="${f.key}">${value}</textarea>` : html`<input type="${f.type}" name="${f.key}" value="${value}" ${f.key === "name" || f.key === "repo" ? "required" : ""} />`;
           return html`<label>${f.label}</label>${input}${f.hint ? html`<div class="small muted">${f.hint}</div>` : ""}`;
         })}
-        <label>Screenshot URLs, one per line</label>
+        <label>Screenshot URLs, one per line (blank uses the list in my-app.json)</label>
         <textarea name="screenshots">${(app.screenshots ?? []).join("\n")}</textarea>
         <label class="check"><input type="checkbox" name="showOnPage" ${app.showOnPage ? "checked" : ""} /> Show on my public page (details only, no install)</label>
         <div id="error"></div>

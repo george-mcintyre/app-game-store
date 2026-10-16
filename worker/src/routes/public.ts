@@ -54,6 +54,9 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
     manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
     // Private release assets need the token; the browser gets a signed link instead.
     if (new URL(manifest.icon).host === "api.github.com") manifest.icon = await dlUrl(env, deps, { url: manifest.icon, kind: "icon", dev: dev.id });
+    manifest.screenshots = await Promise.all(
+      (manifest.screenshots ?? []).map((u) => (new URL(u).host === "api.github.com" ? dlUrl(env, deps, { url: u, kind: "icon", dev: dev.id }) : Promise.resolve(u))),
+    );
   } catch (err) {
     manifestError = err instanceof Error ? err.message : String(err);
   }
@@ -62,7 +65,7 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
     developer: { slug: dev.slug, displayName: dev.displayName },
     app: appDetails(app),
     release: manifest
-      ? { version: manifest.version, minPlayers: manifest.minPlayers, maxPlayers: manifest.maxPlayers, install: manifest.install, fallbackName: manifest.name, fallbackIcon: manifest.icon, fallbackDescription: manifest.description }
+      ? { version: manifest.version, minPlayers: manifest.minPlayers, maxPlayers: manifest.maxPlayers, install: manifest.install, fallbackName: manifest.name, fallbackIcon: manifest.icon, fallbackDescription: manifest.description, fallbackScreenshots: manifest.screenshots ?? [] }
       : null,
     releaseError: manifestError,
   });

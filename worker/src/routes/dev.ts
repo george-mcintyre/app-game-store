@@ -3,9 +3,10 @@ import { RESERVED_SLUGS, normaliseSlug } from "../auth.js";
 import { randomId, sha256Hex } from "../crypto.js";
 import { Db, type AppRow, type Developer, type DeveloperSecrets, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
-import { approveEnrolment, transition } from "../flow.js";
+import { approveEnrolment, dlUrl, transition } from "../flow.js";
 import { HttpError, httpsUrlOrEmpty, json, readJson, text } from "../http.js";
 import { appleReady, loadSecrets, saveSecrets } from "../secrets.js";
+import { loadManifest } from "../upstream.js";
 
 type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName", string>> & {
   screenshots?: unknown;
@@ -81,9 +82,25 @@ export async function updateSecrets(request: Request, env: Env, deps: Deps, dev:
   return json({ secrets: { apple: appleReady(next), appleTeamId: next.appleTeamId ?? "", github: Boolean(next.githubToken) } });
 }
 
-// GET /api/dev/apps
-export async function listApps(env: Env, dev: Developer): Promise<Response> {
-  return json({ apps: (await Db.from(env).appsByDeveloper(dev.id)).map(publicApp) });
+// GET /api/dev/apps - apps without a dashboard icon get the latest release icon, best effort.
+export async function listApps(env: Env, deps: Deps, dev: Developer): Promise<Response> {
+  const apps = await Db.from(env).appsByDeveloper(dev.id);
+  const secrets = await loadSecrets(env, dev.id);
+  const out = await Promise.all(
+    apps.map(async (app) => {
+      let releaseIcon = "";
+      if (!app.iconUrl) {
+        try {
+          const icon = (await loadManifest(env, deps, app, secrets.githubToken)).icon;
+          releaseIcon = new URL(icon).host === "api.github.com" ? await dlUrl(env, deps, { url: icon, kind: "icon", dev: dev.id }) : icon;
+        } catch {
+          releaseIcon = "";
+        }
+      }
+      return { ...publicApp(app), releaseIcon };
+    }),
+  );
+  return json({ apps: out });
 }
 
 // POST /api/dev/apps - returns the build token once.

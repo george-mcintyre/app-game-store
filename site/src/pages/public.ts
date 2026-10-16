@@ -87,6 +87,7 @@ export async function installPage(root: HTMLElement, linkId: string): Promise<vo
   const name = app.name || data.release?.fallbackName || "App";
   const icon = app.iconUrl || data.release?.fallbackIcon || "";
   const description = app.description || data.release?.fallbackDescription || "";
+  const screenshots = app.screenshots.length > 0 ? app.screenshots : (data.release?.fallbackScreenshots ?? []);
   const pageUrl = `${location.origin}/l/${linkId}`;
   document.title = `${name} - ourapps`;
 
@@ -105,7 +106,7 @@ export async function installPage(root: HTMLElement, linkId: string): Promise<vo
           </div>
           <div id="install-area" style="margin-top:16px">${installArea(data, d, name)}</div>
         </div>
-        ${app.screenshots.length > 0 ? html`<div class="shots">${app.screenshots.map((s) => html`<img src="${s}" alt="" />`)}</div>` : ""}
+        ${screenshots.length > 0 ? html`<div class="shots">${screenshots.map((s) => html`<img src="${s}" alt="" />`)}</div>` : ""}
         ${description ? html`<div class="card"><h2>About</h2>${paragraphs(description)}</div>` : ""}
         ${app.whatsNew ? html`<div class="card"><h2>What's new</h2>${paragraphs(app.whatsNew)}</div>` : ""}
         <div class="card">

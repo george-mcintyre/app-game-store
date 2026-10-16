@@ -11,7 +11,7 @@ export const manifest = {
   name: "Skull",
   version: "0.1.0",
   description: "Bluffing card game.",
-  icon: "https://example.com/icon.png",
+  icon: "https://api.github.com/repos/o/skull/releases/assets/5",
   minPlayers: 3,
   maxPlayers: 6,
   install: {
@@ -100,6 +100,7 @@ export function githubRoutes() {
     [`GET ${gh("/repos/o/skull/releases/assets/2")}`]: () => new Response("APKBYTES", { status: 200 }),
     [`GET ${gh("/repos/o/skull/releases/assets/3")}`]: () => new Response(manifestPlist, { status: 200 }),
     [`GET ${gh("/repos/o/skull/releases/assets/4")}`]: () => new Response("IPABYTES", { status: 200 }),
+    [`GET ${gh("/repos/o/skull/releases/assets/5")}`]: () => new Response("PNGBYTES", { status: 200, headers: { "Content-Type": "image/png" } }),
     [`POST ${gh("/repos/o/skull/dispatches")}`]: () => new Response(null, { status: 204 }),
   };
 }

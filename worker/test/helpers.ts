@@ -14,6 +14,7 @@ export const manifest = {
   icon: "https://api.github.com/repos/o/skull/releases/assets/5",
   minPlayers: 3,
   maxPlayers: 6,
+  screenshots: ["https://api.github.com/repos/o/skull/releases/assets/6", "https://cdn.example.com/2.png"],
   install: {
     pwa: null,
     android: { apk: "https://api.github.com/repos/o/skull/releases/assets/2" },
@@ -100,6 +101,7 @@ export function githubRoutes() {
     [`GET ${gh("/repos/o/skull/releases/assets/2")}`]: () => new Response("APKBYTES", { status: 200 }),
     [`GET ${gh("/repos/o/skull/releases/assets/3")}`]: () => new Response(manifestPlist, { status: 200 }),
     [`GET ${gh("/repos/o/skull/releases/assets/4")}`]: () => new Response("IPABYTES", { status: 200 }),
+    [`GET ${gh("/repos/o/skull/releases/assets/6")}`]: () => new Response("SHOT", { status: 200, headers: { "Content-Type": "image/png" } }),
     [`GET ${gh("/repos/o/skull/releases/assets/5")}`]: () => new Response("PNGBYTES", { status: 200, headers: { "Content-Type": "image/png" } }),
     [`POST ${gh("/repos/o/skull/dispatches")}`]: () => new Response(null, { status: 204 }),
   };

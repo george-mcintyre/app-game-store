@@ -25,8 +25,11 @@ describe("apps", () => {
     expect(body.buildToken).toMatch(/^[0-9a-f]{48}$/);
     expect(body.app).toMatchObject({ name: "Skull", repo: "o/skull", screenshots: ["https://x/1.png"], showOnPage: true });
     expect(body.app.buildTokenHash).toBeUndefined();
-    const list = (await (await handle(api(cookie, "GET", "/api/dev/apps"), env, deps)).json()) as { apps: { id: string }[] };
+    const list = (await (await handle(api(cookie, "GET", "/api/dev/apps"), env, deps)).json()) as { apps: { id: string; releaseIcon: string }[] };
     expect(list.apps).toHaveLength(1);
+    expect(list.apps[0].releaseIcon).toMatch(new RegExp(`^${BASE}/dl/`));
+    const offline = (await (await handle(api(cookie, "GET", "/api/dev/apps"), env, testDeps())).json()) as { apps: { releaseIcon: string }[] };
+    expect(offline.apps[0].releaseIcon).toBe("");
   });
 
   it("validates input", async () => {
@@ -62,8 +65,11 @@ describe("share links and public pages", () => {
     const d = { ...deps, fetch };
     const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { app: { name: string; tagline: string }; developer: { displayName: string }; release: { version: string; fallbackIcon: string; install: { android: { apk: string }; ios: { adhoc: string } } } };
+    const body = (await res.json()) as { app: { name: string; tagline: string }; developer: { displayName: string }; release: { version: string; fallbackIcon: string; fallbackScreenshots: string[]; install: { android: { apk: string }; ios: { adhoc: string } } } };
     expect(body.release.fallbackIcon).toMatch(new RegExp(`^${BASE}/dl/`));
+    expect(body.release.fallbackScreenshots[0]).toMatch(new RegExp(`^${BASE}/dl/`));
+    expect(body.release.fallbackScreenshots[1]).toBe("https://cdn.example.com/2.png");
+    expect(await (await handle(new Request(body.release.fallbackScreenshots[0]), env, d)).text()).toBe("SHOT");
     const icon = await handle(new Request(body.release.fallbackIcon), env, d);
     expect(icon.headers.get("Content-Type")).toBe("image/png");
     expect(await icon.text()).toBe("PNGBYTES");

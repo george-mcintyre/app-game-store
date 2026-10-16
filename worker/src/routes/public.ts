@@ -52,6 +52,8 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
   let manifestError: string | null = null;
   try {
     manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
+    // Private release assets need the token; the browser gets a signed link instead.
+    if (new URL(manifest.icon).host === "api.github.com") manifest.icon = await dlUrl(env, deps, { url: manifest.icon, kind: "icon", dev: dev.id });
   } catch (err) {
     manifestError = err instanceof Error ? err.message : String(err);
   }
@@ -78,6 +80,9 @@ export async function serveArtefact(env: Env, deps: Deps, token: string): Promis
     const plist = await upstream.text();
     const rewritten = await rewriteManifestUrls(plist, (u) => dlUrl(env, deps, { url: u, kind: "ipa", dev: link.dev }));
     return new Response(rewritten, { status: 200, headers: { "Content-Type": "text/xml", "Cache-Control": "no-store" } });
+  }
+  if (link.kind === "icon") {
+    return new Response(upstream.body, { status: 200, headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "image/png", "Cache-Control": "private, max-age=3600" } });
   }
   const type = link.kind === "apk" ? "application/vnd.android.package-archive" : "application/octet-stream";
   const name = link.kind === "apk" ? "app.apk" : "app.ipa";

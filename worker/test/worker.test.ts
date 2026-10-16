@@ -62,7 +62,11 @@ describe("share links and public pages", () => {
     const d = { ...deps, fetch };
     const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { app: { name: string; tagline: string }; developer: { displayName: string }; release: { version: string; install: { android: { apk: string }; ios: { adhoc: string } } } };
+    const body = (await res.json()) as { app: { name: string; tagline: string }; developer: { displayName: string }; release: { version: string; fallbackIcon: string; install: { android: { apk: string }; ios: { adhoc: string } } } };
+    expect(body.release.fallbackIcon).toMatch(new RegExp(`^${BASE}/dl/`));
+    const icon = await handle(new Request(body.release.fallbackIcon), env, d);
+    expect(icon.headers.get("Content-Type")).toBe("image/png");
+    expect(await icon.text()).toBe("PNGBYTES");
     expect(body.app).toMatchObject({ name: "Skull", tagline: "Bluff your friends" });
     expect(body.developer.displayName).toBe("George");
     expect(body.release.version).toBe("0.1.0");

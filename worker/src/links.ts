@@ -11,7 +11,7 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
 
 export interface LinkPayload {
   url: string;
-  kind: "apk" | "manifest" | "ipa";
+  kind: "apk" | "manifest" | "ipa" | "icon";
   // Developer whose GitHub token may be used to fetch the url.
   dev: string;
   exp: number;

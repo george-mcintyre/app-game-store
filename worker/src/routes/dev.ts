@@ -46,10 +46,23 @@ async function ownedApp(db: Db, dev: Developer, id: string): Promise<AppRow> {
   return app;
 }
 
+// What the dashboard may know about stored credentials: presence and save dates, never values.
+function secretStatus(s: DeveloperSecrets) {
+  const at = s.savedAt ?? {};
+  const appleDates = [at.appleIssuerId, at.appleKeyId, at.applePrivateKey].filter((d): d is string => Boolean(d)).sort();
+  return {
+    apple: appleReady(s),
+    appleSavedAt: appleReady(s) ? appleDates[appleDates.length - 1] ?? null : null,
+    appleTeamId: s.appleTeamId ?? "",
+    appleTeamIdSavedAt: s.appleTeamId ? at.appleTeamId ?? null : null,
+    github: Boolean(s.githubToken),
+    githubSavedAt: s.githubToken ? at.githubToken ?? null : null,
+  };
+}
+
 // GET /api/dev/me
 export async function me(env: Env, dev: Developer): Promise<Response> {
-  const secrets = await loadSecrets(env, dev.id);
-  return json({ developer: dev, secrets: { apple: appleReady(secrets), appleTeamId: secrets.appleTeamId ?? "", github: Boolean(secrets.githubToken) } });
+  return json({ developer: dev, secrets: secretStatus(await loadSecrets(env, dev.id)) });
 }
 
 // PUT /api/dev/me
@@ -70,16 +83,22 @@ export async function updateMe(request: Request, env: Env, dev: Developer): Prom
 export async function updateSecrets(request: Request, env: Env, deps: Deps, dev: Developer): Promise<Response> {
   const body = await readJson<Partial<DeveloperSecrets>>(request);
   const current = await loadSecrets(env, dev.id);
-  const next: DeveloperSecrets = { ...current };
+  const next: DeveloperSecrets = { ...current, savedAt: { ...current.savedAt } };
+  const now = deps.now().toISOString();
   for (const key of ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken"] as const) {
     const value = body[key];
     if (typeof value !== "string" || value.trim() === "") continue;
-    if (value.trim() === "-") delete next[key];
-    else next[key] = value.trim();
+    if (value.trim() === "-") {
+      delete next[key];
+      delete next.savedAt![key];
+    } else {
+      next[key] = value.trim();
+      next.savedAt![key] = now;
+    }
   }
   if (next.applePrivateKey && !next.applePrivateKey.includes("PRIVATE KEY")) throw new HttpError(400, "the Apple private key must be the .p8 file contents");
   await saveSecrets(env, dev.id, next, deps.now());
-  return json({ secrets: { apple: appleReady(next), appleTeamId: next.appleTeamId ?? "", github: Boolean(next.githubToken) } });
+  return json({ secrets: secretStatus(next) });
 }
 
 // GET /api/dev/apps - apps without a dashboard icon get the latest release icon, best effort.

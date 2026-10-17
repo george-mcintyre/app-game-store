@@ -1,9 +1,11 @@
 // The developer console frame: sidebar on desktop, tabs on phones.
 import { ApiError, whoAmI, type Me } from "../api.js";
 import { html, mount, type Raw } from "../html.js";
+import { navigate } from "../nav.js";
 import { setTheme } from "../theme.js";
 import { avatar, icon, wireCopy, wireImages } from "../ui.js";
 import { COPYRIGHT, storeFrame } from "./public.js";
+import { termsPending } from "./terms.js";
 
 const NAV: { href: string; label: string; icon: string; match: (p: string) => boolean }[] = [
   { href: "/dev", label: "Overview", icon: "home", match: (p) => p === "/dev" },
@@ -22,6 +24,10 @@ export function githubAvatar(me: Me): string {
 export async function requireMe(root: HTMLElement): Promise<Me | null> {
   setTheme("dev", "Developer console");
   const me = await whoAmI(true);
+  if (me && termsPending(me)) {
+    navigate("/terms");
+    return null;
+  }
   if (me) return me;
   setTheme("store", "Sign in");
   mount(
@@ -60,7 +66,7 @@ export function shell(me: Me, title: string, body: Raw, opts: { sub?: string; ac
           ${opts.crumbs ? html`<div class="crumbs">${opts.crumbs}</div>` : ""}
           <div class="page-head"><div><h1>${title}</h1>${opts.sub ? html`<p>${opts.sub}</p>` : ""}</div>${opts.actions ?? ""}</div>
           ${body}
-          <footer class="console-footer">${COPYRIGHT}</footer>
+          <footer class="console-footer">${COPYRIGHT} · <a href="/terms">Terms and data statement</a> · <a href="/dev/guide#security">Security</a></footer>
         </main>
       </div>
     </div>

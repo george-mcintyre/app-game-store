@@ -357,6 +357,71 @@ suspend fun checkForUpdate(context: Context) {
       `,
     },
     {
+      id: "security",
+      title: "Security: how your secrets, your account and your friends' iPhones are protected",
+      sub: [
+        { id: "security-credentials", title: "Credentials" },
+        { id: "security-access", title: "Who can act on your account" },
+        { id: "security-devices", title: "Friends' iPhones" },
+        { id: "security-artefacts", title: "App files and links" },
+        { id: "security-you", title: "What is yours to do" },
+      ],
+      body: html`
+        <p>Security is the reason this service exists in the shape it does: a private installer holds the keys to your Apple developer account and your repositories, and it knows which iPhones belong to which of your friends. This section says exactly what is held, how it is protected, and where the limits are. The same statements, in contractual form, are in the <a href="/terms">terms and data statement</a> you accepted at sign-up.</p>
+
+        <h3 id="security-credentials">Your credentials</h3>
+        <table class="table">
+          <tr><th>What</th><th>How it is stored</th><th>When it is decrypted</th></tr>
+          <tr><td>App Store Connect key (issuer id, key id, .p8), Apple team id</td><td>AES-256-GCM, one ciphertext per field, under a key derived for your account alone (HKDF from the master secret), with your account id and the field name bound in as authenticated data so a ciphertext cannot be moved between accounts or fields</td><td>Only while approving a device, inside one request</td></tr>
+          <tr><td>GitHub token</td><td>Same scheme</td><td>Only when reading a release or sending a rebuild request</td></tr>
+          <tr><td>API keys, build tokens, sign-in sessions</td><td>Keyed hashes (HMAC-SHA256 with a pepper derived from the master secret); the key itself is shown to you once and never stored</td><td>Never; a presented key is hashed and compared</td></tr>
+          <tr><td>Download links for app files</td><td>Signed with their own secret; expire after one hour</td><td>n/a</td></tr>
+        </table>
+        <ul class="bullets">
+          <li>The master secret exists only in the Cloudflare Worker secret store. It is not in the database, not in the code, not in the repository. A copy of the database on its own yields no credential, no usable key and no session, and nothing can be forged from it.</li>
+          <li>The master secret can be rotated without downtime; records are rewrapped as they are used.</li>
+          <li>Credentials are validated before storage (the Apple key must be a real EC P-256 key, the GitHub token must have GitHub's shape) and are never returned by any endpoint: the console only ever sees "saved" and a date.</li>
+          <li>Level N Ltd staff do not read your credentials. The service decrypts a field at the moment it is needed and discards it with the request.</li>
+        </ul>
+
+        <h3 id="security-access">Who can act on your account</h3>
+        <ul class="bullets">
+          <li><b>You, in a browser.</b> Sign-in is GitHub OAuth reading your public profile only. The session cookie is HttpOnly, Secure, SameSite, lasts 30 days, and is stored as a keyed hash. State-changing requests are refused unless they come from this site. "Sign out everywhere" under Settings ends every session.</li>
+          <li><b>Your agents, with an API key.</b> Each key has a scope (read only, or manage), an expiry you choose, and can be revoked alone or all at once. A key can never create or revoke keys, change credentials, delete your account or sign out sessions; those need you in a browser. Keys are per developer: no key can see another developer's apps, links or devices.</li>
+          <li><b>Your app's repository, with a build token.</b> Per app, used only to fetch the signing profile and report a build; rotate it on the app's page.</li>
+          <li><b>Nobody else.</b> There is no shared admin interface; every row is tied to one developer and every query is filtered by it.</li>
+          <li>Every security event (sign-in, sign-out, credential saves and removals, key creation and revocation, build token rotation, device approvals, app deletion, terms acceptance) is recorded with the country of the request and shown to you under Settings, Security.</li>
+        </ul>
+
+        <h3 id="security-devices">Your friends' iPhones</h3>
+        <ul class="bullets">
+          <li>What is recorded: the name the friend typed, the device identifier (UDID) and model their iPhone reported, the share link used, and the state of the request. Nothing else: no contacts, no location, no account.</li>
+          <li>Who sees it: you, under Devices. It is sent to Apple, under your developer account, only when you approve the device. It is never shown on any public page, never listed by any API without your session or key, and deleted when you remove the record or delete the app.</li>
+          <li>How it gets there: the enrolment profile is a standard Apple "profile service" payload asking for UDID, product and OS version only. It installs no configuration, no certificates and no management on the phone, and removes itself. The friend sees it as "Unsigned" because it is served over HTTPS and not separately signed; that is expected.</li>
+          <li>The app a friend installs is signed with your certificate for their device by your repository's workflow. ourapps never holds your signing certificate.</li>
+          <li>Android and web installs record nothing about the friend. Install pages set no cookies and load no analytics or third-party scripts.</li>
+        </ul>
+
+        <h3 id="security-artefacts">App files and share links</h3>
+        <ul class="bullets">
+          <li>Your release files stay in your GitHub repository, public or private. Phones never receive a GitHub address; they receive a signed one-hour link to this service, which fetches the file with your token and streams it on.</li>
+          <li>Share links are random ids, never listed, never indexed, revocable at any time, and may carry an expiry. A revoked link shows "no longer active"; the friend keeps what they installed.</li>
+          <li>Web apps served by this service run on their own origin per share link, so they cannot read your console session.</li>
+          <li>Every response carries HSTS, a strict Content Security Policy, no-sniff, frame-deny and cross-origin isolation headers.</li>
+        </ul>
+
+        <h3 id="security-you">What is yours to do</h3>
+        <ul class="bullets">
+          <li>Protect your GitHub account and your Apple account with two-factor sign-in; this service can only be as safe as the sign-in in front of it.</li>
+          <li>Give the GitHub token the narrowest scope: Contents on the app repositories only, with an expiry.</li>
+          <li>Create one API key per agent or machine, with an expiry, and revoke it when the job is done.</li>
+          <li>Approve iPhones you recognise by name. Each approval registers a device on your Apple account for the membership year.</li>
+          <li>Check Settings, Security now and then. Anything you do not recognise: sign out everywhere, revoke keys, and replace the GitHub token and Apple key at their sources.</li>
+        </ul>
+        <p class="small muted">Full technical statement, including the rotation procedure and what is not covered: SECURITY.md in the source repository.</p>
+      `,
+    },
+    {
       id: "troubleshooting",
       title: "10. Troubleshooting",
       body: html`

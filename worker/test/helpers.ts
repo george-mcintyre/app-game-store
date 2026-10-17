@@ -1,3 +1,4 @@
+import { TERMS_VERSION } from "@my/store-shared";
 import { env as bindings } from "cloudflare:workers";
 import { expect } from "vitest";
 import type { Deps, Env } from "../src/env.js";
@@ -75,7 +76,7 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
 }
 
 export async function clearDb(env: Env): Promise<void> {
-  for (const table of ["profiles", "enrolments", "links", "apps", "sessions", "developer_secrets", "developers"]) {
+  for (const table of ["audit_log", "api_keys", "profiles", "enrolments", "links", "apps", "sessions", "developer_secrets", "developers"]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
   }
 }
@@ -158,7 +159,7 @@ export const deviceReply = (udid: string) =>
   );
 
 // Sign in through the stubbed OAuth flow; returns the Cookie header to use.
-export async function signIn(env: Env, deps: TestDeps, user?: { id: number; login: string; name: string }): Promise<string> {
+export async function signIn(env: Env, deps: TestDeps, user?: { id: number; login: string; name: string }, acceptTerms = true): Promise<string> {
   const stub = fakeFetch(oauthRoutes(user));
   const start = await handle(new Request(`${BASE}/api/auth/github`), env, deps);
   expect(start.status).toBe(302);
@@ -167,7 +168,12 @@ export async function signIn(env: Env, deps: TestDeps, user?: { id: number; logi
   const done = await handle(new Request(`${BASE}/api/auth/callback?code=abc&state=${state}`, { headers: { Cookie: stateCookie } }), env, { ...deps, fetch: stub.fetch });
   expect(done.status).toBe(302);
   expect(done.headers.get("Location")).toBe(`${BASE}/dev`);
-  return done.headers.get("Set-Cookie")!.split(";")[0];
+  const cookie = done.headers.get("Set-Cookie")!.split(";")[0];
+  if (acceptTerms) {
+    const accepted = await handle(api(cookie, "POST", "/api/dev/terms", { version: TERMS_VERSION }), env, deps);
+    expect(accepted.status).toBe(200);
+  }
+  return cookie;
 }
 
 export function api(cookie: string | null, method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Request {

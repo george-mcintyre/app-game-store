@@ -9,6 +9,8 @@ export interface Developer {
   slug: string;
   displayName: string;
   createdAt: string;
+  termsAcceptedVersion: string | null;
+  termsAcceptedAt: string | null;
 }
 
 export interface DeveloperSecrets {
@@ -151,6 +153,20 @@ export class Db {
 
   async updateDeveloper(id: string, slug: string, displayName: string): Promise<void> {
     await this.d1.prepare("UPDATE developers SET slug = ?, display_name = ? WHERE id = ?").bind(slug, displayName, id).run();
+  }
+
+  async acceptTerms(id: string, version: string, now: string): Promise<void> {
+    await this.d1.prepare("UPDATE developers SET terms_accepted_version = ?, terms_accepted_at = ? WHERE id = ?").bind(version, now, id).run();
+  }
+
+  // Removes the developer and, through cascades, their secrets, sessions, keys, apps, links, devices and profiles.
+  async deleteDeveloper(id: string): Promise<void> {
+    await this.d1.batch([
+      this.d1.prepare("DELETE FROM audit_log WHERE developer_id = ?").bind(id),
+      this.d1.prepare("DELETE FROM links WHERE developer_id = ?").bind(id),
+      this.d1.prepare("DELETE FROM enrolments WHERE developer_id = ?").bind(id),
+      this.d1.prepare("DELETE FROM developers WHERE id = ?").bind(id),
+    ]);
   }
 
   async secretsBlob(developerId: string): Promise<string | null> {

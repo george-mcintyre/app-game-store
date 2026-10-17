@@ -16,7 +16,7 @@ export function storeFrame(body: Raw, opts: { me?: Me | null; nav?: boolean; foo
     ? html`<a href="/dev" class="row" style="gap:8px">${avatar(opts.me.developer.displayName, `https://github.com/${opts.me.developer.githubLogin}.png?size=64`, "sm")} <span>Console</span></a>`
     : html`<a href="/dev">For developers</a>`;
   const nav = opts.nav === false ? "" : html`<nav class="store-nav"><a class="brand" href="/">${icon("logo")} ourapps</a>${right}</nav>`;
-  const footer = html`<footer class="store-footer"><span>${COPYRIGHT}</span><span>${opts.footnote ?? "Private by design. No search, no listings, no tracking."}</span></footer>`;
+  const footer = html`<footer class="store-footer"><span>${COPYRIGHT} · <a href="/terms">Terms</a></span><span>${opts.footnote ?? "Private by design. No search, no listings, no tracking."}</span></footer>`;
   return html`<div class="store fade-in">${nav}${body}${footer}</div>`;
 }
 
@@ -41,7 +41,7 @@ export async function landing(root: HTMLElement): Promise<void> {
               ${me ? html`<a class="btn lg" href="/dev">Open your console ${icon("arrow")}</a>` : html`<a class="btn lg" href="/api/auth/github">${icon("github")} Sign in with GitHub</a>`}
               <a class="btn lg secondary" href="/example">See an example: Poker Night</a>
             </div>
-            <p class="small faint mt">Free. No accounts for friends. Works with iPhone, Android and web apps.</p>
+            <p class="small faint mt">Free. No accounts for friends. Works with iPhone, Android and web apps. Credentials encrypted per account, nothing sold or tracked: <a href="/dev/guide#security">how we keep it safe</a>.</p>
           </div>
           <a class="phone" href="/example/poker-night" aria-label="Open the Poker Night example page">
             <div class="screen">

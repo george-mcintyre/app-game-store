@@ -150,6 +150,10 @@ Approve only `pending-approval` or `failed` devices and only when the developer 
 
 Apple allows 100 iPhones per developer per membership year and does not free a slot when a device is removed.
 
+## Terms
+
+A developer must accept the current terms (`/terms`) in a browser before `/api/dev/*` works for their session; API keys are unaffected because they can only be created after acceptance. `GET /api/dev/me` returns `termsVersion` and `developer.termsAcceptedVersion`. `DELETE /api/dev/me` (dashboard only, body `{"confirm": "<github login>"}`) removes the account and everything under it.
+
 ## Developer settings
 
 ```

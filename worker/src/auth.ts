@@ -11,7 +11,7 @@ const STATE_COOKIE = "oa_state";
 const SESSION_DAYS = 30;
 
 // Paths a developer slug may not take.
-export const RESERVED_SLUGS = new Set(["api", "dl", "dev", "l", "example", "assets", "robots.txt", "favicon.ico", "favicon.svg", "index.html", "agents.md", "contract.md", "llms.txt"]);
+export const RESERVED_SLUGS = new Set(["api", "dl", "dev", "l", "example", "terms", "assets", "robots.txt", "favicon.ico", "favicon.svg", "index.html", "agents.md", "contract.md", "llms.txt"]);
 
 export function parseCookies(request: Request): Record<string, string> {
   const out: Record<string, string> = {};
@@ -83,7 +83,7 @@ export async function finishLogin(request: Request, env: Env, deps: Deps): Promi
   const now = deps.now();
   let dev = await db.developerByGithubId(user.id);
   if (!dev) {
-    dev = { id: randomId(8), githubId: user.id, githubLogin: user.login, slug: await freeSlug(db, user.login), displayName: user.name?.trim() || user.login, createdAt: now.toISOString() };
+    dev = { id: randomId(8), githubId: user.id, githubLogin: user.login, slug: await freeSlug(db, user.login), displayName: user.name?.trim() || user.login, createdAt: now.toISOString(), termsAcceptedVersion: null, termsAcceptedAt: null };
     await db.insertDeveloper(dev);
   }
   const sessionId = randomId(24);
@@ -190,6 +190,11 @@ export async function requireDeveloper(request: Request, env: Env, deps: Deps): 
 
 export function requireSession(dev: AuthedDeveloper): void {
   if (dev.authVia !== "session") throw new HttpError(403, "this action needs the dashboard, not an API key");
+}
+
+// Browser sessions must have accepted the current terms; API keys were created after acceptance.
+export function requireTerms(dev: AuthedDeveloper, version: string): void {
+  if (dev.authVia === "session" && dev.termsAcceptedVersion !== version) throw new HttpError(403, "accept the terms to continue");
 }
 
 export function normaliseSlug(input: string): string {

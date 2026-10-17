@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { handle } from "../src/index.js";
+import { TERMS_VERSION } from "@my/store-shared";
 import { BASE, GH_TOKEN, api, applePem, clearDb, fakeFetch, oauthRoutes, signIn, testDeps, testEnv } from "./helpers.js";
 
 let env: Env;
@@ -71,6 +72,45 @@ describe("GitHub sign-in", () => {
   it("reports health without secrets", async () => {
     const res = await handle(new Request(`${BASE}/api/health`), env);
     expect(await res.json()).toEqual({ ok: true, oauth: true, links: true, secrets: true });
+  });
+});
+
+describe("terms", () => {
+  it("blocks the console until the current terms are accepted, but not /me or API keys", async () => {
+    const deps = testDeps();
+    const cookie = await signIn(env, deps, undefined, false);
+    const me = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, deps)).json()) as { termsVersion: string; developer: { termsAcceptedVersion: string | null } };
+    expect(me.termsVersion).toBe(TERMS_VERSION);
+    expect(me.developer.termsAcceptedVersion).toBeNull();
+    const blocked = await handle(api(cookie, "GET", "/api/dev/apps"), env, deps);
+    expect(blocked.status).toBe(403);
+    expect(((await blocked.json()) as { error: string }).error).toMatch(/accept the terms/);
+    expect((await handle(api(cookie, "POST", "/api/dev/terms", { version: "1999-01-01" }), env, deps)).status).toBe(400);
+    const ok = await handle(api(cookie, "POST", "/api/dev/terms", { version: TERMS_VERSION }), env, deps);
+    expect(((await ok.json()) as { termsAcceptedAt: string }).termsAcceptedAt).toBe("2026-10-16T10:00:00.000Z");
+    expect((await handle(api(cookie, "GET", "/api/dev/apps"), env, deps)).status).toBe(200);
+    const again = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, deps)).json()) as { developer: { termsAcceptedVersion: string } };
+    expect(again.developer.termsAcceptedVersion).toBe(TERMS_VERSION);
+    const log = (await (await handle(api(cookie, "GET", "/api/dev/audit"), env, deps)).json()) as { events: { event: string }[] };
+    expect(log.events[0].event).toBe("terms-accepted");
+  });
+
+  it("deletes the account and everything under it", async () => {
+    const deps = testDeps(fakeFetch(oauthRoutes()).fetch);
+    const cookie = await signIn(env, deps);
+    await handle(api(cookie, "PUT", "/api/dev/secrets", { githubToken: GH_TOKEN }), env, deps);
+    const { app } = (await (await handle(api(cookie, "POST", "/api/dev/apps", { name: "X", repo: "o/x" }), env, deps)).json()) as { app: { id: string } };
+    await handle(api(cookie, "POST", `/api/dev/apps/${app.id}/links`, { label: "l" }), env, deps);
+    await handle(api(cookie, "POST", "/api/dev/keys", { name: "k" }), env, deps);
+    expect((await handle(api(cookie, "DELETE", "/api/dev/me", { confirm: "wrong" }), env, deps)).status).toBe(400);
+    const gone = await handle(api(cookie, "DELETE", "/api/dev/me", { confirm: "george" }), env, deps);
+    expect(gone.status).toBe(200);
+    expect(gone.headers.get("Set-Cookie")).toMatch(/Max-Age=0/);
+    for (const table of ["developers", "developer_secrets", "sessions", "api_keys", "apps", "links", "audit_log"]) {
+      const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{ n: number }>();
+      expect(row!.n, table).toBe(0);
+    }
+    expect((await handle(api(cookie, "GET", "/api/dev/me"), env, deps)).status).toBe(401);
   });
 });
 
@@ -190,8 +230,8 @@ describe("account settings", () => {
     expect((await handle(api(b, "GET", "/api/dev/me"), env, deps)).status).toBe(401);
     const c = await signIn(env, deps);
     const log = (await (await handle(api(c, "GET", "/api/dev/audit"), env, deps)).json()) as { events: { event: string; detail: string }[] };
-    expect(log.events.map((e) => e.event)).toEqual(["sign-in", "sign-out-everywhere", "sign-in", "sign-in"]);
-    expect(log.events[1].detail).toBe("2 sessions");
+    expect(log.events.map((e) => e.event)).toEqual(["terms-accepted", "sign-in", "sign-out-everywhere", "terms-accepted", "sign-in", "terms-accepted", "sign-in"]);
+    expect(log.events[2].detail).toBe("2 sessions");
   });
 });
 

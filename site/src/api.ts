@@ -113,9 +113,10 @@ export interface SecretStatus {
 }
 
 export interface Me {
-  developer: { id: string; slug: string; displayName: string; githubLogin: string; createdAt: string };
+  developer: { id: string; slug: string; displayName: string; githubLogin: string; createdAt: string; termsAcceptedVersion: string | null; termsAcceptedAt: string | null };
   authVia: "session" | "key";
   scope: "read" | "manage";
+  termsVersion: string;
   secrets: SecretStatus;
 }
 

@@ -78,6 +78,10 @@ export async function dashboard(root: HTMLElement): Promise<void> {
               ${apps.length === 0 ? emptyState("apps", "No apps yet", "Add the first one; it takes two minutes.", html`<a class="btn mt-s" href="/dev/apps/new">Add an app</a>`) : html`<div class="list">${apps.map((a, i) => appRow(a, releases[i] ?? null))}</div>`}
             </div>
             <div class="card">
+              <h2>${icon("shield", "icon-20")} Security in one paragraph</h2>
+              <p class="small muted">Your Apple key and GitHub token are encrypted per account with keys derived from a secret that lives only in the server's secret store; API keys, build tokens and sessions are stored as keyed hashes; credential changes need you in a browser; friends' iPhone records are visible to you alone and sent only to Apple under your account. <a href="/dev/guide#security">Full description</a>, <a href="/terms">terms and data statement</a>, and recent activity under <a href="/dev/settings#security">Settings</a>.</p>
+            </div>
+            <div class="card">
               <h2>Learn and automate</h2>
               <p class="small muted">The <a href="/dev/guide#tldr">guide's TL;DR</a> lists the few things only you can do (sign in, tokens, Apple portal, approvals). Everything else an agent does with the API key and prompts on the <a href="/dev/agents">agents page</a>.</p>
             </div>
@@ -579,8 +583,14 @@ export async function settings(root: HTMLElement, note = ""): Promise<void> {
             <dt>GitHub</dt><dd>@${me.developer.githubLogin}</dd>
             <dt>Member since</dt><dd>${fmtDate(me.developer.createdAt)}</dd>
             <dt>Public page</dt><dd><a href="/${me.developer.slug}">/${me.developer.slug}</a></dd>
+            <dt>Terms</dt><dd>${me.developer.termsAcceptedVersion ? html`Version ${me.developer.termsAcceptedVersion}, accepted ${fmtDate(me.developer.termsAcceptedAt, true)}` : "not accepted"} · <a href="/terms">Read the terms and data statement</a></dd>
           </dl>
           <p class="small muted mt">Sign-in only reads your public GitHub profile. Repository access comes from the token you save below, which you control and can revoke on GitHub at any time.</p>
+          <hr />
+          <h3>Delete account</h3>
+          <p class="small muted">Removes your profile, credentials, API keys, apps, share links, device records and signing profiles at once. Installed apps keep working until their profile expires. Device registrations stay on your Apple account.</p>
+          <div class="row wrap"><input type="text" id="confirm-login" placeholder="Type ${me.developer.githubLogin} to confirm" style="flex:1;min-width:200px" /><button class="btn danger" id="delete-account" disabled>${icon("trash")} Delete my account</button></div>
+          <div id="delete-error" class="mt-s"></div>
         </div>
       </div>
 
@@ -630,6 +640,18 @@ export async function settings(root: HTMLElement, note = ""): Promise<void> {
     `,
     { sub: "Who you are to your friends, and the keys the console uses on your behalf." },
   );
+  const confirmInput = root.querySelector<HTMLInputElement>("#confirm-login")!;
+  const deleteBtn = root.querySelector<HTMLButtonElement>("#delete-account")!;
+  confirmInput.oninput = () => (deleteBtn.disabled = confirmInput.value.trim() !== me.developer.githubLogin);
+  deleteBtn.onclick = async () => {
+    if (!(await confirmAction("Delete your account and everything in it? This cannot be undone."))) return;
+    try {
+      await api("DELETE", "/api/dev/me", { confirm: confirmInput.value.trim() });
+      location.href = "/";
+    } catch (err) {
+      showError(root, err, "#delete-error");
+    }
+  };
   root.querySelector<HTMLButtonElement>("#logout-all")!.onclick = async () => {
     if (!(await confirmAction("Sign out of every browser, including this one? API keys stay valid; revoke them on the Agents page if needed."))) return;
     await api("POST", "/api/auth/logout-everywhere");

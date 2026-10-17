@@ -7,7 +7,8 @@ import { loadHistory } from "../history.js";
 import { HttpError, json } from "../http.js";
 import { verifyLink } from "../links.js";
 import { loadSecrets } from "../secrets.js";
-import { fetchUpstream, loadManifest } from "../upstream.js";
+import { fetchUpstream, loadManifest, resolveRelease } from "../upstream.js";
+import { isBundleUrl, webAppUrl } from "../webapp.js";
 
 export function appDetails(app: AppRow) {
   return {
@@ -48,7 +49,9 @@ export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Deve
   let manifest = null;
   let manifestError: string | null = null;
   try {
+    const release = await resolveRelease(env, deps, app, secrets.githubToken);
     manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
+    if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = linkId ? webAppUrl(env, linkId) : null;
     // Private release assets need the token; the browser gets signed links instead.
     if (new URL(manifest.icon).host === "api.github.com") manifest.icon = await dlUrl(env, deps, { url: manifest.icon, kind: "icon", dev: dev.id });
     manifest.screenshots = await Promise.all(
@@ -99,7 +102,9 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
 export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<Response> {
   const { app, dev } = await activeLink(env, deps, linkId);
   const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
+  const release = await resolveRelease(env, deps, app, secrets.githubToken);
   const manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
+  if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = webAppUrl(env, linkId);
   const adhoc = manifest.install.ios?.adhoc ?? null;
   return json({
     name: app.name || manifest.name,

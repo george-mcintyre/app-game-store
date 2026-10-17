@@ -40,6 +40,7 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 - Security model and rotation: `SECURITY.md`. Crypto primitives: `worker/src/crypto.ts`; credential envelopes: `worker/src/secrets.ts`; audit log: `worker/src/audit.ts`.
 - API keys and bearer auth: `worker/src/auth.ts`, `worker/src/routes/dev.ts` (`listKeys`, `createKey`, `revokeKey`, `releaseStatus`, `previewApp`).
 - Revision history (releases, tags, commit fallback, 2 minute cache): `worker/src/history.ts`; rendering: `historyBlock` in `site/src/pages/public.ts`, notes to HTML in `site/src/notes.ts`.
+- Web app hosting on `https://<linkId>.ourapps.app/`: `worker/src/webapp.ts` (host detection, zip extract with fflate, SPA fallback, caching); route `*.ourapps.app/*` in `worker/wrangler.jsonc` needs the wildcard proxied AAAA record on the zone.
 - Agent documents: `site/public/agents.md`, `site/public/llms.txt`; `CONTRACT.md` is copied to `site/public/contract.md` by the site `prebuild` script.
 - Platform and in-app browser detection: `site/src/platform.ts`. Paths: `site/src/router.ts`.
 

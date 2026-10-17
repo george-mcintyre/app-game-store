@@ -34,3 +34,6 @@
   stored hash without going through `hashMatches`.
 - `PUT /api/dev/secrets` and key management are session-only; tests that need credentials must
   sign in with a cookie, not an API key.
+- Per-link app hosts are detected by host suffix in `handle()` before any console routing;
+  they never see the session cookie logic, and `/api/*` and `/dl/*` are 404 there on purpose.
+  Local `wrangler dev` cannot exercise wildcard hosts; tests cover it with synthetic Requests.

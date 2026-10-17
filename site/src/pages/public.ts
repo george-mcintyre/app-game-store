@@ -448,9 +448,9 @@ function pwaSteps(url: string, platform: Platform): Raw {
     : html`<li>Open the page in Chrome.</li><li>Tap the three-dot menu.</li><li>Choose <b>Add to Home screen</b> or <b>Install app</b>.</li>`;
   return html`
     <div class="install-card">
-      <h3>${icon("globe", "icon-20")} Web app</h3>
-      <a class="btn block lg" href="${url}">Open the web app</a>
-      <p class="muted small mt">To keep it on your home screen:</p>
+      <h3>${icon("globe", "icon-20")} Web app, nothing to install</h3>
+      <a class="btn block lg" href="${url}" rel="noopener">Open the web app</a>
+      <p class="muted small mt">It runs in the browser at its own address. To keep it on your home screen like an app:</p>
       <ol class="steps small">${steps}</ol>
     </div>
   `;

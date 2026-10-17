@@ -50,7 +50,9 @@ and use the version's section as the release body, and fail the release when the
 missing. Write for the people who use the app. GitHub's generated "by @user in ..." and
 "Full Changelog" lines are stripped; links to GitHub appear only when the repository is
 public. A release named like "Skull 0.7.2 (build 53)" shows only the version; names that say
-more ("First table night") show as a title.
+more ("First table night") show as a title. The "What's new" section shows the latest
+release's notes and the "Updated" date is the release date; the dashboard's What's new field
+and listing edit date are used only when no release notes exist.
 
 ## 2. Listen for rebuild requests
 

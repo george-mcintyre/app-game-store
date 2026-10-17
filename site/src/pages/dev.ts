@@ -154,7 +154,7 @@ const SECTIONS: { title: string; about: string; fields: Field[] }[] = [
     about: "The text of the store page. Write like you are telling a friend what it is and why you made it.",
     fields: [
       { key: "description", label: "Description", type: "textarea", placeholder: "A quick bluffing card game for 3 to 6 people, played on your own phones around a table." },
-      { key: "whatsNew", label: "What's new", type: "textarea", placeholder: "Faster dealing, bigger buttons, a rematch option." },
+      { key: "whatsNew", label: "What's new", type: "textarea", placeholder: "Faster dealing, bigger buttons, a rematch option.", hint: "Only shown when the latest release has no notes. Release notes from CHANGELOG.md take precedence; see the guide." },
       { key: "privacySummary", label: "Privacy summary", type: "textarea", placeholder: "Stores your chosen nickname on your phone only. Game moves go through my server and are deleted when the table closes.", hint: "In your own words: what the app collects and where it goes." },
     ],
   },

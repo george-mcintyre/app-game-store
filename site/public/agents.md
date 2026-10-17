@@ -118,6 +118,7 @@ DELETE /api/dev/links/:id         -> { "ok": true }
 GET /api/public/links/:id         (no auth) -> install page data, 410 when expired or revoked, 404 when unknown
 GET /api/public/links/:id/qr.svg  (no auth) -> SVG QR code of the link
 GET /api/public/links/:id/latest  (no auth) -> { "name", "version", "ios": { "installUrl", "manifestUrl", "bundleId" } | null, "android": { "apkUrl" } | null, "pwa", "linksExpireAt" }
+                                  "pwa" is the URL to open: https://<linkId>.ourapps.app/ when the release ships web.zip, else the manifest's own URL, else null
 ```
 
 Give the developer the `url`; one link per person or group is the convention so links can be revoked one at a time.
@@ -184,6 +185,8 @@ Published as a release asset named `my-app.json`:
   }
 }
 ```
+
+`install.pwa`: a release-asset URL whose asset is named exactly `web.zip` is a bundle of the built site that the store serves at `https://<linkId>.ourapps.app/` (see contract.md for the build rules); any other https URL is opened as is.
 
 Rules: `schema` must be 1; `id` lowercase slug; `name`, `version`, `description` non-empty; `icon` https; `minPlayers` and `maxPlayers` integers of at least 1 with min <= max; `screenshots` optional list of https URLs; `install` must name all three keys, at least one not null; `ios` needs `adhoc` or `testflight`. Release-asset API URLs are fetched with the developer's GitHub token and re-served to phones through signed links; any other https URL is used as is.
 

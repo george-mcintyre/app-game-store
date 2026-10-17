@@ -107,6 +107,18 @@ more `my-store-rebuild` for them automatically. Response:
 
 `STORE_BUILD_TOKEN` is per app. Rotate it from the app's page in the dashboard.
 
+## Optional: web apps served by the store
+
+`install.pwa` is an https URL. Two meanings:
+
+- A release-asset URL whose asset is named exactly `web.zip`: a bundle of the built site that
+  the store serves at `https://<linkId>.ourapps.app/` (one origin per share link, nothing from
+  the console shared with it). Build with a relative base (`./`), `index.html` at the zip
+  root (or inside a single top-level folder), `manifest.webmanifest` with `"start_url": "./"`
+  and `"scope": "./"`, service worker registered with a relative path. Stored or deflate
+  entries only; zip at most 25 MB, any file at most 10 MB. Unknown paths get `index.html`.
+- Any other https URL, including a release asset with another name: opened as is.
+
 ## Optional: in-app updates
 
 Installed apps do not update by themselves. An app can poll

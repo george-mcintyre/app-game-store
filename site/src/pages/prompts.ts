@@ -42,6 +42,6 @@ Jobs you may be asked to do:
 
 Rules:
 - Never delete apps, links or devices unless I name them and ask.
-- Never change credentials (PUT /api/dev/secrets) unless I ask explicitly.
+- Credentials (GitHub token, Apple key) cannot be set through the API; when they are missing, tell me to add them at https://ourapps.app/dev/settings and stop.
 - Keep replies short: what you did, the exact URLs, and what needs me.`;
 }

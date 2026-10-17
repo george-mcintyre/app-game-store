@@ -234,6 +234,13 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
           <li>Copy prompt 2 into an agent that should drive the console: register apps, check releases, make share links, approve devices you confirm.</li>
         </ol>
         <p>Reference for humans and agents: <a href="/agents.md">${origin}/agents.md</a> (endpoints, request and response shapes, workflows) and <a href="/contract.md">${origin}/contract.md</a> (what a repository must publish).</p>
+        <h3>How keys and credentials are protected</h3>
+        <ul class="bullets">
+          <li>Each credential field is encrypted on its own (AES-256-GCM) under a key derived for your account from a secret that exists only in the server's secret store, never in the database.</li>
+          <li>API keys, build tokens and sign-in sessions are stored as keyed hashes. A copy of the database cannot be used to sign in or to forge a key.</li>
+          <li>API keys have a scope (read only, or manage) and an expiry. They can never create keys or change credentials; those need you in a browser.</li>
+          <li>Settings, Security shows every security event on your account and has "Sign out everywhere".</li>
+        </ul>
       `,
     },
     {

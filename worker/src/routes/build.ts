@@ -1,5 +1,6 @@
 // Routes an app repo's CI calls with its per-app build token.
-import { sha256Hex, timingSafeEqual } from "../crypto.js";
+import { masterKeys } from "../auth.js";
+import { hashMatches, tokenHash } from "../crypto.js";
 import { Db, type AppRow, type EnrolmentRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
 import { rebuildPayload, transition } from "../flow.js";
@@ -7,9 +8,13 @@ import { dispatchRebuild } from "../github.js";
 import { HttpError, bearer, json, readJson } from "../http.js";
 import { loadSecrets } from "../secrets.js";
 
-async function requireBuildToken(request: Request, app: AppRow): Promise<void> {
+// Verifies the per-app token; a token stored as a plain hash is rewritten as a keyed hash.
+async function requireBuildToken(request: Request, env: Env, app: AppRow): Promise<void> {
   const given = bearer(request);
-  if (!given || !timingSafeEqual(await sha256Hex(given), app.buildTokenHash)) throw new HttpError(401, "unauthorised");
+  if (!given) throw new HttpError(401, "unauthorised");
+  const match = await hashMatches(masterKeys(env), "build-token", given, app.buildTokenHash);
+  if (!match.ok) throw new HttpError(401, "unauthorised");
+  if (match.rewrite) await Db.from(env).rehashBuildToken(app.id, await tokenHash(masterKeys(env), "build-token", given));
 }
 
 // GET /api/build/:app/profile - the CI fetches the profile the store created.
@@ -17,7 +22,7 @@ export async function buildProfile(request: Request, env: Env, appId: string): P
   const db = Db.from(env);
   const app = await db.appById(appId);
   if (!app) throw new HttpError(404, "unknown app");
-  await requireBuildToken(request, app);
+  await requireBuildToken(request, env, app);
   const profile = await db.latestProfile(app.id);
   if (!profile) throw new HttpError(404, "no profile has been created for this app yet");
   return json({ profileName: profile.profileName, profileId: profile.profileId, uuid: profile.uuid, profileBase64: profile.profileBase64, expirationDate: profile.expirationDate });
@@ -30,7 +35,7 @@ export async function buildReady(request: Request, env: Env, deps: Deps): Promis
   const db = Db.from(env);
   const app = await db.appById(body.app);
   if (!app) throw new HttpError(404, "unknown app");
-  await requireBuildToken(request, app);
+  await requireBuildToken(request, env, app);
   if (!body.manifestUrl || !body.profileUuid) throw new HttpError(400, "app, manifestUrl and profileUuid are required");
   const built = await db.profileByUuid(app.id, body.profileUuid);
   if (!built) throw new HttpError(409, "profileUuid does not match a profile this store created");
@@ -50,7 +55,7 @@ export async function buildReady(request: Request, env: Env, deps: Deps): Promis
   if (late.length > 0) {
     const latest = await db.latestProfile(app.id);
     if (latest && latest.uuid !== body.profileUuid) {
-      const secrets = await loadSecrets(env, app.developerId);
+      const secrets = await loadSecrets(env, app.developerId, ["githubToken"]);
       await dispatchRebuild(env, deps, secrets.githubToken, app.repo, rebuildPayload(env, app, late[0], latest));
       redispatched = true;
     }

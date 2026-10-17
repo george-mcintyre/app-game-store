@@ -8,6 +8,7 @@ export interface Env {
   GOOGLE_SITE_VERIFICATION?: string;
   LINK_SECRET?: string;
   MASTER_KEY?: string;
+  MASTER_KEY_PREVIOUS?: string;
   GITHUB_OAUTH_CLIENT_ID?: string;
   GITHUB_OAUTH_CLIENT_SECRET?: string;
 }

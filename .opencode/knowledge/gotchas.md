@@ -28,3 +28,9 @@
 - Desktop Chrome will not open a window narrower than about 500 px, so headless screenshots
   at phone widths lie; use `npx playwright screenshot --channel chrome --viewport-size=390,844`.
 - `site/public/contract.md` is generated (gitignored); edit `CONTRACT.md` at the root.
+- Credentials: one ciphertext per field (`worker/src/secrets.ts`, format 2 with `kid`). Token
+  hashes carry the `h2:` prefix and are peppered from `MASTER_KEY`; verification also tries
+  `MASTER_KEY_PREVIOUS` and plain SHA-256, rewriting on match. Never compare a token against a
+  stored hash without going through `hashMatches`.
+- `PUT /api/dev/secrets` and key management are session-only; tests that need credentials must
+  sign in with a cookie, not an API key.

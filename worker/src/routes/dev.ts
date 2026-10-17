@@ -1,11 +1,12 @@
 // Developer dashboard routes, all behind the session cookie.
-import { RESERVED_SLUGS, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
-import { randomId, sha256Hex } from "../crypto.js";
-import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type LinkRow } from "../db.js";
+import { audit } from "../audit.js";
+import { RESERVED_SLUGS, apiKeyHash, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
+import { randomId, tokenHash, validateAppleKey } from "../crypto.js";
+import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
 import { approveEnrolment, dlUrl, transition } from "../flow.js";
 import { HttpError, httpsUrlOrEmpty, json, readJson, text } from "../http.js";
-import { appleReady, loadSecrets, saveSecrets } from "../secrets.js";
+import { SECRET_FIELDS, appleReady, loadSecrets, saveSecrets, secretsSummary } from "../secrets.js";
 import { fetchManifest, loadManifest, resolveRelease } from "../upstream.js";
 import { buildLinkPage } from "./public.js";
 
@@ -13,6 +14,10 @@ type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" |
   screenshots?: unknown;
   showOnPage?: unknown;
 };
+
+function buildTokenHash(env: Env, token: string): Promise<string> {
+  return tokenHash(masterKeys(env), "build-token", token);
+}
 
 function publicApp(app: AppRow) {
   const { buildTokenHash: _hash, ...rest } = app;
@@ -63,8 +68,8 @@ function secretStatus(s: DeveloperSecrets) {
 
 // GET /api/dev/me
 export async function me(env: Env, dev: AuthedDeveloper): Promise<Response> {
-  const { authVia, ...developer } = dev;
-  return json({ developer, authVia, secrets: secretStatus(await loadSecrets(env, dev.id)) });
+  const { authVia, scope, keyId: _k, ...developer } = dev;
+  return json({ developer, authVia, scope, secrets: secretStatus(await secretsSummary(env, dev.id)) });
 }
 
 // PUT /api/dev/me
@@ -81,32 +86,44 @@ export async function updateMe(request: Request, env: Env, dev: Developer): Prom
   return json({ developer: { ...dev, slug, displayName } });
 }
 
-// PUT /api/dev/secrets - blank fields keep their current value; "-" clears one.
-export async function updateSecrets(request: Request, env: Env, deps: Deps, dev: Developer): Promise<Response> {
+// PUT /api/dev/secrets - dashboard only. Blank fields keep their current value; "-" clears one.
+export async function updateSecrets(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper): Promise<Response> {
+  requireSession(dev);
   const body = await readJson<Partial<DeveloperSecrets>>(request);
   const current = await loadSecrets(env, dev.id);
   const next: DeveloperSecrets = { ...current, savedAt: { ...current.savedAt } };
   const now = deps.now().toISOString();
-  for (const key of ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken"] as const) {
+  const saved: string[] = [];
+  const removed: string[] = [];
+  for (const key of SECRET_FIELDS) {
     const value = body[key];
     if (typeof value !== "string" || value.trim() === "") continue;
     if (value.trim() === "-") {
       delete next[key];
       delete next.savedAt![key];
+      removed.push(key);
     } else {
       next[key] = value.trim();
       next.savedAt![key] = now;
+      saved.push(key);
     }
   }
-  if (next.applePrivateKey && !next.applePrivateKey.includes("PRIVATE KEY")) throw new HttpError(400, "the Apple private key must be the .p8 file contents");
+  if (saved.includes("applePrivateKey") && !(await validateAppleKey(next.applePrivateKey!))) {
+    throw new HttpError(400, "the Apple private key must be the contents of the .p8 file from App Store Connect (an EC P-256 key)");
+  }
+  if (saved.includes("githubToken") && !/^(github_pat_|ghp_|gho_)[A-Za-z0-9_]{20,}$/.test(next.githubToken!)) {
+    throw new HttpError(400, "that does not look like a GitHub token (expected github_pat_... or ghp_...)");
+  }
   await saveSecrets(env, dev.id, next, deps.now());
+  if (saved.length > 0) await audit(request, env, deps, dev.id, "credentials-saved", saved.join(", "));
+  if (removed.length > 0) await audit(request, env, deps, dev.id, "credentials-removed", removed.join(", "));
   return json({ secrets: secretStatus(next) });
 }
 
 // GET /api/dev/apps - apps without a dashboard icon get the latest release icon, best effort.
 export async function listApps(env: Env, deps: Deps, dev: Developer): Promise<Response> {
   const apps = await Db.from(env).appsByDeveloper(dev.id);
-  const secrets = await loadSecrets(env, dev.id);
+  const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
   const out = await Promise.all(
     apps.map(async (app) => {
       let releaseIcon = "";
@@ -146,7 +163,7 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
     manifestUrl: "",
     profileName: "",
     showOnPage: false,
-    buildTokenHash: await sha256Hex(buildToken),
+    buildTokenHash: await buildTokenHash(env, buildToken),
     createdAt: now,
     updatedAt: now,
   };
@@ -173,21 +190,23 @@ export async function updateApp(request: Request, env: Env, deps: Deps, dev: Dev
 }
 
 // DELETE /api/dev/apps/:id
-export async function deleteApp(env: Env, dev: Developer, id: string): Promise<Response> {
+export async function deleteApp(request: Request, env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
-  await ownedApp(db, dev, id);
+  const app = await ownedApp(db, dev, id);
   await db.deleteApp(id);
+  await audit(request, env, deps, dev.id, "app-deleted", app.name);
   return json({ ok: true });
 }
 
 // POST /api/dev/apps/:id/build-token - rotate the per-app token.
-export async function rotateBuildToken(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+export async function rotateBuildToken(request: Request, env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
   const buildToken = randomId(24);
-  app.buildTokenHash = await sha256Hex(buildToken);
+  app.buildTokenHash = await buildTokenHash(env, buildToken);
   app.updatedAt = deps.now().toISOString();
   await db.updateApp(app);
+  await audit(request, env, deps, dev.id, "build-token-rotated", app.name);
   return json({ buildToken });
 }
 
@@ -223,20 +242,22 @@ export async function listDevices(env: Env, dev: Developer): Promise<Response> {
 }
 
 // POST /api/dev/devices/:id/approve
-export async function approveDevice(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+export async function approveDevice(request: Request, env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const record = await db.enrolmentById(id);
   if (!record || record.developerId !== dev.id) throw new HttpError(404, "unknown device");
   const app = await ownedApp(db, dev, record.appId);
   const profile = await approveEnrolment(env, deps, app, await loadSecrets(env, dev.id), record);
+  await audit(request, env, deps, dev.id, "device-approved", `${record.name} for ${app.name}`);
   return json({ enrolment: record, profileUuid: profile.uuid });
 }
 
 // POST /api/dev/devices/:id/reject
-export async function rejectDevice(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+export async function rejectDevice(request: Request, env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
   const record = await Db.from(env).enrolmentById(id);
   if (!record || record.developerId !== dev.id) throw new HttpError(404, "unknown device");
   await transition(env, deps, record, "rejected", { message: "The developer declined this device." });
+  await audit(request, env, deps, dev.id, "device-rejected", record.name);
   return json({ enrolment: record });
 }
 
@@ -293,29 +314,55 @@ export async function listKeys(env: Env, dev: Developer): Promise<Response> {
   return json({ keys: (await Db.from(env).apiKeysByDeveloper(dev.id)).map(publicKey) });
 }
 
+const MAX_KEY_DAYS = 365;
+
 // POST /api/dev/keys - dashboard only; the key is returned once.
 export async function createKey(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper): Promise<Response> {
   requireSession(dev);
-  const body = await readJson<{ name?: string }>(request);
+  const body = await readJson<{ name?: string; scope?: string; expiresInDays?: number | null }>(request);
+  const scope: KeyScope = body.scope === "read" ? "read" : "manage";
+  let expiresAt: string | null = null;
+  if (body.expiresInDays !== null && body.expiresInDays !== undefined) {
+    const days = Number(body.expiresInDays);
+    if (!Number.isInteger(days) || days < 1 || days > MAX_KEY_DAYS) throw new HttpError(400, `expiresInDays must be between 1 and ${MAX_KEY_DAYS}, or null for no expiry`);
+    expiresAt = new Date(deps.now().getTime() + days * 86_400_000).toISOString();
+  }
   const key = newApiKey();
   const row: ApiKeyRow = {
     id: randomId(8),
     developerId: dev.id,
     name: text(body.name, 60) || "Agent",
     prefix: key.slice(0, 11),
-    keyHash: await sha256Hex(key),
+    keyHash: await apiKeyHash(env, key),
+    scope,
     createdAt: deps.now().toISOString(),
+    expiresAt,
     lastUsedAt: null,
     revokedAt: null,
   };
   await Db.from(env).insertApiKey(row);
+  await audit(request, env, deps, dev.id, "api-key-created", `${row.name} (${scope}${expiresAt ? `, expires ${expiresAt.slice(0, 10)}` : ", no expiry"})`);
   return json({ key, apiKey: publicKey(row) }, 201);
 }
 
 // DELETE /api/dev/keys/:id - dashboard only.
-export async function revokeKey(env: Env, deps: Deps, dev: AuthedDeveloper, id: string): Promise<Response> {
+export async function revokeKey(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper, id: string): Promise<Response> {
   requireSession(dev);
   const ok = await Db.from(env).revokeApiKey(id, dev.id, deps.now().toISOString());
   if (!ok) throw new HttpError(404, "unknown key");
+  await audit(request, env, deps, dev.id, "api-key-revoked", id);
   return json({ ok: true });
+}
+
+// POST /api/dev/keys/revoke-all - dashboard only.
+export async function revokeAllKeys(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper): Promise<Response> {
+  requireSession(dev);
+  const count = await Db.from(env).revokeAllApiKeys(dev.id, deps.now().toISOString());
+  await audit(request, env, deps, dev.id, "api-keys-revoked-all", `${count} key${count === 1 ? "" : "s"}`);
+  return json({ ok: true, revoked: count });
+}
+
+// GET /api/dev/audit - recent security events for this developer.
+export async function auditLog(env: Env, dev: Developer): Promise<Response> {
+  return json({ events: await Db.from(env).auditFor(dev.id, 50) });
 }

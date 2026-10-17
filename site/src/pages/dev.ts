@@ -1,4 +1,4 @@
-import { ApiError, api, type ApiKey, type DevApp, type Enrolment, type Me, type ReleaseStatus, type ShareLink } from "../api.js";
+import { ApiError, api, type ApiKey, type AuditEvent, type DevApp, type Enrolment, type Me, type ReleaseStatus, type ShareLink } from "../api.js";
 import { html, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
@@ -539,9 +539,25 @@ const SECRET_GROUPS: Record<string, string[]> = {
   githubToken: ["githubToken"],
 };
 
+const EVENT_LABELS: Record<string, string> = {
+  "sign-in": "Signed in",
+  "sign-out": "Signed out",
+  "sign-out-everywhere": "Signed out everywhere",
+  "credentials-saved": "Credentials saved",
+  "credentials-removed": "Credentials removed",
+  "api-key-created": "API key created",
+  "api-key-revoked": "API key revoked",
+  "api-keys-revoked-all": "All API keys revoked",
+  "build-token-rotated": "Build token rotated",
+  "device-approved": "Device approved",
+  "device-rejected": "Device rejected",
+  "app-deleted": "App deleted",
+};
+
 export async function settings(root: HTMLElement, note = ""): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
+  const { events } = await api<{ events: AuditEvent[] }>("GET", "/api/dev/audit").catch(() => ({ events: [] as AuditEvent[] }));
   mountShell(
     root,
     me,
@@ -600,10 +616,24 @@ export async function settings(root: HTMLElement, note = ""): Promise<void> {
         <div id="secrets-error"></div>
         <div class="form-actions"><button class="btn" type="submit">Save credentials</button></div>
       </form>
+
+      <div class="card mt">
+        <a id="security"></a>
+        <div class="row wrap"><h2 class="grow">Security</h2><button class="btn sm danger" id="logout-all">Sign out everywhere</button></div>
+        <p class="small muted">How your credentials are kept: each field is encrypted on its own with AES-256-GCM under a key derived for your account alone; the master secret lives only in the server's secret store, never in the database or in code. API keys, build tokens and sessions are stored as keyed hashes, so a copy of the database cannot be used to sign in. Credentials can only be changed from this page with a fresh browser session, never with an API key.</p>
+        <h3 class="mt">Recent activity</h3>
+        ${events.length === 0 ? html`<p class="small muted">Nothing recorded yet.</p>` : html`<table class="table small mt-s">${events.slice(0, 25).map((e) => html`<tr><td style="white-space:nowrap">${fmtDate(e.createdAt, true)}</td><td><b>${EVENT_LABELS[e.event] ?? e.event}</b>${e.detail ? html` <span class="muted">${e.detail}</span>` : ""}</td><td class="faint">${e.country ?? ""}</td></tr>`)}</table>`}
+        <p class="tiny faint mt-s">Anything here you do not recognise: sign out everywhere, revoke your API keys on the Agents page, and replace the GitHub token and Apple key at their sources.</p>
+      </div>
     `,
     { sub: "Who you are to your friends, and the keys the console uses on your behalf." },
   );
-  if (location.hash === "#credentials") root.querySelector("#credentials")?.scrollIntoView();
+  root.querySelector<HTMLButtonElement>("#logout-all")!.onclick = async () => {
+    if (!(await confirmAction("Sign out of every browser, including this one? API keys stay valid; revoke them on the Agents page if needed."))) return;
+    await api("POST", "/api/auth/logout-everywhere");
+    location.href = "/";
+  };
+  if (location.hash === "#credentials" || location.hash === "#security") root.querySelector(location.hash)?.scrollIntoView();
 
   const meForm = root.querySelector<HTMLFormElement>("#me-form")!;
   meForm.onsubmit = async (e) => {
@@ -668,13 +698,19 @@ export async function agents(root: HTMLElement): Promise<void> {
       <div class="grid-2 mt">
         <div class="card">
           <h2>API keys</h2>
-          <p class="small muted">A key acts as you, except it cannot create or revoke keys. Make one per agent or machine so you can revoke them one at a time.</p>
-          <form id="key-form" class="row wrap mt"><input type="text" name="name" placeholder="Name, for example laptop agent" maxlength="60" style="flex:1;min-width:180px" /><button class="btn" type="submit">${icon("plus")} Create key</button></form>
+          <p class="small muted">A key acts as you within its scope. It can never create or revoke keys or change credentials. Make one per agent or machine so you can revoke them one at a time.</p>
+          <form id="key-form" class="mt">
+            <div class="field"><label>Name</label><input type="text" name="name" placeholder="laptop agent" maxlength="60" /></div>
+            <div class="row wrap">
+              <div class="field grow"><label>Scope</label><select name="scope"><option value="manage">Manage: create apps, links, approve devices</option><option value="read">Read only: list and check</option></select></div>
+              <div class="field grow"><label>Expires</label><select name="expiresInDays"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">1 year</option><option value="">Never</option></select></div>
+            </div>
+            <button class="btn" type="submit">${icon("plus")} Create key</button>
+          </form>
           <div id="error"></div>
           <div id="new-key"></div>
-          <div class="mt">
-            ${keys.length === 0 ? html`<p class="small muted">No keys yet.</p>` : keys.map((k) => html`<div class="key-row"><div><b>${k.name}</b> <code>${k.prefix}...</code><div class="tiny faint">Created ${fmtDate(k.createdAt)}${k.lastUsedAt ? `, last used ${fmtDate(k.lastUsedAt, true)}` : ", never used"}</div></div><button class="btn sm danger" data-revoke-key="${k.id}">Revoke</button></div>`)}
-          </div>
+          <div class="mt" id="key-list">${keyList(keys)}</div>
+          ${keys.length > 1 ? html`<button class="btn sm ghost mt" id="revoke-all">Revoke all keys</button>` : ""}
         </div>
         <div class="card">
           <h2>Quick reference</h2>
@@ -713,8 +749,10 @@ export async function agents(root: HTMLElement): Promise<void> {
   const form = root.querySelector<HTMLFormElement>("#key-form")!;
   form.onsubmit = async (e) => {
     e.preventDefault();
+    const fd = new FormData(form);
+    const days = String(fd.get("expiresInDays") ?? "");
     try {
-      const res = await api<{ key: string; apiKey: ApiKey }>("POST", "/api/dev/keys", { name: new FormData(form).get("name") });
+      const res = await api<{ key: string; apiKey: ApiKey }>("POST", "/api/dev/keys", { name: fd.get("name"), scope: fd.get("scope"), expiresInDays: days === "" ? null : Number(days) });
       const box = root.querySelector<HTMLElement>("#new-key")!;
       box.innerHTML = html`<div class="once mt"><b>${icon("lock", "icon-16")} Key for "${res.apiKey.name}", shown once</b>${copyRow(res.key)}<p class="small mt-s">Store it where the agent runs, for example <code>export OURAPPS_API_KEY=${res.key}</code>. It cannot be shown again.</p></div>`.html;
       wireCopy(box);
@@ -724,6 +762,28 @@ export async function agents(root: HTMLElement): Promise<void> {
       showError(root, err);
     }
   };
+  wireKeyButtons(root);
+  root.querySelector<HTMLButtonElement>("#revoke-all")?.addEventListener("click", async () => {
+    if (!(await confirmAction("Revoke every API key? Every agent using one stops working at once."))) return;
+    await api("POST", "/api/dev/keys/revoke-all");
+    toast("All keys revoked");
+    await agents(root);
+  });
+}
+
+function keyList(keys: ApiKey[]): Raw {
+  if (keys.length === 0) return html`<p class="small muted">No keys yet.</p>`;
+  return html`${keys.map((k) => html`
+    <div class="key-row">
+      <div>
+        <b>${k.name}</b> <code>${k.prefix}...</code> ${pill(k.scope === "read" ? "read only" : "manage", k.scope === "read" ? "" : "accent")}
+        <div class="tiny faint">Created ${fmtDate(k.createdAt)}${k.expiresAt ? `, expires ${fmtDate(k.expiresAt)}` : ", no expiry"}${k.lastUsedAt ? `, last used ${fmtDate(k.lastUsedAt, true)}` : ", never used"}</div>
+      </div>
+      <button class="btn sm danger" data-revoke-key="${k.id}">Revoke</button>
+    </div>`)}`;
+}
+
+function wireKeyButtons(root: HTMLElement): void {
   root.querySelectorAll<HTMLButtonElement>("[data-revoke-key]").forEach((b) => (b.onclick = async () => {
     if (!(await confirmAction("Revoke this key? Anything using it stops working at once."))) return;
     await api("DELETE", `/api/dev/keys/${b.dataset.revokeKey}`);
@@ -734,14 +794,10 @@ export async function agents(root: HTMLElement): Promise<void> {
 
 async function refreshKeys(root: HTMLElement): Promise<void> {
   const { keys } = await api<{ keys: ApiKey[] }>("GET", "/api/dev/keys");
-  const rows = root.querySelector<HTMLElement>("#key-form")!.parentElement!.querySelector<HTMLElement>(".mt:last-of-type");
+  const rows = root.querySelector<HTMLElement>("#key-list");
   if (!rows) return;
-  rows.innerHTML = keys.length === 0 ? `<p class="small muted">No keys yet.</p>` : keys.map((k) => html`<div class="key-row"><div><b>${k.name}</b> <code>${k.prefix}...</code><div class="tiny faint">Created ${fmtDate(k.createdAt)}</div></div><button class="btn sm danger" data-revoke-key="${k.id}">Revoke</button></div>`.html).join("");
-  rows.querySelectorAll<HTMLButtonElement>("[data-revoke-key]").forEach((b) => (b.onclick = async () => {
-    if (!confirm("Revoke this key? Anything using it stops working at once.")) return;
-    await api("DELETE", `/api/dev/keys/${b.dataset.revokeKey}`);
-    await agents(root);
-  }));
+  rows.innerHTML = keyList(keys).html;
+  wireKeyButtons(root);
 }
 
 export { raw, wireImages, copyText, ApiError };

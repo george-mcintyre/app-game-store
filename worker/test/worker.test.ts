@@ -350,6 +350,21 @@ describe("API keys and agent endpoints", () => {
     expect(missing.errors[0]).toMatch(/GitHub token/);
   });
 
+  it("tells an installed app what the latest version is, with fresh install links", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const res = await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, deps);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { name: string; version: string; ios: { installUrl: string; bundleId: string }; android: { apkUrl: string }; pwa: null; linksExpireAt: string };
+    expect(body).toMatchObject({ name: "Skull", version: "0.1.0", pwa: null, linksExpireAt: "2026-10-16T11:00:00.000Z" });
+    expect(body.ios.installUrl).toMatch(new RegExp(`^itms-services://\\?action=download-manifest&url=${encodeURIComponent(BASE)}%2Fdl%2F`));
+    expect(body.ios.bundleId).toBe("com.example.skull");
+    expect(body.android.apkUrl).toMatch(new RegExp(`^${BASE}/dl/`));
+    expect(await (await handle(new Request(body.android.apkUrl), env, deps)).text()).toBe("APKBYTES");
+    await handle(api(cookie, "POST", `/api/dev/links/${linkId}/revoke`), env, deps);
+    expect((await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, deps)).status).toBe(410);
+  });
+
   it("previews the install page and serves a QR for active links", async () => {
     const { appId, linkId } = await createSkull(env, deps, cookie);
     const preview = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/preview`), env, deps)).json()) as { preview: boolean; linkId: null; app: { name: string }; release: { version: string } | null };

@@ -107,10 +107,20 @@ more `my-store-rebuild` for them automatically. Response:
 
 `STORE_BUILD_TOKEN` is per app. Rotate it from the app's page in the dashboard.
 
+## Optional: in-app updates
+
+Installed apps do not update by themselves. An app can poll
+`GET https://ourapps.app/api/public/links/<linkId>/latest` (any active share link; a dedicated
+"In-app updates" link is the convention), compare `version` with its own, and open
+`ios.installUrl` or `android.apkUrl`. The links inside expire after one hour. Bump
+`versionCode` / `CFBundleVersion` on every release and keep the Android signing key stable.
+
 ## Limits to design around
 
-- Apple allows 100 iPhones per membership year; slots free only at renewal.
+- Apple allows 100 iPhones per membership year across all of the developer's apps; slots free only at renewal.
 - Ad Hoc builds stop launching when the profile expires (one year); re-sign and publish a
   new release before then. The store shows the profile expiry on the app page.
 - macOS GitHub Actions minutes cost ten times Linux minutes against the free allowance;
   keep the iOS job lean or document a local Xcode signing path.
+
+Copyright Level N Ltd 2026.

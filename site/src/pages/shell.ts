@@ -3,7 +3,7 @@ import { ApiError, whoAmI, type Me } from "../api.js";
 import { html, mount, type Raw } from "../html.js";
 import { setTheme } from "../theme.js";
 import { avatar, icon, wireCopy, wireImages } from "../ui.js";
-import { storeFrame } from "./public.js";
+import { COPYRIGHT, storeFrame } from "./public.js";
 
 const NAV: { href: string; label: string; icon: string; match: (p: string) => boolean }[] = [
   { href: "/dev", label: "Overview", icon: "home", match: (p) => p === "/dev" },
@@ -60,6 +60,7 @@ export function shell(me: Me, title: string, body: Raw, opts: { sub?: string; ac
           ${opts.crumbs ? html`<div class="crumbs">${opts.crumbs}</div>` : ""}
           <div class="page-head"><div><h1>${title}</h1>${opts.sub ? html`<p>${opts.sub}</p>` : ""}</div>${opts.actions ?? ""}</div>
           ${body}
+          <footer class="console-footer">${COPYRIGHT}</footer>
         </main>
       </div>
     </div>

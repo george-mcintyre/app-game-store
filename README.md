@@ -78,8 +78,11 @@ links, and is marked noindex.
 
 ## Limits you must know
 
-- Apple registers at most 100 iPhones per developer per membership year. Removing a
-  device does not free the slot until renewal. Approve devices for people, not for tests.
+- Apple registers at most 100 iPhones per developer per membership year, across all of
+  that developer's apps. Removing a device does not free the slot until renewal. Approve
+  devices for people, not for tests. Android and web apps have no device limit.
+- Nothing auto-updates. Friends tap Update; an app can offer it by polling
+  `/api/public/links/<id>/latest` (see the guide, "Auto-update").
 - Ad Hoc builds stop launching when the provisioning profile expires, one year after it is
   created. Before that date, rebuild and publish a new release; friends install the update
   from the same link. The app page in the dashboard shows the current expiry.
@@ -114,3 +117,5 @@ npm run build -w site && npx wrangler deploy
 
 `PUBLIC_ORIGIN` in `wrangler.jsonc` must match the deployed host; change it when the
 custom domain is attached.
+
+Copyright Level N Ltd 2026.

@@ -8,12 +8,15 @@ import { setTheme } from "../theme.js";
 import { appIcon, avatar, callout, copyRow, icon, toast, wireCopy, wireImages } from "../ui.js";
 
 // Shared frame for every store-themed page.
-export function storeFrame(body: Raw, opts: { me?: Me | null; nav?: boolean } = {}): Raw {
+export const COPYRIGHT = "Copyright Level N Ltd 2026";
+
+export function storeFrame(body: Raw, opts: { me?: Me | null; nav?: boolean; footnote?: string } = {}): Raw {
   const right = opts.me
     ? html`<a href="/dev" class="row" style="gap:8px">${avatar(opts.me.developer.displayName, `https://github.com/${opts.me.developer.githubLogin}.png?size=64`, "sm")} <span>Console</span></a>`
     : html`<a href="/dev">For developers</a>`;
   const nav = opts.nav === false ? "" : html`<nav class="store-nav"><a class="brand" href="/">${icon("logo")} ourapps</a>${right}</nav>`;
-  return html`<div class="store fade-in">${nav}${body}</div>`;
+  const footer = html`<footer class="store-footer"><span>${COPYRIGHT}</span><span>${opts.footnote ?? "Private by design. No search, no listings, no tracking."}</span></footer>`;
+  return html`<div class="store fade-in">${nav}${body}${footer}</div>`;
 }
 
 function finish(root: HTMLElement): void {
@@ -30,20 +33,32 @@ export async function landing(root: HTMLElement): Promise<void> {
       html`
         <section class="hero">
           <div>
-            <h1>Apps we build for the people we know.</h1>
-            <p class="lead">Not everything belongs in an app store. ourapps is the private way to put something you built onto your friends' and family's phones: send a link, they tap it, it lands on their home screen.</p>
+            <span class="pill accent">${icon("bot", "icon-16")} Built with AI agents, shared with friends</span>
+            <h1 style="margin-top:14px">Agentic programming with AI is enabling us to build apps for the people we know.</h1>
+            <p class="lead">A coding agent and an evening now produce a real app for your poker table, your family, your club. Not every app belongs in an app store. ourapps is how yours gets onto their phones: send a link, they tap it, it lands on their home screen.</p>
             <div class="ctas">
               ${me ? html`<a class="btn lg" href="/dev">Open your console ${icon("arrow")}</a>` : html`<a class="btn lg" href="/api/auth/github">${icon("github")} Sign in with GitHub</a>`}
-              <a class="btn lg secondary" href="#how">How it works</a>
+              <a class="btn lg secondary" href="/example">See an example: Poker Night</a>
             </div>
             <p class="small faint mt">Free. No accounts for friends. Works with iPhone, Android and web apps.</p>
           </div>
-          <div class="phone" aria-hidden="true">
+          <a class="phone" href="/example/poker-night" aria-label="Open the Poker Night example page">
             <div class="screen">
-              <div class="mini-head">${appIcon("Skull", null, "md")}<div><b>Skull</b><span>Bluff your friends</span><div class="mini-get"></div></div></div>
-              <div class="mini-shot" style="background:linear-gradient(135deg,hsl(262 80% 60%),hsl(200 85% 50%))"></div>
+              <div class="mini-head">${appIcon("Poker Night", null, "md")}<div><b>Poker Night</b><span>Thursday table, house rules included</span><div class="mini-get"></div></div></div>
+              <div class="mini-shot" style="background:linear-gradient(135deg,hsl(150 60% 22%),hsl(160 55% 38%))"></div>
               <div class="mini-line"></div><div class="mini-line"></div><div class="mini-line short"></div>
             </div>
+          </a>
+        </section>
+
+        <section class="card pad-l" style="margin-top:4px">
+          <div class="row wrap top" style="gap:20px">
+            <div style="flex:1 1 300px">
+              <span class="pill">Worked example</span>
+              <h2 style="margin-top:8px">Poker Night: an app for eight people</h2>
+              <p class="muted">Just the three options your table uses, your house rules written the way you say them, a page of help for the friend who has never played, and your own photos on the felt. Built in an evening with an agent, installed from one link.</p>
+            </div>
+            <div class="stack" style="flex:0 0 auto"><a class="btn" href="/example">Read the story ${icon("arrow")}</a><a class="btn secondary" href="/example/poker-night">See the install page</a></div>
           </div>
         </section>
 
@@ -65,7 +80,6 @@ export async function landing(root: HTMLElement): Promise<void> {
             <a class="btn secondary" href="/agents.md">Read agents.md ${icon("external")}</a>
           </div>
         </section>
-        <footer class="store-footer"><span>ourapps</span><span>Private by design. No search, no listings, no tracking.</span></footer>
       `,
       { me },
     ),
@@ -153,6 +167,7 @@ interface InstallOpts {
   me: Me | null;
   pageUrl: string;
   preview?: boolean;
+  example?: boolean;
 }
 
 export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOpts): void {
@@ -186,8 +201,9 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     root,
     storeFrame(
       html`
+        ${opts.example ? html`<div class="owner-bar"><span class="pill">Example</span> This is the page a friend would get for an imaginary app. Nothing installs. <a href="/example">Why Poker Night</a> <a href="/dev">Build yours</a></div>` : ""}
         ${opts.preview ? html`<div class="owner-bar"><span class="pill">Preview</span> This is how the install page looks to a friend. Install buttons are shown but the share link does not exist yet. <a href="/dev/apps/${app.id}">Back to the app</a></div>` : ""}
-        ${owner && !opts.preview ? html`<div class="owner-bar"><span class="pill">You</span> You are the developer of this app. <a href="/dev/apps/${app.id}">Edit</a> <a href="/dev/apps/${app.id}/links">Links</a> <a href="/dev/devices">Devices</a></div>` : ""}
+        ${owner && !opts.preview && !opts.example ? html`<div class="owner-bar"><span class="pill">You</span> You are the developer of this app. <a href="/dev/apps/${app.id}">Edit</a> <a href="/dev/apps/${app.id}/links">Links</a> <a href="/dev/devices">Devices</a></div>` : ""}
         <header class="product">
           ${appIcon(name, icon0, "xl")}
           <div>
@@ -235,12 +251,17 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
             </div>
           </div>
         </section>
-        <footer class="store-footer"><span>ourapps</span><span>${name} is shared privately by ${data.developer.displayName}. Not from the App Store or Google Play.</span></footer>
       `,
-      { me: opts.me, nav: true },
+      { me: opts.me, nav: true, footnote: `${name} is shared privately by ${data.developer.displayName}. Not from the App Store or Google Play.` },
     ),
   );
   finish(root);
+  if (opts.example) {
+    root.querySelectorAll<HTMLAnchorElement>("#cta a, #install-area a").forEach((a) => a.addEventListener("click", (e) => {
+      e.preventDefault();
+      toast("Example only: nothing to install");
+    }));
+  }
 
   const about = root.querySelector<HTMLElement>("#about")!;
   const more = root.querySelector<HTMLButtonElement>("#more")!;
@@ -263,7 +284,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   }));
   const form = root.querySelector<HTMLFormElement>("#enrol-form");
   if (form && data.linkId) form.onsubmit = (e) => startEnrolment(e, data.linkId!, form);
-  if (form && !data.linkId) form.onsubmit = (e) => { e.preventDefault(); toast("Preview only: create a share link to try this"); };
+  if (form && !data.linkId) form.onsubmit = (e) => { e.preventDefault(); toast(opts.example ? "Example only: nothing to install" : "Preview only: create a share link to try this"); };
 }
 
 function compat(data: LinkPage): string {

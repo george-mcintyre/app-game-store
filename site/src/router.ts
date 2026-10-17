@@ -15,6 +15,8 @@ export type Route =
   | { page: "settings" }
   | { page: "guide" }
   | { page: "agents" }
+  | { page: "example" }
+  | { page: "example-app" }
   | { page: "not-found" };
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -38,6 +40,11 @@ export function matchRoute(pathname: string): Route {
     if (parts[1] === "settings" && parts.length === 2) return { page: "settings" };
     if (parts[1] === "guide" && parts.length === 2) return { page: "guide" };
     if (parts[1] === "agents" && parts.length === 2) return { page: "agents" };
+    return { page: "not-found" };
+  }
+  if (parts[0] === "example") {
+    if (parts.length === 1) return { page: "example" };
+    if (parts.length === 2 && parts[1] === "poker-night") return { page: "example-app" };
     return { page: "not-found" };
   }
   if (parts.length === 1 && SLUG.test(parts[0])) return { page: "dev-page", slug: parts[0] };

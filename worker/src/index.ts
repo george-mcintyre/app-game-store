@@ -4,7 +4,7 @@ import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
 import { enrolCallback, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
-import { devPage, linkPage, linkQr, serveArtefact } from "./routes/public.js";
+import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
 
 // Sent on every response so browsers and scanners see a locked-down site.
 export const SECURITY_HEADERS: Record<string, string> = {
@@ -63,6 +63,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     if (p[1] === "dev" && p.length === 3 && m === "GET") return devPage(env, p[2]);
     if (p[1] === "links" && p.length === 3 && m === "GET") return linkPage(env, deps, p[2]);
     if (p[1] === "links" && p.length === 4 && p[3] === "qr.svg" && m === "GET") return linkQr(env, deps, p[2]);
+    if (p[1] === "links" && p.length === 4 && p[3] === "latest" && m === "GET") return linkLatest(env, deps, p[2]);
   }
 
   if (p[0] === "enrol") {

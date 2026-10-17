@@ -92,6 +92,22 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
   return json(await buildLinkPage(env, deps, app, dev, link.id));
 }
 
+// GET /api/public/links/:id/latest - what an installed app polls to offer an update.
+export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<Response> {
+  const { app, dev } = await activeLink(env, deps, linkId);
+  const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
+  const manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
+  const adhoc = manifest.install.ios?.adhoc ?? null;
+  return json({
+    name: app.name || manifest.name,
+    version: manifest.version,
+    ios: adhoc ? { installUrl: `itms-services://?action=download-manifest&url=${encodeURIComponent(adhoc)}`, manifestUrl: adhoc, bundleId: manifest.install.ios!.bundleId } : null,
+    android: manifest.install.android ? { apkUrl: manifest.install.android.apk } : null,
+    pwa: manifest.install.pwa,
+    linksExpireAt: new Date((Math.floor(deps.now().getTime() / 1000) + 60 * 60) * 1000).toISOString(),
+  });
+}
+
 // GET /api/public/links/:id/qr.svg
 export async function linkQr(env: Env, deps: Deps, linkId: string): Promise<Response> {
   await activeLink(env, deps, linkId);

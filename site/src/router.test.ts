@@ -17,6 +17,8 @@ describe("matchRoute", () => {
     expect(matchRoute("/dev/settings")).toEqual({ page: "settings" });
     expect(matchRoute("/dev/guide")).toEqual({ page: "guide" });
     expect(matchRoute("/dev/agents")).toEqual({ page: "agents" });
+    expect(matchRoute("/example")).toEqual({ page: "example" });
+    expect(matchRoute("/example/poker-night")).toEqual({ page: "example-app" });
   });
 
   it("rejects everything else", () => {
@@ -25,5 +27,6 @@ describe("matchRoute", () => {
     expect(matchRoute("/dev/other")).toEqual({ page: "not-found" });
     expect(matchRoute("/George")).toEqual({ page: "not-found" });
     expect(matchRoute("/a/b")).toEqual({ page: "not-found" });
+    expect(matchRoute("/example/other")).toEqual({ page: "not-found" });
   });
 });

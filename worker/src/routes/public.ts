@@ -3,6 +3,7 @@ import { renderSVG } from "uqr";
 import { Db, type AppRow, type Developer, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
 import { dlUrl, rewriteManifestUrls, signManifestLinks } from "../flow.js";
+import { loadHistory } from "../history.js";
 import { HttpError, json } from "../http.js";
 import { verifyLink } from "../links.js";
 import { loadSecrets } from "../secrets.js";
@@ -43,6 +44,7 @@ export async function devPage(env: Env, slug: string): Promise<Response> {
 // Everything an install page needs; shared by share links and the dashboard preview.
 export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Developer, linkId: string | null) {
   const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
+  const historyPromise = loadHistory(env, deps, app, secrets.githubToken);
   let manifest = null;
   let manifestError: string | null = null;
   try {
@@ -72,6 +74,7 @@ export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Deve
         }
       : null,
     releaseError: manifestError,
+    history: await historyPromise,
   };
 }
 

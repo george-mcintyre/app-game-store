@@ -104,6 +104,16 @@ export function githubRoutes() {
     [`GET ${gh("/repos/o/skull/releases/assets/6")}`]: () => new Response("SHOT", { status: 200, headers: { "Content-Type": "image/png" } }),
     [`GET ${gh("/repos/o/skull/releases/assets/5")}`]: () => new Response("PNGBYTES", { status: 200, headers: { "Content-Type": "image/png" } }),
     [`POST ${gh("/repos/o/skull/dispatches")}`]: () => new Response(null, { status: 204 }),
+    [`GET ${gh("/repos/o/skull")}`]: () => jsonRes({ private: false }),
+    [`GET ${gh("/repos/o/skull/releases")}`]: () =>
+      jsonRes([
+        { tag_name: "v0.2.0-rc1", name: "0.2.0 rc1", body: "soon", draft: false, prerelease: true, published_at: "2026-10-15T10:00:00Z", html_url: "https://github.com/o/skull/releases/tag/v0.2.0-rc1" },
+        { tag_name: "release-0.1.0-2", name: "Release 0.1.0", body: "## What's Changed\n* Add rematch button by @george in https://github.com/o/skull/pull/3\n* Fix [dealing](https://x) order\n\n**Full Changelog**: https://github.com/o/skull/compare/v0.0.9...v0.1.0", draft: false, prerelease: false, published_at: "2026-10-10T10:00:00Z", html_url: "https://github.com/o/skull/releases/tag/release-0.1.0-2" },
+        { tag_name: "v0.0.9", name: "First table night", body: "", draft: false, prerelease: false, published_at: "2026-09-01T10:00:00Z", html_url: "https://github.com/o/skull/releases/tag/v0.0.9" },
+        { tag_name: "v0.0.8", name: null, body: "draft", draft: true, prerelease: false, published_at: null, html_url: "" },
+      ]),
+    [`GET ${gh("/repos/o/skull/tags")}`]: () => jsonRes([{ name: "release-0.1.0-2", commit: { sha: "abc1234567890" } }, { name: "v0.0.9", commit: { sha: "def4567890123" } }]),
+    [`GET ${gh("/repos/o/skull/commits/def4567890123")}`]: () => jsonRes({ commit: { message: "Deal cards in seat order\n\nLonger explanation." } }),
   };
 }
 

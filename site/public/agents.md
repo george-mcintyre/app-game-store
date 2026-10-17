@@ -104,7 +104,7 @@ GET /api/dev/apps/:id/preview
      "releaseError": null | "message" }
 ```
 
-The same data the install page renders, so you can confirm icon, screenshots and text are in place.
+The same data the install page renders, so you can confirm icon, screenshots and text are in place. Both this and the public link endpoint include `history`: one entry per published release (`version`, `tag`, `title`, `notes`, `date`, `sha`, `releaseUrl`, `commitUrl`), built from the repository's releases and tags; the release body is the notes, falling back to the commit message. GitHub links are present only for public repositories.
 
 ## Share links
 

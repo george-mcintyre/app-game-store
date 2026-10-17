@@ -91,6 +91,40 @@ describe("share links and public pages", () => {
     expect(await (await handle(new Request(ipaUrl), env, d)).text()).toBe("IPABYTES");
   });
 
+  it("builds the revision history from releases, tags and commits", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, deps)).json()) as { history: Record<string, unknown>[] };
+    expect(body.history).toHaveLength(2);
+    expect(body.history[0]).toEqual({
+      version: "0.1.0",
+      tag: "release-0.1.0-2",
+      title: "",
+      notes: "What's Changed\n- Add rematch button\n- Fix dealing order",
+      date: "2026-10-10T10:00:00Z",
+      sha: "abc1234567890",
+      releaseUrl: "https://github.com/o/skull/releases/tag/release-0.1.0-2",
+      commitUrl: "https://github.com/o/skull/commit/abc1234567890",
+    });
+    expect(body.history[1]).toMatchObject({ version: "0.0.9", title: "First table night", notes: "Deal cards in seat order\n\nLonger explanation.", sha: "def4567890123" });
+  });
+
+  it("hides GitHub links for private repositories and survives missing history", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull"] = () => new Response(JSON.stringify({ private: true }), { status: 200 });
+    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { history: { commitUrl: string | null; releaseUrl: string | null; sha: string }[] };
+    expect(body.history[0]).toMatchObject({ commitUrl: null, releaseUrl: null, sha: "abc1234567890" });
+
+    const { linkId: other } = await createSkull(env, deps, cookie);
+    const bare = githubRoutes();
+    delete bare["GET api.github.com/repos/o/skull/releases"];
+    const none = (await (await handle(api(null, "GET", `/api/public/links/${other}`), env, { ...deps, fetch: fakeFetch(bare).fetch })).json()) as { history: unknown[]; release: unknown };
+    expect(none.history).toEqual([]);
+    expect(none.release).not.toBeNull();
+  });
+
   it("still serves details when the release cannot be loaded", async () => {
     const { linkId } = await createSkull(env, deps, cookie);
     const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, testDeps());

@@ -1,11 +1,12 @@
-import { ApiError, api, whoAmI, type AppDetails, type LinkPage, type Me } from "../api.js";
+import { ApiError, api, whoAmI, type AppDetails, type HistoryEntry, type LinkPage, type Me } from "../api.js";
 import { html, mount, paragraphs, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
+import { notesHtml } from "../notes.js";
 import { screenshotSvg } from "../placeholders.js";
 import { detectInAppBrowser, detectPlatform, itmsLink, type InAppBrowser, type Platform } from "../platform.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
 import { setTheme } from "../theme.js";
-import { appIcon, avatar, callout, copyRow, icon, toast, wireCopy, wireImages } from "../ui.js";
+import { appIcon, avatar, callout, copyRow, fmtDate, icon, toast, wireCopy, wireImages } from "../ui.js";
 
 // Shared frame for every store-themed page.
 export const COPYRIGHT = "Copyright Level N Ltd 2026";
@@ -177,6 +178,8 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   const icon0 = app.iconUrl || data.release?.fallbackIcon || null;
   const description = app.description || data.release?.fallbackDescription || "";
   const shots = app.screenshots.length > 0 ? app.screenshots : (data.release?.fallbackScreenshots ?? []);
+  const history = data.history ?? [];
+  const whatsNew = app.whatsNew || history[0]?.notes || "";
   const owner = opts.me?.developer.id === data.developer.id;
   setTheme("store", `${name} by ${data.developer.displayName}`);
 
@@ -228,12 +231,14 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
           <button class="link-btn readmore-btn" id="more" hidden>more</button>
         </section>
 
-        ${app.whatsNew ? html`<section class="store-section"><h2>What's new</h2>${data.release ? html`<p class="sub">Version ${data.release.version}</p>` : ""}${paragraphs(app.whatsNew)}</section>` : ""}
+        ${whatsNew ? html`<section class="store-section"><h2>What's new</h2>${data.release ? html`<p class="sub">Version ${data.release.version}</p>` : ""}${notesHtml(whatsNew)}</section>` : ""}
 
         <section class="store-section">
           <h2>App privacy</h2>
           <div class="privacy-card">${icon("shield")}<div>${app.privacySummary ? paragraphs(app.privacySummary) : html`<p>The developer has not written a privacy summary yet. Ask ${data.developer.displayName} what the app collects and where it goes; they are a person you know, not a company.</p>`}<p class="small faint">Written by the developer, not checked by anyone else.</p></div></div>
         </section>
+
+        ${history.length > 0 ? html`<section class="store-section"><h2>Revision history</h2>${historyBlock(history)}</section>` : ""}
 
         <section class="store-section">
           <h2>Information</h2>
@@ -273,6 +278,23 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     };
   } else about.classList.add("open");
 
+  const historyEl = root.querySelector<HTMLElement>("#history");
+  const moreBtn = root.querySelector<HTMLButtonElement>("#history-more");
+  if (historyEl && moreBtn) {
+    const latestNotes = historyEl.querySelector<HTMLElement>(".rev-notes");
+    const overflows = latestNotes ? latestNotes.scrollHeight > latestNotes.clientHeight + 4 : false;
+    if (history.length === 1 && !overflows) {
+      moreBtn.hidden = true;
+      latestNotes?.classList.remove("clamp");
+    }
+    moreBtn.onclick = () => {
+      const open = historyEl.classList.toggle("open");
+      historyEl.querySelectorAll<HTMLElement>(".rev-more").forEach((el) => (el.hidden = !open));
+      latestNotes?.classList.toggle("clamp", !open);
+      moreBtn.textContent = open ? "less" : "more...";
+    };
+  }
+
   root.querySelector<HTMLButtonElement>("#share")!.onclick = async () => {
     const result = await shareOrCopy(opts.pageUrl, name);
     if (result === "copied") toast("Link copied");
@@ -285,6 +307,30 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   const form = root.querySelector<HTMLFormElement>("#enrol-form");
   if (form && data.linkId) form.onsubmit = (e) => startEnrolment(e, data.linkId!, form);
   if (form && !data.linkId) form.onsubmit = (e) => { e.preventDefault(); toast(opts.example ? "Example only: nothing to install" : "Preview only: create a share link to try this"); };
+}
+
+// Latest version with a clamped summary; "more..." reveals the full list.
+function historyBlock(history: HistoryEntry[]): Raw {
+  return html`
+    <div class="history" id="history">
+      ${history.map((h, i) => {
+        const sha = h.sha ? html`<code title="${h.sha}">${h.sha.slice(0, 7)}</code>` : "";
+        return html`
+          <div class="rev ${i === 0 ? "" : "rev-more"}" ${i === 0 ? "" : raw("hidden")}>
+            <div class="rev-head">
+              <b>${h.version}</b>
+              ${h.date ? html`<span class="muted small">${fmtDate(h.date)}</span>` : ""}
+              ${h.sha ? (h.commitUrl ? html`<a class="rev-sha" href="${h.commitUrl}" target="_blank" rel="noopener" title="Commit ${h.sha}">${sha}</a>` : html`<span class="rev-sha">${sha}</span>`) : ""}
+              ${h.releaseUrl ? html`<a class="small" href="${h.releaseUrl}" target="_blank" rel="noopener">release</a>` : ""}
+            </div>
+            ${h.title ? html`<div class="rev-title">${h.title}</div>` : ""}
+            <div class="rev-notes ${i === 0 ? "clamp" : ""}">${h.notes ? notesHtml(h.notes) : html`<p class="faint">No notes for this version.</p>`}</div>
+          </div>`;
+      })}
+      <button class="link-btn" id="history-more">more...</button>
+      <p class="tiny faint">Every entry is a release of the app's code; the short code is the commit it was built from.</p>
+    </div>
+  `;
 }
 
 function compat(data: LinkPage): string {

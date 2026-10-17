@@ -10,9 +10,6 @@ the app lands on their home screen. No App Store, no Google Play, no accounts fo
   source" and Play Protect prompts.
 - Web apps: an "add to home screen" walkthrough when the app lists a web version.
 
-One Cloudflare Worker serves the site, the API and the artefact links. Data lives in D1.
-Everything runs on free tiers.
-
 ## Two faces
 
 - Friends see an App Store style page at `/l/<id>`: icon, tagline, facts strip, screenshots,

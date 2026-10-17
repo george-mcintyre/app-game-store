@@ -39,6 +39,13 @@ export const POKER_NIGHT: LinkPage = {
     fallbackScreenshots: [],
   },
   releaseError: null,
+  history: [
+    { version: "1.3.0", tag: "v1.3.0", title: "", notes: "- Sam's rule is in: dealer's choice on the hour\n- Rematch no longer resets the pizza tab\n- Bigger chip numbers for the far end of the table\n- Help text for the new blinds structure, in Dana's words", date: "2026-10-09T19:30:00.000Z", sha: "a3f9c12e8b7d4f0a", releaseUrl: null, commitUrl: null },
+    { version: "1.2.1", tag: "v1.2.1", title: "", notes: "- Pizza tab rounds to the nearest 50p like the table does\n- Seat map remembers who sat where last week", date: "2026-09-18T20:05:00.000Z", sha: "7b21d9ac4e5f0b13", releaseUrl: null, commitUrl: null },
+    { version: "1.2.0", tag: "v1.2.0", title: "Seat map", notes: "- Seat map with everyone's name already in it\n- Dealer rotation\n- The glossary: the Dave, a cheeky limp, and friends", date: "2026-09-04T19:40:00.000Z", sha: "c0de4a1f9e2b7d35", releaseUrl: null, commitUrl: null },
+    { version: "1.1.0", tag: "v1.1.0", title: "", notes: "- Chip counts and who owes who at the end\n- The three blinds structures, no editor", date: "2026-08-21T19:10:00.000Z", sha: "e5a7b3c1d9f04268", releaseUrl: null, commitUrl: null },
+    { version: "1.0.0", tag: "v1.0.0", title: "First table night", notes: "Blinds timer and the four house rules. Built on a Tuesday, played on the Thursday.", date: "2026-08-07T18:55:00.000Z", sha: "91f2e8d7a6c5b340", releaseUrl: null, commitUrl: null },
+  ],
 };
 
 export async function exampleApp(root: HTMLElement): Promise<void> {

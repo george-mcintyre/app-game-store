@@ -38,6 +38,7 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 - Design tokens and both themes: `site/src/style.css` (`[data-theme="store"]`, `[data-theme="dev"]`, dark variants). Placeholders: `site/src/placeholders.ts`. Shared components and icons: `site/src/ui.ts`.
 - Security model and rotation: `SECURITY.md`. Crypto primitives: `worker/src/crypto.ts`; credential envelopes: `worker/src/secrets.ts`; audit log: `worker/src/audit.ts`.
 - API keys and bearer auth: `worker/src/auth.ts`, `worker/src/routes/dev.ts` (`listKeys`, `createKey`, `revokeKey`, `releaseStatus`, `previewApp`).
+- Revision history (releases, tags, commit fallback, 2 minute cache): `worker/src/history.ts`; rendering: `historyBlock` in `site/src/pages/public.ts`, notes to HTML in `site/src/notes.ts`.
 - Agent documents: `site/public/agents.md`, `site/public/llms.txt`; `CONTRACT.md` is copied to `site/public/contract.md` by the site `prebuild` script.
 - Platform and in-app browser detection: `site/src/platform.ts`. Paths: `site/src/router.ts`.
 

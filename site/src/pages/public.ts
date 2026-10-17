@@ -61,7 +61,7 @@ export async function landing(root: HTMLElement): Promise<void> {
             <div class="card"><div class="num">3</div><h3>Approve iPhones as they arrive</h3><p class="muted">The console registers each device with Apple, rebuilds the app and tells your friend when it is ready.</p></div>
           </div>
           <div class="card mt pad-l row wrap" style="justify-content:space-between">
-            <div class="grow"><h3>Agents welcome</h3><p class="muted small">Everything in the console is also an API. Give your coding agent an API key and the prompt from the guide, and it can register apps, publish releases and hand you share links.</p></div>
+            <div style="flex:1 1 260px"><h3>Agents welcome</h3><p class="muted small">Everything in the console is also an API. Give your coding agent an API key and the prompt from the guide, and it can register apps, publish releases and hand you share links.</p></div>
             <a class="btn secondary" href="/agents.md">Read agents.md ${icon("external")}</a>
           </div>
         </section>

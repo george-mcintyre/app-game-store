@@ -1,0 +1,130 @@
+import { zipSync, strToU8 } from "fflate";
+import { beforeEach, describe, expect, it } from "vitest";
+import type { Env } from "../src/env.js";
+import { handle } from "../src/index.js";
+import { contentType, extractBundle, isBundleUrl, pickFile, webAppLinkId } from "../src/webapp.js";
+import { BASE, api, clearDb, createSkull, fakeFetch, githubRoutes, jsonRes, manifest, saveAppleSecrets, signIn, testDeps, testEnv, type TestDeps } from "./helpers.js";
+
+const HOST = new URL(BASE).host;
+
+function bundle(prefix = ""): Uint8Array {
+  return zipSync({
+    [`${prefix}index.html`]: strToU8("<!doctype html><title>Skull web</title><link rel=icon href=./icon.svg><script type=module src=./assets/app.js></script>"),
+    [`${prefix}assets/app.js`]: strToU8("console.log('hi')"),
+    [`${prefix}icon.svg`]: strToU8("<svg xmlns='http://www.w3.org/2000/svg'/>"),
+    [`${prefix}manifest.webmanifest`]: strToU8('{"start_url":"./"}'),
+  });
+}
+
+function webRoutes(zip: Uint8Array) {
+  const routes = githubRoutes();
+  routes["GET api.github.com/repos/o/skull/releases/latest"] = () =>
+    jsonRes({ tag_name: "v0.1.0", assets: [{ name: "my-app.json", url: "https://api.github.com/repos/o/skull/releases/assets/1" }, { name: "web.zip", url: "https://api.github.com/repos/o/skull/releases/assets/9" }] });
+  routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () => jsonRes({ ...manifest, install: { ...manifest.install, pwa: "https://api.github.com/repos/o/skull/releases/assets/9" } });
+  routes["GET api.github.com/repos/o/skull/releases/assets/9"] = () => new Response(zip, { status: 200, headers: { "Content-Type": "application/zip" } });
+  return routes;
+}
+
+let env: Env;
+let deps: TestDeps;
+let cookie: string;
+
+beforeEach(async () => {
+  env = testEnv();
+  await clearDb(env);
+  deps = testDeps(fakeFetch(webRoutes(bundle())).fetch);
+  cookie = await signIn(env, deps);
+});
+
+describe("helpers", () => {
+  it("recognises per-link hosts", () => {
+    expect(webAppLinkId(new Request(`https://abcdef0123456789abcdef01.${HOST}/x`), env)).toBe("abcdef0123456789abcdef01");
+    expect(webAppLinkId(new Request(`https://${HOST}/x`), env)).toBeNull();
+    expect(webAppLinkId(new Request(`https://www.${HOST}/`), env)).toBeNull();
+    expect(webAppLinkId(new Request(`https://abcdef0123456789abcdef01.evil.example/`), env)).toBeNull();
+  });
+
+  it("tells bundles from plain web addresses", () => {
+    const rel = { manifestUrl: "x", assets: ["my-app.json", "web.zip"] };
+    expect(isBundleUrl("https://api.github.com/repos/o/r/releases/assets/5", rel)).toBe(true);
+    expect(isBundleUrl("https://api.github.com/repos/o/r/releases/assets/5", { ...rel, assets: ["my-app.json"] })).toBe(false);
+    expect(isBundleUrl("https://skull.example.com/", rel)).toBe(false);
+    expect(isBundleUrl(null, rel)).toBe(false);
+  });
+
+  it("strips a single top-level folder and maps paths", () => {
+    const files = extractBundle(bundle("dist/"));
+    expect(Object.keys(files).sort()).toEqual(["assets/app.js", "icon.svg", "index.html", "manifest.webmanifest"]);
+    expect(pickFile(files, "/")!.name).toBe("index.html");
+    expect(pickFile(files, "/assets/app.js")!.name).toBe("assets/app.js");
+    expect(pickFile(files, "/table/3")!.name).toBe("index.html");
+    expect(pickFile(files, "/missing.png")).toBeNull();
+    expect(pickFile(files, "/../etc/passwd")).toBeNull();
+    expect(() => extractBundle(zipSync({ "readme.txt": strToU8("x") }))).toThrow(/index.html/);
+    expect(contentType("a.webmanifest")).toBe("application/manifest+json");
+    expect(contentType("a.unknown")).toBe("application/octet-stream");
+  });
+});
+
+describe("serving", () => {
+  it("serves the bundle on the link's own host with the app's own html", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const origin = `https://${linkId}.${HOST}`;
+    const home = await handle(new Request(`${origin}/`), env, deps);
+    expect(home.status).toBe(200);
+    expect(home.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(home.headers.get("Cache-Control")).toBe("no-cache");
+    expect(home.headers.get("Content-Security-Policy")).toBe("frame-ancestors 'none'");
+    expect(await home.text()).toContain("<title>Skull web</title>");
+
+    const js = await handle(new Request(`${origin}/assets/app.js`), env, deps);
+    expect(js.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
+    expect(js.headers.get("Cache-Control")).toMatch(/max-age=86400/);
+    const etag = js.headers.get("ETag")!;
+    expect((await handle(new Request(`${origin}/assets/app.js`, { headers: { "If-None-Match": etag } }), env, deps)).status).toBe(304);
+
+    const deep = await handle(new Request(`${origin}/table/3`), env, deps);
+    expect(await deep.text()).toContain("Skull web");
+    expect((await handle(new Request(`${origin}/nope.png`), env, deps)).status).toBe(404);
+    expect((await handle(new Request(`${origin}/api/dev/me`, { headers: { Cookie: cookie } }), env, deps)).status).toBe(404);
+    expect((await handle(new Request(`${origin}/`, { method: "POST" }), env, deps)).status).toBe(405);
+  });
+
+  it("refuses unknown, revoked and bundle-less links with a plain page", async () => {
+    const unknown = await handle(new Request(`https://0123456789abcdef0123456789abcdef.${HOST}/`), env, deps);
+    expect(unknown.status).toBe(404);
+    expect(await unknown.text()).toContain("Nothing here");
+
+    const { linkId } = await createSkull(env, deps, cookie);
+    await handle(api(cookie, "POST", `/api/dev/links/${linkId}/revoke`), env, deps);
+    const gone = await handle(new Request(`https://${linkId}.${HOST}/`), env, deps);
+    expect(gone.status).toBe(410);
+    expect(await gone.text()).toContain("no longer active");
+
+    const { linkId: plain } = await createSkull(env, deps, cookie);
+    const none = await handle(new Request(`https://${plain}.${HOST}/`), env, { ...deps, fetch: fakeFetch(githubRoutes()).fetch });
+    expect(none.status).toBe(404);
+    expect(await none.text()).toContain("no web.zip");
+  });
+
+  it("points the install page and /latest at the served app, never at GitHub", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { appId, linkId } = await createSkull(env, deps, cookie);
+    const page = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, deps)).json()) as { release: { install: { pwa: string } } };
+    expect(page.release.install.pwa).toBe(`https://${linkId}.${HOST}/`);
+    const latest = (await (await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, deps)).json()) as { pwa: string };
+    expect(latest.pwa).toBe(`https://${linkId}.${HOST}/`);
+    const preview = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/preview`), env, deps)).json()) as { release: { install: { pwa: string | null } } };
+    expect(preview.release.install.pwa).toBeNull();
+  });
+
+  it("leaves a plain web address alone", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () => jsonRes({ ...manifest, install: { ...manifest.install, pwa: "https://skull.example.com/" } });
+    const page = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { release: { install: { pwa: string } } };
+    expect(page.release.install.pwa).toBe("https://skull.example.com/");
+  });
+});

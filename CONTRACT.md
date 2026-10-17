@@ -139,7 +139,10 @@ more `my-store-rebuild` for them automatically. Response:
   the console shared with it). Build with a relative base (`./`), `index.html` at the zip
   root (or inside a single top-level folder), `manifest.webmanifest` with `"start_url": "./"`
   and `"scope": "./"`, service worker registered with a relative path. Stored or deflate
-  entries only; zip at most 25 MB, any file at most 10 MB. Unknown paths get `index.html`.
+  entries only; zip at most 25 MB, any file at most 10 MB. Unknown paths get `index.html`;
+  `/api/*` and `/dl/*` are reserved. HTML is served with `no-cache`, other files cached for a
+  day with an ETag per release, so a new release shows at once. The bundle is read from the
+  latest release and cached for an hour per release tag.
 - Any other https URL, including a release asset with another name: opened as is.
 
 ## Optional: in-app updates

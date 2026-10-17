@@ -6,6 +6,7 @@ import { buildProfile, buildReady } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
 import { enrolCallback, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
+import { serveWebApp, webAppLinkId } from "./webapp.js";
 
 // Sent on every response so browsers and scanners see a locked-down site.
 export const SECURITY_HEADERS: Record<string, string> = {
@@ -21,6 +22,9 @@ export const SECURITY_HEADERS: Record<string, string> = {
 };
 
 export async function handle(request: Request, env: Env, deps: Deps = defaultDeps): Promise<Response> {
+  // Per-link app hosts get the bundle and nothing else; they set their own headers.
+  const webLink = webAppLinkId(request, env);
+  if (webLink) return serveWebApp(request, env, deps, webLink);
   let res: Response;
   try {
     res = await route(request, env, deps);

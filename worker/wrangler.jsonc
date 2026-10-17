@@ -4,7 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
-  "routes": [{ "pattern": "ourapps.app", "custom_domain": true }],
+  "routes": [
+    { "pattern": "ourapps.app", "custom_domain": true },
+    { "pattern": "*.ourapps.app/*", "zone_name": "ourapps.app" }
+  ],
   "workers_dev": false,
   "d1_databases": [
     { "binding": "DB", "database_name": "app-game-store", "database_id": "5b0d8d7d-eae4-4bdb-967a-9bb1c49e076c", "migrations_dir": "migrations" }

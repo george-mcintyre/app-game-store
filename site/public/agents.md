@@ -194,7 +194,7 @@ Published as a release asset named `my-app.json`:
 }
 ```
 
-`install.pwa`: a release-asset URL whose asset is named exactly `web.zip` is a bundle of the built site that the store serves at `https://<linkId>.ourapps.app/` (see contract.md for the build rules); any other https URL is opened as is.
+`install.pwa`: a release-asset URL whose asset is named exactly `web.zip` is a bundle of the built site that the store serves at `https://<linkId>.ourapps.app/` (see contract.md for the build rules: relative base, index.html at the zip root, relative manifest and service worker paths); any other https URL is opened as is. The install page, `/api/public/links/:id` and `/latest` report the served address, never the GitHub one; the dashboard preview reports null because no link exists yet.
 
 Rules: `schema` must be 1; `id` lowercase slug; `name`, `version`, `description` non-empty; `icon` https; `minPlayers` and `maxPlayers` integers of at least 1 with min <= max; `screenshots` optional list of https URLs; `install` must name all three keys, at least one not null; `ios` needs `adhoc` or `testflight`. Release-asset API URLs are fetched with the developer's GitHub token and re-served to phones through signed links; any other https URL is used as is.
 

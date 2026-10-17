@@ -29,6 +29,7 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 - Enrolment states: `shared/src/enrolment.ts`.
 - Site pages: `site/src/pages/public.ts` (store theme: landing, developer page, install, wait, preview), `site/src/pages/dev.ts` (console: overview, apps, form, links, devices, settings, agents), `site/src/pages/guide.ts` (A to Z guide), `site/src/pages/shell.ts` (console frame), `site/src/pages/prompts.ts` (agent prompts).
 - Design tokens and both themes: `site/src/style.css` (`[data-theme="store"]`, `[data-theme="dev"]`, dark variants). Placeholders: `site/src/placeholders.ts`. Shared components and icons: `site/src/ui.ts`.
+- Security model and rotation: `SECURITY.md`. Crypto primitives: `worker/src/crypto.ts`; credential envelopes: `worker/src/secrets.ts`; audit log: `worker/src/audit.ts`.
 - API keys and bearer auth: `worker/src/auth.ts`, `worker/src/routes/dev.ts` (`listKeys`, `createKey`, `revokeKey`, `releaseStatus`, `previewApp`).
 - Agent documents: `site/public/agents.md`, `site/public/llms.txt`; `CONTRACT.md` is copied to `site/public/contract.md` by the site `prebuild` script.
 - Platform and in-app browser detection: `site/src/platform.ts`. Paths: `site/src/router.ts`.

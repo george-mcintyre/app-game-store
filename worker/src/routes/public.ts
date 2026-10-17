@@ -42,7 +42,7 @@ export async function devPage(env: Env, slug: string): Promise<Response> {
 
 // Everything an install page needs; shared by share links and the dashboard preview.
 export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Developer, linkId: string | null) {
-  const secrets = await loadSecrets(env, dev.id);
+  const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
   let manifest = null;
   let manifestError: string | null = null;
   try {
@@ -104,7 +104,7 @@ export async function serveArtefact(env: Env, deps: Deps, token: string): Promis
   if (!env.LINK_SECRET) throw new HttpError(503, "LINK_SECRET is not configured");
   const link = await verifyLink(env.LINK_SECRET, token, deps.now());
   if (!link) throw new HttpError(403, "this link has expired; open the install page again");
-  const secrets = await loadSecrets(env, link.dev);
+  const secrets = await loadSecrets(env, link.dev, ["githubToken"]);
   const upstream = await fetchUpstream(env, deps, link.url, secrets.githubToken);
   if (!upstream.ok) throw new HttpError(502, `upstream returned ${upstream.status}`);
   if (link.kind === "manifest") {

@@ -31,6 +31,14 @@ endpoint. `/dev/agents` also carries two prompts to paste into a coding agent: o
 app repository to the contract, one drives the console (register, check releases, share,
 approve). `llms.txt` points agents at both documents.
 
+## Security
+
+Credentials are encrypted field by field (AES-256-GCM, key derived per developer from a Worker
+secret, authenticated data binding each field to its owner); API keys, build tokens and session
+ids are stored as keyed hashes; credential writes need a browser session; API keys have scopes
+and expiry; every security event is logged and visible under Settings. Rotation and incident
+steps: `SECURITY.md`.
+
 ## Layout
 
 | path       | what                                                            |
@@ -98,7 +106,7 @@ cd worker
 npx wrangler d1 create app-game-store          # paste the id into wrangler.jsonc
 npx wrangler d1 migrations apply app-game-store --remote   # also after adding a migration
 npx wrangler secret put LINK_SECRET
-npx wrangler secret put MASTER_KEY
+npx wrangler secret put MASTER_KEY             # openssl rand -hex 32; rotation in SECURITY.md
 npx wrangler secret put GITHUB_OAUTH_CLIENT_ID
 npx wrangler secret put GITHUB_OAUTH_CLIENT_SECRET
 npm run build -w site && npx wrangler deploy

@@ -103,6 +103,7 @@ export interface SecretStatus {
 export interface Me {
   developer: { id: string; slug: string; displayName: string; githubLogin: string; createdAt: string };
   authVia: "session" | "key";
+  scope: "read" | "manage";
   secrets: SecretStatus;
 }
 
@@ -125,8 +126,18 @@ export interface ApiKey {
   id: string;
   name: string;
   prefix: string;
+  scope: "read" | "manage";
   createdAt: string;
+  expiresAt: string | null;
   lastUsedAt: string | null;
+}
+
+export interface AuditEvent {
+  id: number;
+  event: string;
+  detail: string;
+  country: string | null;
+  createdAt: string;
 }
 
 // Cached for the page lifetime so store pages can show the owner bar without a second round trip.

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { handle } from "../src/index.js";
-import { BASE, api, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
+import { BASE, GH_TOKEN, api, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const UDID_1 = "00008030-000A1B2C3D4E5F67";
 const UDID_2 = "00008030-000F0E0D0C0B0A09";
@@ -77,7 +77,7 @@ describe("share links and public pages", () => {
     expect(body.developer.displayName).toBe("George");
     expect(body.release.version).toBe("0.1.0");
     expect(body.release.install.android.apk).toMatch(new RegExp(`^${BASE}/dl/`));
-    expect(calls[0].headers.get("Authorization")).toBe("Bearer ghp_dev");
+    expect(calls[0].headers.get("Authorization")).toBe(`Bearer ${GH_TOKEN}`);
 
     const apk = await handle(new Request(body.release.install.android.apk), env, d);
     expect(apk.headers.get("Content-Type")).toBe("application/vnd.android.package-archive");
@@ -216,7 +216,7 @@ describe("approve, rebuild and build-ready", () => {
     expect(body.data.relationships.devices.data).toEqual([{ type: "devices", id: "dev-1" }]);
 
     const dispatch = calls.find((c) => c.url.endsWith("/dispatches"))!;
-    expect(dispatch.headers.get("Authorization")).toBe("Bearer ghp_dev");
+    expect(dispatch.headers.get("Authorization")).toBe(`Bearer ${GH_TOKEN}`);
     const payload = JSON.parse(dispatch.body!);
     expect(payload.event_type).toBe("my-store-rebuild");
     expect(payload.client_payload).toMatchObject({ app: appId, enrolmentId: id, udid: UDID_1, profileUuid: "uuid-1", buildReadyUrl: `${BASE}/api/build-ready`, profileUrl: `${BASE}/api/build/${appId}/profile` });
@@ -363,5 +363,55 @@ describe("API keys and agent endpoints", () => {
     expect(qr.headers.get("Content-Type")).toBe("image/svg+xml");
     expect(await qr.text()).toMatch(/^<svg/);
     expect((await handle(api(null, "GET", "/api/public/links/nope/qr.svg"), env, deps)).status).toBe(404);
+  });
+});
+
+describe("token hardening", () => {
+  it("stores keyed hashes and upgrades legacy plain hashes on use", async () => {
+    const { appId, buildToken } = await createSkull(env, deps, cookie);
+    const row = () => env.DB.prepare("SELECT build_token_hash AS h FROM apps WHERE id = ?").bind(appId).first<{ h: string }>();
+    expect((await row())!.h.startsWith("h2:")).toBe(true);
+    // Simulate a token stored before peppering.
+    const plain = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(buildToken))), (b) => b.toString(16).padStart(2, "0")).join("");
+    await env.DB.prepare("UPDATE apps SET build_token_hash = ? WHERE id = ?").bind(plain, appId).run();
+    expect((await handle(api(null, "GET", `/api/build/${appId}/profile`, undefined, { Authorization: `Bearer ${buildToken}` }), env, deps)).status).toBe(404);
+    expect((await row())!.h.startsWith("h2:")).toBe(true);
+    expect((await handle(api(null, "GET", `/api/build/${appId}/profile`, undefined, { Authorization: "Bearer wrong" }), env, deps)).status).toBe(401);
+
+    const { key, apiKey } = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "k" }), env, deps)).json()) as { key: string; apiKey: { id: string } };
+    const keyPlain = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key))), (b) => b.toString(16).padStart(2, "0")).join("");
+    await env.DB.prepare("UPDATE api_keys SET key_hash = ? WHERE id = ?").bind(keyPlain, apiKey.id).run();
+    expect((await handle(api(null, "GET", "/api/dev/me", undefined, { Authorization: `Bearer ${key}` }), env, deps)).status).toBe(200);
+    const stored = await env.DB.prepare("SELECT key_hash AS h FROM api_keys WHERE id = ?").bind(apiKey.id).first<{ h: string }>();
+    expect(stored!.h.startsWith("h2:")).toBe(true);
+    expect(stored!.h).not.toContain(keyPlain);
+  });
+
+  it("enforces key scope and expiry", async () => {
+    const { appId } = await createSkull(env, deps, cookie);
+    const ro = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "reader", scope: "read", expiresInDays: 1 }), env, deps)).json()) as { key: string; apiKey: { scope: string; expiresAt: string } };
+    expect(ro.apiKey.scope).toBe("read");
+    expect(ro.apiKey.expiresAt).toBe("2026-10-17T10:00:00.000Z");
+    const auth = { Authorization: `Bearer ${ro.key}` };
+    expect((await handle(api(null, "GET", `/api/dev/apps/${appId}`, undefined, auth), env, deps)).status).toBe(200);
+    const denied = await handle(api(null, "PUT", `/api/dev/apps/${appId}`, { tagline: "x" }, auth), env, deps);
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as { error: string }).error).toMatch(/read-only/);
+    expect((await handle(api(null, "POST", `/api/dev/apps/${appId}/links`, { label: "x" }, auth), env, deps)).status).toBe(403);
+    deps.advance(2 * 86_400_000);
+    expect((await handle(api(null, "GET", `/api/dev/apps/${appId}`, undefined, auth), env, deps)).status).toBe(401);
+    expect((await handle(api(cookie, "POST", "/api/dev/keys", { name: "bad", expiresInDays: 0 }), env, deps)).status).toBe(400);
+    expect((await handle(api(cookie, "POST", "/api/dev/keys", { name: "bad", expiresInDays: 999 }), env, deps)).status).toBe(400);
+  });
+
+  it("revokes every key at once and logs it", async () => {
+    const a = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "a" }), env, deps)).json()) as { key: string };
+    const b = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "b" }), env, deps)).json()) as { key: string };
+    expect(await (await handle(api(cookie, "POST", "/api/dev/keys/revoke-all"), env, deps)).json()).toEqual({ ok: true, revoked: 2 });
+    expect((await handle(api(null, "GET", "/api/dev/me", undefined, { Authorization: `Bearer ${a.key}` }), env, deps)).status).toBe(401);
+    expect((await handle(api(null, "GET", "/api/dev/me", undefined, { Authorization: `Bearer ${b.key}` }), env, deps)).status).toBe(401);
+    const log = (await (await handle(api(cookie, "GET", "/api/dev/audit"), env, deps)).json()) as { events: { event: string; detail: string }[] };
+    expect(log.events[0]).toMatchObject({ event: "api-keys-revoked-all", detail: "2 keys" });
+    expect(log.events.some((e) => e.event === "api-key-created" && e.detail.startsWith("a (manage"))).toBe(true);
   });
 });

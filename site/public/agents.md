@@ -8,7 +8,12 @@ Related: the repository contract at `https://ourapps.app/contract.md` describes 
 
 ## Authentication
 
-Send `Authorization: Bearer <api key>` on every `/api/dev/*` request. Keys start with `oa_` and are created by the developer in the console at `/dev/agents` (an API key cannot create or revoke keys). A key acts as that developer; everything is scoped to their apps, links and devices.
+Send `Authorization: Bearer <api key>` on every `/api/dev/*` request. Keys start with `oa_` and are created by the developer in the console at `/dev/agents`. A key acts as that developer within its scope; everything is scoped to their apps, links and devices.
+
+- Scope `manage` allows every method; scope `read` allows only GET and returns 403 `this API key is read-only` otherwise.
+- Keys may carry an expiry (default 90 days when created in the console); an expired or revoked key gets 401.
+- A key can never create or revoke keys, change credentials (`PUT /api/dev/secrets`), or sign out sessions. Those need the developer in a browser.
+- Keys are stored as keyed hashes; treat yours as a password and never write it to a file or a log.
 
 Check who you are:
 
@@ -123,11 +128,12 @@ Apple allows 100 iPhones per developer per membership year and does not free a s
 ## Developer settings
 
 ```
-PUT /api/dev/me        body: { "slug": "george", "displayName": "George" }
-PUT /api/dev/secrets   body: { "githubToken", "appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId" }
+PUT /api/dev/me        body: { "slug": "george", "displayName": "George" }   (manage scope)
+PUT /api/dev/secrets   dashboard only; returns 403 for API keys
+GET /api/dev/audit     -> { "events": [ { "event", "detail", "country", "createdAt" } ] }   (recent security events)
 ```
 
-Blank fields keep their value; a single hyphen clears one. Do not change credentials unless the developer asks explicitly.
+If a task needs the GitHub token or the Apple key saved or changed, tell the developer to do it at `/dev/settings`; there is no API path for it by design.
 
 ## Public and build endpoints (for completeness)
 

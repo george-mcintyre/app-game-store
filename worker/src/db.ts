@@ -70,15 +70,28 @@ export interface EnrolmentRow {
   updatedAt: string;
 }
 
+export type KeyScope = "read" | "manage";
+
 export interface ApiKeyRow {
   id: string;
   developerId: string;
   name: string;
   prefix: string;
   keyHash: string;
+  scope: KeyScope;
   createdAt: string;
+  expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
+}
+
+export interface AuditRow {
+  id: number;
+  developerId: string;
+  event: string;
+  detail: string;
+  country: string | null;
+  createdAt: string;
 }
 
 export interface ProfileRow {
@@ -164,8 +177,21 @@ export class Db {
     );
   }
 
+  async renameSession(from: string, to: string): Promise<void> {
+    await this.d1.prepare("UPDATE sessions SET id = ? WHERE id = ?").bind(to, from).run();
+  }
+
   async deleteSession(id: string): Promise<void> {
     await this.d1.prepare("DELETE FROM sessions WHERE id = ?").bind(id).run();
+  }
+
+  async deleteSessionsFor(developerId: string): Promise<number> {
+    const res = await this.d1.prepare("DELETE FROM sessions WHERE developer_id = ?").bind(developerId).run();
+    return res.meta.changes ?? 0;
+  }
+
+  async deleteExpiredSessions(now: string): Promise<void> {
+    await this.d1.prepare("DELETE FROM sessions WHERE expires_at <= ?").bind(now).run();
   }
 
   // Apps
@@ -204,6 +230,10 @@ export class Db {
         app.repo, app.manifestUrl, app.profileName, app.showOnPage ? 1 : 0, app.buildTokenHash, app.updatedAt, app.id,
       )
       .run();
+  }
+
+  async rehashBuildToken(id: string, hash: string): Promise<void> {
+    await this.d1.prepare("UPDATE apps SET build_token_hash = ? WHERE id = ?").bind(hash, id).run();
   }
 
   async deleteApp(id: string): Promise<void> {
@@ -272,8 +302,13 @@ export class Db {
 
   // API keys
 
-  async apiKeyByHash(hash: string): Promise<ApiKeyRow | null> {
-    return row<ApiKeyRow>(await this.d1.prepare("SELECT * FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL").bind(hash).first());
+  async apiKeyByHash(hashes: string[]): Promise<ApiKeyRow | null> {
+    const marks = hashes.map(() => "?").join(", ");
+    return row<ApiKeyRow>(await this.d1.prepare(`SELECT * FROM api_keys WHERE key_hash IN (${marks}) AND revoked_at IS NULL`).bind(...hashes).first());
+  }
+
+  async rehashApiKey(id: string, hash: string): Promise<void> {
+    await this.d1.prepare("UPDATE api_keys SET key_hash = ? WHERE id = ?").bind(hash, id).run();
   }
 
   async apiKeysByDeveloper(developerId: string): Promise<ApiKeyRow[]> {
@@ -283,9 +318,25 @@ export class Db {
 
   async insertApiKey(k: ApiKeyRow): Promise<void> {
     await this.d1
-      .prepare("INSERT INTO api_keys (id, developer_id, name, prefix, key_hash, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(k.id, k.developerId, k.name, k.prefix, k.keyHash, k.createdAt, k.lastUsedAt, k.revokedAt)
+      .prepare("INSERT INTO api_keys (id, developer_id, name, prefix, key_hash, scope, created_at, expires_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(k.id, k.developerId, k.name, k.prefix, k.keyHash, k.scope, k.createdAt, k.expiresAt, k.lastUsedAt, k.revokedAt)
       .run();
+  }
+
+  async revokeAllApiKeys(developerId: string, now: string): Promise<number> {
+    const res = await this.d1.prepare("UPDATE api_keys SET revoked_at = ? WHERE developer_id = ? AND revoked_at IS NULL").bind(now, developerId).run();
+    return res.meta.changes ?? 0;
+  }
+
+  // Audit log
+
+  async insertAudit(a: Omit<AuditRow, "id">): Promise<void> {
+    await this.d1.prepare("INSERT INTO audit_log (developer_id, event, detail, country, created_at) VALUES (?, ?, ?, ?, ?)").bind(a.developerId, a.event, a.detail, a.country, a.createdAt).run();
+  }
+
+  async auditFor(developerId: string, limit = 50): Promise<AuditRow[]> {
+    const res = await this.d1.prepare("SELECT * FROM audit_log WHERE developer_id = ? ORDER BY id DESC LIMIT ?").bind(developerId, limit).all<Raw>();
+    return res.results.map((r) => row<AuditRow>(r)!);
   }
 
   async touchApiKey(id: string, now: string): Promise<void> {

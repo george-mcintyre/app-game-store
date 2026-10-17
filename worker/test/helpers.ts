@@ -176,8 +176,10 @@ export async function createSkull(env: Env, deps: TestDeps, cookie: string): Pro
   return { appId: app.id, buildToken, linkId: link.id };
 }
 
+export const GH_TOKEN = "ghp_" + "a".repeat(36);
+
 export async function saveAppleSecrets(env: Env, deps: TestDeps, cookie: string): Promise<void> {
-  const res = await handle(api(cookie, "PUT", "/api/dev/secrets", { appleIssuerId: "iss", appleKeyId: "kid", applePrivateKey: await applePem(), appleTeamId: "TEAM1", githubToken: "ghp_dev" }), env, deps);
+  const res = await handle(api(cookie, "PUT", "/api/dev/secrets", { appleIssuerId: "iss", appleKeyId: "kid", applePrivateKey: await applePem(), appleTeamId: "TEAM1", githubToken: GH_TOKEN }), env, deps);
   expect(res.status).toBe(200);
 }
 

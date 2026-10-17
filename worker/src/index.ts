@@ -1,4 +1,4 @@
-import { finishLogin, logout, oauthConfigured, requireDeveloper, startLogin } from "./auth.js";
+import { finishLogin, logout, logoutEverywhere, oauthConfigured, requireDeveloper, startLogin } from "./auth.js";
 import { defaultDeps, type Deps, type Env } from "./env.js";
 import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady } from "./routes/build.js";
@@ -13,6 +13,8 @@ export const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "X-Permitted-Cross-Domain-Policies": "none",
   "Content-Security-Policy":
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
 };
@@ -53,7 +55,8 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
   if (p[0] === "auth") {
     if (p[1] === "github" && m === "GET") return startLogin(env);
     if (p[1] === "callback" && m === "GET") return finishLogin(request, env, deps);
-    if (p[1] === "logout" && m === "POST") return logout(request, env);
+    if (p[1] === "logout" && m === "POST") return logout(request, env, deps);
+    if (p[1] === "logout-everywhere" && m === "POST") return logoutEverywhere(request, env, deps, await requireDeveloper(request, env, deps));
   }
 
   if (p[0] === "public") {
@@ -82,8 +85,8 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
       if (p.length === 2 && m === "POST") return dev.createApp(request, env, deps, me);
       if (p.length === 3 && m === "GET") return dev.getApp(env, me, p[2]);
       if (p.length === 3 && m === "PUT") return dev.updateApp(request, env, deps, me, p[2]);
-      if (p.length === 3 && m === "DELETE") return dev.deleteApp(env, me, p[2]);
-      if (p.length === 4 && p[3] === "build-token" && m === "POST") return dev.rotateBuildToken(env, deps, me, p[2]);
+      if (p.length === 3 && m === "DELETE") return dev.deleteApp(request, env, deps, me, p[2]);
+      if (p.length === 4 && p[3] === "build-token" && m === "POST") return dev.rotateBuildToken(request, env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "release" && m === "GET") return dev.releaseStatus(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "preview" && m === "GET") return dev.previewApp(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "links" && m === "POST") return dev.createLink(request, env, deps, me, p[2]);
@@ -93,12 +96,14 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     if (p[1] === "keys") {
       if (p.length === 2 && m === "GET") return dev.listKeys(env, me);
       if (p.length === 2 && m === "POST") return dev.createKey(request, env, deps, me);
-      if (p.length === 3 && m === "DELETE") return dev.revokeKey(env, deps, me, p[2]);
+      if (p.length === 3 && p[2] === "revoke-all" && m === "POST") return dev.revokeAllKeys(request, env, deps, me);
+      if (p.length === 3 && m === "DELETE") return dev.revokeKey(request, env, deps, me, p[2]);
     }
+    if (p[1] === "audit" && p.length === 2 && m === "GET") return dev.auditLog(env, me);
     if (p[1] === "devices") {
       if (p.length === 2 && m === "GET") return dev.listDevices(env, me);
-      if (p.length === 4 && p[3] === "approve" && m === "POST") return dev.approveDevice(env, deps, me, p[2]);
-      if (p.length === 4 && p[3] === "reject" && m === "POST") return dev.rejectDevice(env, deps, me, p[2]);
+      if (p.length === 4 && p[3] === "approve" && m === "POST") return dev.approveDevice(request, env, deps, me, p[2]);
+      if (p.length === 4 && p[3] === "reject" && m === "POST") return dev.rejectDevice(request, env, deps, me, p[2]);
       if (p.length === 3 && m === "DELETE") return dev.removeDevice(env, me, p[2]);
     }
   }

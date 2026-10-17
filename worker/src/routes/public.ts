@@ -1,5 +1,6 @@
 // Routes a friend or a visitor hits without signing in.
-import { Db, type AppRow, type LinkRow } from "../db.js";
+import { renderSVG } from "uqr";
+import { Db, type AppRow, type Developer, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
 import { dlUrl, rewriteManifestUrls, signManifestLinks } from "../flow.js";
 import { HttpError, json } from "../http.js";
@@ -20,6 +21,7 @@ export function appDetails(app: AppRow) {
     privacySummary: app.privacySummary,
     iconUrl: app.iconUrl,
     screenshots: app.screenshots,
+    updatedAt: app.updatedAt,
   };
 }
 
@@ -35,24 +37,17 @@ export async function devPage(env: Env, slug: string): Promise<Response> {
   const dev = await db.developerBySlug(slug);
   if (!dev) throw new HttpError(404, "no developer page here");
   const apps = await db.appsByDeveloper(dev.id, true);
-  return json({ developer: { slug: dev.slug, displayName: dev.displayName }, apps: apps.map(appDetails) });
+  return json({ developer: { id: dev.id, slug: dev.slug, displayName: dev.displayName }, apps: apps.map(appDetails) });
 }
 
-// GET /api/public/links/:id - everything the install page needs.
-export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Response> {
-  const db = Db.from(env);
-  const link = await db.linkById(linkId);
-  if (!link) throw new HttpError(404, "no app behind this link");
-  if (!linkActive(link, deps.now())) throw new HttpError(410, "this link is no longer active");
-  const app = await db.appById(link.appId);
-  const dev = app && (await db.developerById(app.developerId));
-  if (!app || !dev) throw new HttpError(404, "no app behind this link");
+// Everything an install page needs; shared by share links and the dashboard preview.
+export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Developer, linkId: string | null) {
   const secrets = await loadSecrets(env, dev.id);
   let manifest = null;
   let manifestError: string | null = null;
   try {
     manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
-    // Private release assets need the token; the browser gets a signed link instead.
+    // Private release assets need the token; the browser gets signed links instead.
     if (new URL(manifest.icon).host === "api.github.com") manifest.icon = await dlUrl(env, deps, { url: manifest.icon, kind: "icon", dev: dev.id });
     manifest.screenshots = await Promise.all(
       (manifest.screenshots ?? []).map((u) => (new URL(u).host === "api.github.com" ? dlUrl(env, deps, { url: u, kind: "icon", dev: dev.id }) : Promise.resolve(u))),
@@ -60,15 +55,48 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
   } catch (err) {
     manifestError = err instanceof Error ? err.message : String(err);
   }
-  return json({
-    linkId: link.id,
-    developer: { slug: dev.slug, displayName: dev.displayName },
+  return {
+    linkId,
+    developer: { id: dev.id, slug: dev.slug, displayName: dev.displayName },
     app: appDetails(app),
     release: manifest
-      ? { version: manifest.version, minPlayers: manifest.minPlayers, maxPlayers: manifest.maxPlayers, install: manifest.install, fallbackName: manifest.name, fallbackIcon: manifest.icon, fallbackDescription: manifest.description, fallbackScreenshots: manifest.screenshots ?? [] }
+      ? {
+          version: manifest.version,
+          minPlayers: manifest.minPlayers,
+          maxPlayers: manifest.maxPlayers,
+          install: manifest.install,
+          fallbackName: manifest.name,
+          fallbackIcon: manifest.icon,
+          fallbackDescription: manifest.description,
+          fallbackScreenshots: manifest.screenshots ?? [],
+        }
       : null,
     releaseError: manifestError,
-  });
+  };
+}
+
+async function activeLink(env: Env, deps: Deps, linkId: string): Promise<{ link: LinkRow; app: AppRow; dev: Developer }> {
+  const db = Db.from(env);
+  const link = await db.linkById(linkId);
+  if (!link) throw new HttpError(404, "no app behind this link");
+  if (!linkActive(link, deps.now())) throw new HttpError(410, "this link is no longer active");
+  const app = await db.appById(link.appId);
+  const dev = app && (await db.developerById(app.developerId));
+  if (!app || !dev) throw new HttpError(404, "no app behind this link");
+  return { link, app, dev };
+}
+
+// GET /api/public/links/:id
+export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Response> {
+  const { link, app, dev } = await activeLink(env, deps, linkId);
+  return json(await buildLinkPage(env, deps, app, dev, link.id));
+}
+
+// GET /api/public/links/:id/qr.svg
+export async function linkQr(env: Env, deps: Deps, linkId: string): Promise<Response> {
+  await activeLink(env, deps, linkId);
+  const svg = renderSVG(`${env.PUBLIC_ORIGIN}/l/${linkId}`, { border: 2, pixelSize: 8 });
+  return new Response(svg, { status: 200, headers: { "Content-Type": "image/svg+xml", "Cache-Control": "private, max-age=3600" } });
 }
 
 // GET /dl/:token - stream an artefact behind a signed link; manifests get their .ipa links re-signed.

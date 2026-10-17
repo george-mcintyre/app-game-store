@@ -1,10 +1,11 @@
 // GitHub OAuth sign-in and cookie sessions for developers.
-import { randomId } from "./crypto.js";
+import { randomId, sha256Hex } from "./crypto.js";
 import { Db, type Developer } from "./db.js";
 import type { Deps, Env } from "./env.js";
-import { HttpError } from "./http.js";
+import { HttpError, bearer } from "./http.js";
 
 export const SESSION_COOKIE = "oa_session";
+export const API_KEY_PREFIX = "oa_";
 const STATE_COOKIE = "oa_state";
 const SESSION_DAYS = 30;
 
@@ -93,16 +94,49 @@ export async function logout(request: Request, env: Env): Promise<Response> {
   return new Response(null, { status: 302, headers: { Location: `${env.PUBLIC_ORIGIN}/`, "Set-Cookie": cookie(SESSION_COOKIE, "", 0, isSecure(env)) } });
 }
 
-export async function currentDeveloper(request: Request, env: Env, deps: Deps): Promise<Developer | null> {
-  const id = parseCookies(request)[SESSION_COOKIE];
-  if (!id) return null;
-  return Db.from(env).sessionDeveloper(id, deps.now().toISOString());
+export type AuthVia = "session" | "key";
+export interface AuthedDeveloper extends Developer {
+  authVia: AuthVia;
 }
 
-export async function requireDeveloper(request: Request, env: Env, deps: Deps): Promise<Developer> {
+export function newApiKey(): string {
+  return API_KEY_PREFIX + randomId(20);
+}
+
+// A developer is identified by the session cookie or by an API key in the Authorization header.
+export async function currentDeveloper(request: Request, env: Env, deps: Deps): Promise<AuthedDeveloper | null> {
+  const db = Db.from(env);
+  const now = deps.now();
+  const token = bearer(request);
+  if (token !== null) {
+    if (!token.startsWith(API_KEY_PREFIX)) return null;
+    const key = await db.apiKeyByHash(await sha256Hex(token));
+    if (!key) return null;
+    const dev = await db.developerById(key.developerId);
+    if (!dev) return null;
+    if (!key.lastUsedAt || now.getTime() - Date.parse(key.lastUsedAt) > 10 * 60_000) await db.touchApiKey(key.id, now.toISOString());
+    return { ...dev, authVia: "key" };
+  }
+  const id = parseCookies(request)[SESSION_COOKIE];
+  if (!id) return null;
+  const dev = await db.sessionDeveloper(id, now.toISOString());
+  return dev ? { ...dev, authVia: "session" } : null;
+}
+
+export async function requireDeveloper(request: Request, env: Env, deps: Deps): Promise<AuthedDeveloper> {
   const dev = await currentDeveloper(request, env, deps);
-  if (!dev) throw new HttpError(401, "sign in first");
+  if (!dev) throw new HttpError(401, "sign in, or send an API key as Authorization: Bearer oa_...");
+  // Cookie sessions only accept writes from this site; API keys are not sent by browsers across sites.
+  if (dev.authVia === "session" && !["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+    const origin = request.headers.get("Origin");
+    const local = env.PUBLIC_ORIGIN.startsWith("http://localhost") && origin !== null && /^http:\/\/localhost(:\d+)?$/.test(origin);
+    if (origin !== null && origin !== env.PUBLIC_ORIGIN && !local) throw new HttpError(403, "cross-site request refused");
+  }
   return dev;
+}
+
+export function requireSession(dev: AuthedDeveloper): void {
+  if (dev.authVia !== "session") throw new HttpError(403, "this action needs the dashboard, not an API key");
 }
 
 export function normaliseSlug(input: string): string {

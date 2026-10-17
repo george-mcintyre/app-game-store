@@ -311,8 +311,10 @@ async function loadReleaseCard(root: HTMLElement, appId: string, app: DevApp): P
             <dt>Platforms</dt><dd>${platforms || "none"}</dd>
             <dt>Assets</dt><dd>${r.assets.length > 0 ? r.assets.join(", ") : "n/a"}</dd>
             <dt>Screenshots in manifest</dt><dd>${r.screenshots}</dd>
+            <dt>Release notes</dt><dd>${r.changelog ? "CHANGELOG.md shipped" : "no CHANGELOG.md in this release"}</dd>
             ${r.install?.ios ? html`<dt>Ad Hoc profile</dt><dd>${r.profile ? html`${r.profile.devices} device${r.profile.devices === 1 ? "" : "s"}, expires ${fmtDate(r.profile.expirationDate)}` : "not created yet; it is created when you approve the first iPhone"}</dd>` : ""}
           </dl>
+          ${!r.changelog ? callout("warn", html`<p>No <code>CHANGELOG.md</code> in the latest release, so friends see release bodies or commit messages as the revision history. <a href="/dev/guide#release-notes">Add release notes</a>.</p>`) : ""}
           ${r.install?.ios && !r.appleKey ? callout("warn", html`<p>This app has an iPhone build but no App Store Connect key is saved. <a href="/dev/settings#credentials">Add it in Settings</a> before approving devices.</p>`) : ""}
           ${r.install?.ios && !app.profileName ? callout("warn", html`<p>Set the Ad Hoc provisioning profile name below so the console can recreate it when a device is added.</p>`) : ""}
         `

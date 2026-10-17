@@ -131,6 +131,7 @@ export interface ReleaseStatus {
   version: string | null;
   install: { ios: boolean; android: boolean; pwa: boolean } | null;
   screenshots: number;
+  changelog: boolean;
   errors: string[];
 }
 

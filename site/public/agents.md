@@ -104,7 +104,11 @@ GET /api/dev/apps/:id/preview
      "releaseError": null | "message" }
 ```
 
-The same data the install page renders, so you can confirm icon, screenshots and text are in place. Both this and the public link endpoint include `history`: one entry per published release (`version`, `tag`, `title`, `notes`, `date`, `sha`, `releaseUrl`, `commitUrl`), built from the repository's releases and tags; the release body is the notes, falling back to the commit message. GitHub links are present only for public repositories.
+The same data the install page renders, so you can confirm icon, screenshots and text are in place. Both this and the public link endpoint include `history`: one entry per published release (`version`, `tag`, `title`, `notes`, `date`, `sha`, `releaseUrl`, `commitUrl`), built from the repository's releases and tags. Notes come from the `CHANGELOG.md` release asset (Keep a Changelog sections matched by version), then the release body, then the commit message. GitHub links are present only for public repositories.
+
+## Release notes
+
+Friends see the revision history on the install page, so every release needs notes written for them. The mechanism: keep `CHANGELOG.md` at the repository root in Keep a Changelog form (`## [1.2.0] - 2026-10-17` sections, newest first, an `[Unreleased]` section allowed); the release workflow uploads `CHANGELOG.md` as a release asset and uses the version's section as the release body, failing when the section is missing. Draft the entry from the commits in plain words (what changed for the people using the app, not file names), then ask the developer to approve the wording. `GET /api/dev/apps/:id/release` returns `changelog: false` when the latest release did not ship the file.
 
 ## Share links
 

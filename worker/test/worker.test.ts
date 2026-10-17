@@ -100,13 +100,33 @@ describe("share links and public pages", () => {
       version: "0.1.0",
       tag: "release-0.1.0-2",
       title: "",
-      notes: "What's Changed\n- Add rematch button\n- Fix dealing order",
+      notes: "Added:\n- Rematch button, written for the table\nFixed:\n- Dealing order",
       date: "2026-10-10T10:00:00Z",
       sha: "abc1234567890",
       releaseUrl: "https://github.com/o/skull/releases/tag/release-0.1.0-2",
       commitUrl: "https://github.com/o/skull/commit/abc1234567890",
     });
     expect(body.history[1]).toMatchObject({ version: "0.0.9", title: "First table night", notes: "Deal cards in seat order\n\nLonger explanation.", sha: "def4567890123" });
+  });
+
+  it("falls back to the release body when a version is missing from the changelog", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases/assets/7"] = () => new Response("# Changelog\n\n## [9.9.9]\n- other\n", { status: 200 });
+    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { history: { notes: string }[] };
+    expect(body.history[0].notes).toBe("What's Changed\n- Add rematch button\n- Fix dealing order");
+  });
+
+  it("reports whether the latest release ships a changelog", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { appId } = await createSkull(env, deps, cookie);
+    const status = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/release`), env, deps)).json()) as { changelog: boolean };
+    expect(status.changelog).toBe(false);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases/latest"] = () => new Response(JSON.stringify({ tag_name: "v1", assets: [{ name: "my-app.json", url: "https://api.github.com/repos/o/skull/releases/assets/1" }, { name: "CHANGELOG.md", url: "https://api.github.com/repos/o/skull/releases/assets/7" }] }), { status: 200 });
+    const with_ = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/release`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { changelog: boolean };
+    expect(with_.changelog).toBe(true);
   });
 
   it("hides GitHub links for private repositories and survives missing history", async () => {

@@ -32,6 +32,7 @@ function sections(origin: string, slug: string): Section[] {
           <li><b>Approve each new iPhone</b> under <a href="/dev/devices">Devices</a>, or tell your agent to approve by name. This is a judgement call because each approval uses one of your 100 yearly device slots.</li>
           <li><b>Send the share link</b> to the person. The agent can create it and give you the URL and QR code; the message to your friend is yours.</li>
           <li><b>Before the yearly expiry</b> (shown on each app's Latest release card), ship a build and ask friends to tap Update. The agent can cut the release.</li>
+          <li><b>Approve the release notes</b> for each version in <code>CHANGELOG.md</code>. An agent drafts them from the commits; they are shown to your friends as the revision history, so the final words are yours. <a href="/dev/guide#release-notes">How</a>.</li>
         </ol>
         <h3>Everything else: hand it to an agent</h3>
         <ul class="bullets">
@@ -151,6 +152,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
     {
       id: "release",
       title: "4. Make the repository publish releases (agent does this)",
+      sub: [{ id: "release-notes", title: "Release notes" }],
       body: html`
         ${callout("info", html`<p><b>For your information.</b> Prompt 1 on <a href="/dev/agents">Agents and API</a>, pasted into a coding agent inside the repository, writes everything in this section. What remains for you is the signing material in step 2 of the TL;DR.</p>`)}
         <p>The console never looks at your source code. It reads one file, <code>my-app.json</code>, from the latest GitHub Release of the repository, and follows the URLs inside it. Your repository therefore needs a release workflow that:</p>
@@ -179,6 +181,28 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
   }
 }</code></pre>
         <p>Use <code>null</code> for platforms you do not ship. <code>minPlayers</code> and <code>maxPlayers</code> are 1 for anything that is not a game.</p>
+        <h3 id="release-notes">Release notes your friends will read</h3>
+        <p>The install page shows a <b>Revision history</b>: one entry per release, with the version, the date, the commit it was built from, and notes. Automated bodies such as "Automated build 53 of version 0.7.2" are what friends see when nobody writes anything, so write the notes. The mechanism:</p>
+        <ol class="steps">
+          <li>Keep a <code>CHANGELOG.md</code> at the repository root in <a href="https://keepachangelog.com" target="_blank" rel="noopener">Keep a Changelog</a> form: one <code>## [version] - date</code> section per version, newest first, bullets written for the people who use the app. An <code>[Unreleased]</code> section at the top is fine; the store ignores it.</li>
+          <li>The release workflow uploads <code>CHANGELOG.md</code> as a release asset (next to my-app.json) and uses the section for the version being released as the release body. Make the workflow fail when the section is missing, so a release without notes cannot happen by accident.</li>
+          <li>The store reads the <code>CHANGELOG.md</code> from the latest release and matches sections to versions. Precedence per version: changelog section, then release body, then the commit message.</li>
+        </ol>
+        <pre><code># Changelog
+
+## [Unreleased]
+
+## [0.7.2] - 2026-10-17
+### Fixed
+- Dealing order when someone joins mid-round
+### Changed
+- Bigger chip numbers for the far end of the table
+
+## [0.7.1] - 2026-10-16
+### Added
+- Rematch button</code></pre>
+        <p>Headings like <code>### Added</code> become "Added:" labels on the page; bullets stay bullets; GitHub's generated "by @user in ..." and "Full Changelog" lines are dropped; links to GitHub appear only when the repository is public. The Latest release card in the console says whether the release shipped a changelog. An agent can draft the entry from the commits; the words to your friends are yours to approve.</p>
+
         <h3>Check it</h3>
         <p>Open the app in the console. The <b>Latest release</b> card shows the tag, the version, the platforms and the assets it found, or the exact reason it could not read the release. Tap <b>Check again</b> after you push a fix. Common reasons:</p>
         <table class="table">

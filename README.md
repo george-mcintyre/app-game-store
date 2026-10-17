@@ -65,8 +65,9 @@ TL;DR at `/dev/guide#tldr` is the definitive list.
 4. Add the app: name, repository `owner/name`, that profile name, and the App Store style
    details (tagline, description, screenshots, privacy summary). Copy the build token
    shown once into the repository secret `STORE_BUILD_TOKEN`.
-5. Make the repository follow `CONTRACT.md`: publish releases with `my-app.json`, listen
-   for `my-store-rebuild`, call `/api/build-ready`.
+5. Make the repository follow `CONTRACT.md`: publish releases with `my-app.json` and
+   `CHANGELOG.md` (its sections become the revision history friends see), listen for
+   `my-store-rebuild`, call `/api/build-ready`.
 6. Create a share link for the app and send it, or show the QR code.
 
 The in-app guide at `/dev/guide` covers all of this with exact clicks, including how to create

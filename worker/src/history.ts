@@ -1,4 +1,5 @@
-// Revision history for an app, from the repository's GitHub Releases and the commits its tags point at.
+// Revision history for an app: one entry per GitHub Release, notes from the developer's CHANGELOG.md
+// (shipped as a release asset), falling back to the release body, then the commit message.
 import type { AppRow } from "./db.js";
 import type { Deps, Env } from "./env.js";
 import { fetchUpstream } from "./upstream.js";
@@ -26,7 +27,10 @@ interface Release {
   prerelease: boolean;
   published_at: string | null;
   html_url: string;
+  assets?: { name: string; url: string }[];
 }
+
+export const CHANGELOG_ASSET = /^changelog\.md$/i;
 
 interface Tag {
   name: string;
@@ -42,12 +46,45 @@ export function versionLabel(tag: string, name: string | null): string {
   return tag;
 }
 
-// A release name is worth showing only when it says more than the version.
-export function releaseTitle(name: string | null, tag: string, version: string): string {
+// A release name is worth showing only when it says more than the app name, version and build number.
+export function releaseTitle(name: string | null, tag: string, version: string, appName = ""): string {
   const trimmed = (name ?? "").trim();
   if (trimmed === "" || trimmed === tag) return "";
-  const rest = trimmed.replace(version, "").replace(/\b(release|version|build|v)\b/gi, "").replace(/[\s\-:._]+/g, " ").trim();
+  let rest = trimmed.replace(version, "");
+  if (appName) rest = rest.replace(new RegExp(appName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "");
+  rest = rest.replace(/\b(release|version|build|v)\b/gi, "").replace(/\d+/g, "").replace(/[\s\-:._()[\]]+/g, " ").trim();
   return rest.length >= 4 ? trimmed : "";
+}
+
+// Keep a Changelog sections: "## [1.2.0] - 2026-10-17", "## 1.2.0", "## v1.2.0 (2026-10-17)".
+// Returns version -> cleaned notes. "[Unreleased]" and text before the first section are ignored.
+export function parseChangelog(text: string): Map<string, string> {
+  const out = new Map<string, string>();
+  let current: string | null = null;
+  let buf: string[] = [];
+  const flush = () => {
+    if (current !== null) {
+      const notes = cleanNotes(buf.join("\n"));
+      if (notes !== "" && !out.has(current)) out.set(current, notes);
+    }
+    buf = [];
+  };
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    const section = /^##\s+\[?v?(\d+\.\d+(?:\.\d+)?(?:-[A-Za-z][\w.]*)?)\]?/.exec(line);
+    if (section) {
+      flush();
+      current = section[1];
+      continue;
+    }
+    if (/^##\s+/.test(line)) {
+      flush();
+      current = null;
+      continue;
+    }
+    if (current !== null) buf.push(line);
+  }
+  flush();
+  return out;
 }
 
 // Strip GitHub's generated-notes boilerplate and markdown that would read badly to a friend.
@@ -62,7 +99,8 @@ export function cleanNotes(body: string): string {
         .replace(/\[([^\]]+)\]\((?:[^)]+)\)/g, "$1")
         .replace(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/(\d+)/g, "#$1")
         .replace(/\*\*/g, "")
-        .replace(/^\s*#{1,6}\s+/, "")
+        .replace(/^\s*#{3,6}\s+(.+?)\s*:?$/, "$1:")
+        .replace(/^\s*#{1,2}\s+/, "")
         .replace(/^\s*[-*]\s+/, "- ")
         .trimEnd(),
     )
@@ -120,22 +158,23 @@ async function fetchHistory(env: Env, deps: Deps, app: AppRow, token: string | u
   if (!releases) return [];
   const isPublic = repo ? !repo.private : false;
   const shaByTag = new Map((tags ?? []).map((t) => [t.name, t.commit.sha]));
+  const published = releases.filter((r) => !r.draft && !r.prerelease);
+  const changelog = await loadChangelog(env, deps, published[0], token);
   const out: HistoryEntry[] = [];
   let lookups = 0;
-  for (const r of releases) {
-    if (r.draft || r.prerelease) continue;
+  for (const r of published) {
     const sha = shaByTag.get(r.tag_name) ?? null;
-    let notes = cleanNotes(r.body ?? "");
+    const version = versionLabel(r.tag_name, r.name);
+    let notes = changelog.get(version) ?? cleanNotes(r.body ?? "");
     if (notes === "" && sha && lookups < MAX_COMMIT_LOOKUPS) {
       lookups++;
       const commit = await ghJson<{ commit: { message: string } }>(env, deps, `${base}/commits/${sha}`, token);
       if (commit) notes = cleanNotes(commit.commit.message);
     }
-    const version = versionLabel(r.tag_name, r.name);
     out.push({
       version,
       tag: r.tag_name,
-      title: releaseTitle(r.name, r.tag_name, version),
+      title: releaseTitle(r.name, r.tag_name, version, app.name),
       notes,
       date: r.published_at,
       sha,
@@ -144,4 +183,17 @@ async function fetchHistory(env: Env, deps: Deps, app: AppRow, token: string | u
     });
   }
   return out;
+}
+
+// The CHANGELOG.md asset on the latest published release covers every version at once.
+async function loadChangelog(env: Env, deps: Deps, latest: Release | undefined, token: string | undefined): Promise<Map<string, string>> {
+  const asset = latest?.assets?.find((a) => CHANGELOG_ASSET.test(a.name));
+  if (!asset) return new Map();
+  try {
+    const res = await fetchUpstream(env, deps, asset.url, token);
+    if (!res.ok) return new Map();
+    return parseChangelog(await res.text());
+  } catch {
+    return new Map();
+  }
 }

@@ -1,4 +1,5 @@
 import { agents, appForm, appLinks, appsPage, dashboard, devices, settings } from "./pages/dev.js";
+import { exampleApp, examplePage } from "./pages/example.js";
 import { guide } from "./pages/guide.js";
 import { devPage, installPage, landing, notFound, previewPage, waitPage } from "./pages/public.js";
 import { navigate } from "./nav.js";
@@ -24,6 +25,8 @@ async function render(): Promise<void> {
     case "settings": await settings(root); break;
     case "guide": await guide(root); break;
     case "agents": await agents(root); break;
+    case "example": await examplePage(root); break;
+    case "example-app": await exampleApp(root); break;
     default: notFound(root);
   }
   if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
@@ -31,6 +34,7 @@ async function render(): Promise<void> {
 
 // Same-origin links navigate without a reload; everything else is left to the browser.
 document.addEventListener("click", (e) => {
+  if (e.defaultPrevented) return;
   const a = (e.target as HTMLElement).closest("a");
   if (!a || a.target || a.hasAttribute("download") || e.metaKey || e.ctrlKey) return;
   const url = new URL(a.href, location.href);

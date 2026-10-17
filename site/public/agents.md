@@ -106,9 +106,18 @@ DELETE /api/dev/links/:id         -> { "ok": true }
 
 GET /api/public/links/:id         (no auth) -> install page data, 410 when expired or revoked, 404 when unknown
 GET /api/public/links/:id/qr.svg  (no auth) -> SVG QR code of the link
+GET /api/public/links/:id/latest  (no auth) -> { "name", "version", "ios": { "installUrl", "manifestUrl", "bundleId" } | null, "android": { "apkUrl" } | null, "pwa", "linksExpireAt" }
 ```
 
 Give the developer the `url`; one link per person or group is the convention so links can be revoked one at a time.
+
+`/latest` is what an installed app polls to offer updates: compare `version` with the running version, then open `ios.installUrl` (iOS shows its own Install prompt) or `android.apkUrl`. The signed links inside are good for one hour, so fetch right before opening. Recommend a dedicated link labelled "In-app updates" that is never revoked.
+
+## Limits worth telling the developer
+
+- Apple: 100 iPhones per membership year across all of the developer's apps, counted per device; removing a device does not free its slot; Ad Hoc builds expire one year after their profile was made.
+- Android and web: no device limit.
+- Nothing auto-updates; friends tap Update. Version numbers must increase and the Android signing key must stay the same.
 
 ## Devices (iPhones)
 
@@ -191,3 +200,5 @@ Get an iPhone installed:
 ## Prompts
 
 Two prompts the developer can paste into a coding agent are shown on `/dev/agents`, pre-filled for their app: one for an agent inside the app repository (sets up releases to the contract), one for an agent that drives this API (register, check, share, approve).
+
+Copyright Level N Ltd 2026.

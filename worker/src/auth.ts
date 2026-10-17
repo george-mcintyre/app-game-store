@@ -11,7 +11,7 @@ const STATE_COOKIE = "oa_state";
 const SESSION_DAYS = 30;
 
 // Paths a developer slug may not take.
-export const RESERVED_SLUGS = new Set(["api", "dl", "dev", "l", "assets", "robots.txt", "favicon.ico", "favicon.svg", "index.html", "agents.md", "contract.md", "llms.txt"]);
+export const RESERVED_SLUGS = new Set(["api", "dl", "dev", "l", "example", "assets", "robots.txt", "favicon.ico", "favicon.svg", "index.html", "agents.md", "contract.md", "llms.txt"]);
 
 export function parseCookies(request: Request): Record<string, string> {
   const out: Record<string, string> = {};

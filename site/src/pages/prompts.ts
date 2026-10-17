@@ -19,7 +19,9 @@ Do this:
 2. Add .github/workflows/release.yml that runs on tag push v*: build the signed APK (and the iOS .ipa when iOS applies), create a GitHub Release that is not a draft and not a pre-release, and upload my-app.json, icon.png, screenshot-1.png (and more), <app>.apk, and for iOS manifest.plist and <app>.ipa. Use the smallest runner that works; macOS minutes cost ten times Linux minutes.
 3. iOS only: also handle "repository_dispatch" with type "my-store-rebuild". Read client_payload.app, profileUrl, profileUuid and buildReadyUrl. Download the provisioning profile from profileUrl with the header "Authorization: Bearer $STORE_BUILD_TOKEN", decode profileBase64 to ~/Library/MobileDevice/Provisioning Profiles/<uuid>.mobileprovision, sign with manual signing against that profile, write manifest.plist whose software-package url is the .ipa release-asset API URL, publish the release, then POST buildReadyUrl with JSON { "app": <client_payload.app>, "manifestUrl": <release-asset API URL of manifest.plist>, "version": <version>, "profileUuid": <client_payload.profileUuid> } and the same bearer header.
 4. Keep artefact URLs out of the README and out of any public page; the store hands out short-lived links itself.
-5. Add a short RELEASING.md that says how to cut a release (bump version, tag, push) and which secrets must exist.
+5. Add an in-app update check: on launch fetch https://ourapps.app/api/public/links/<UPDATE_LINK_ID>/latest, compare "version" with the running version, and if newer show one "Update" button that opens ios.installUrl on iOS or android.apkUrl on Android. Fetch right before opening (links last an hour). Fail silently when offline. Ask me for the link id if it is not provided.
+6. Make sure every release bumps the version numbers phones compare (Android versionCode, iOS CFBundleVersion) and that the Android signing key never changes.
+7. Add a short RELEASING.md that says how to cut a release (bump version, tag, push) and which secrets must exist.
 
 When finished, tell me: the files you created, the exact secrets that still need values, and the git tag to push for the first release.`;
 }

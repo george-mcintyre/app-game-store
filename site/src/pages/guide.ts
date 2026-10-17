@@ -200,20 +200,73 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
           <li>Sends <code>my-store-rebuild</code> to the repository with the profile id and the new device. The workflow downloads the profile from the console with its build token.</li>
           <li>When the workflow publishes and calls <code>/api/build-ready</code>, the console marks ready every waiting device whose number is inside that profile. A device approved after the workflow had already fetched the profile is not in that build, so the console sends one more rebuild for it automatically.</li>
         </ol>
-        ${callout("warn", html`<p><b>100 iPhones per membership year.</b> Apple counts registrations, not current devices: removing a device does not give the slot back until your membership renews. Approve people, not experiments, and register your own test phones once.</p>`)}
+        ${callout("warn", html`<p><b>100 iPhones per membership year, across all your apps.</b> Apple counts devices on your account, not per app, and counts registrations rather than current devices: removing a device does not give the slot back until your membership renews. Approve people, not experiments, and register your own test phones once.</p>`)}
         <p><b>Approve your own iPhone first.</b> Open your share link on your phone like a friend would; you will see every screen they see and catch problems before anyone else does.</p>
       `,
     },
     {
       id: "updates",
-      title: "7. Updates and the yearly re-sign",
+      title: "7. Updates, auto-update and the yearly re-sign",
+      sub: [{ id: "auto-update", title: "Auto-update" }],
       body: html`
+        <p><b>Nothing updates on its own.</b> There is no store app running in the background on your friends' phones, so an installed copy stays as it is until someone taps Update. Here is what each side does.</p>
+        <table class="table">
+          <tr><th>Who</th><th>What happens</th></tr>
+          <tr><td>You</td><td>Bump the version, push a tag. The workflow publishes a release and the share link serves the new version at once. Existing iPhones need no approval; the signing profile already contains them.</td></tr>
+          <tr><td>Friend on iPhone</td><td>Taps Update (in the app, or Get on the same share link), then Install on Apple's prompt. The app is replaced in place; settings and data stay. No new registration, no device slot used.</td></tr>
+          <tr><td>Friend on Android</td><td>Taps Update, then Install when the phone asks. Data stays as long as the signing key is the same.</td></tr>
+          <tr><td>Friend on a web app</td><td>Nothing. The page refreshes itself.</td></tr>
+        </table>
         <ul class="bullets">
-          <li><b>New version:</b> tag and push; the workflow publishes a new release. Friends open the same link and tap Get again. Android installs over the old version if the signing key is the same; iPhone installs over the old version if the bundle id is the same.</li>
-          <li><b>iPhone profiles expire after one year.</b> When the profile expires the app stops opening. The console shows the expiry date on each app's Latest release card; put a reminder a month before. Approving any device recreates the profile with a fresh year; so does a rebuild triggered by hand from the repository after the profile is recreated.</li>
-          <li><b>Removing someone:</b> revoke their link to stop new installs. Apps already installed keep working until the profile expires; there is no remote uninstall, the same as any app.</li>
-          <li><b>Keep your tokens fresh:</b> the GitHub token has an expiry you chose. The console tells you when reads start failing; Settings shows when each credential was saved.</li>
+          <li><b>Version numbers must go up:</b> Android <code>versionCode</code> and iOS <code>CFBundleVersion</code>, or the phone refuses the update as "older".</li>
+          <li><b>Never change the Android signing key.</b> A different key means uninstall and reinstall, with data loss.</li>
+          <li><b>iPhone builds expire</b> one year after their provisioning profile was created; after that the app will not open. The app's Latest release card shows the date. Ship a build before then and ask friends to tap Update. Approving any device recreates the profile with a fresh year.</li>
+          <li><b>Removing someone:</b> revoke their link. Installed copies keep working until the profile expires; there is no remote uninstall, same as any app.</li>
         </ul>
+
+        <h3 id="auto-update">Auto-update: let the app check for itself</h3>
+        <p>Phones will not check for you, but your app can. Every active share link has a small endpoint for exactly this:</p>
+        <pre><code>GET https://ourapps.app/api/public/links/&lt;linkId&gt;/latest
+
+{
+  "name": "Skull",
+  "version": "0.1.2",
+  "ios":     { "installUrl": "itms-services://?action=download-manifest&url=https%3A%2F%2Fourapps.app%2Fdl%2F...", "manifestUrl": "https://ourapps.app/dl/...", "bundleId": "com.you.skull" },
+  "android": { "apkUrl": "https://ourapps.app/dl/..." },
+  "pwa": null,
+  "linksExpireAt": "2026-10-16T11:00:00.000Z"
+}</code></pre>
+        <ol class="steps">
+          <li>Create a share link labelled <b>In-app updates</b> and never revoke it (revoking it stops update checks for everyone who has the app). Put its id in the app.</li>
+          <li>On launch, fetch <code>/latest</code>. Compare <code>version</code> with the running version. Do this quietly; a failed fetch means no update, not an error.</li>
+          <li>If newer, show one button. iPhone: open <code>ios.installUrl</code>; iOS shows its own Install prompt and replaces the app. Android: open <code>android.apkUrl</code> in the browser; the phone downloads and asks to install.</li>
+          <li>Fetch right before opening the link, because the signed links inside are good for an hour.</li>
+        </ol>
+        <p class="small muted">The agent prompt on <a href="/dev/agents">Agents and API</a> asks your coding agent to add this check.</p>
+        <h3>Swift (iOS)</h3>
+        <pre><code>struct Latest: Decodable { let version: String; let ios: IOS?; struct IOS: Decodable { let installUrl: String } }
+
+func checkForUpdate() async {
+    guard let url = URL(string: "https://ourapps.app/api/public/links/LINK_ID/latest"),
+          let (data, _) = try? await URLSession.shared.data(from: url),
+          let latest = try? JSONDecoder().decode(Latest.self, from: data),
+          let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
+          latest.version.compare(current, options: .numeric) == .orderedDescending,
+          let install = latest.ios.flatMap({ URL(string: $0.installUrl) }) else { return }
+    // Show your own "Update to \(latest.version)" button, then:
+    await UIApplication.shared.open(install)
+}</code></pre>
+        <h3>Kotlin (Android)</h3>
+        <pre><code>data class Latest(val version: String, val android: AndroidPart?) { data class AndroidPart(val apkUrl: String) }
+
+suspend fun checkForUpdate(context: Context) {
+    val latest = runCatching { fetchJson&lt;Latest&gt;("https://ourapps.app/api/public/links/LINK_ID/latest") }.getOrNull() ?: return
+    val current = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: return
+    if (!isNewer(latest.version, current) || latest.android == null) return
+    // Show your own "Update to ${"$"}{latest.version}" button, then:
+    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(latest.android.apkUrl)))
+}</code></pre>
+        <p class="small muted">Android installs from the browser need the one-time "allow from this source" permission the friend already granted at first install. For a smoother in-app install, download the APK yourself and hand it to the package installer with a content URI; the one-tap confirmation remains.</p>
       `,
     },
     {
@@ -269,7 +322,9 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
       title: "11. Limits and costs",
       body: html`
         <ul class="bullets">
-          <li><b>Apple Developer Program:</b> 99 US dollars a year. 100 iPhones per membership year. Ad Hoc profiles last one year.</li>
+          <li><b>Apple Developer Program:</b> 99 US dollars a year. <b>100 iPhones per membership year across all your apps</b>, counted per device: eight friends on three apps use eight slots. Slots do not come back when a device is removed. Ad Hoc profiles last one year. Past 100 people, TestFlight takes 10,000 testers with 90-day builds, and the App Store has no limit.</li>
+          <li><b>Android and web:</b> no device limit and no account. Google is phasing in developer verification for installs on certified phones from 2026, with a free small-distribution tier planned.</li>
+          <li><b>Share links:</b> unlimited, and they only expire when you set a date.</li>
           <li><b>GitHub:</b> free. Releases are free storage; private repositories get 2,000 Actions minutes a month, and macOS minutes count ten times. A lean iOS job takes 8 to 15 minutes, so budget roughly 15 iPhone builds a month on the free tier, or run iOS builds on your own Mac.</li>
           <li><b>ourapps itself:</b> free. It runs on Cloudflare's free tier: 100,000 requests a day, which is thousands of install pages.</li>
           <li><b>File size:</b> GitHub Release assets up to 2 GB each. Phones download through the console, so keep builds reasonable for mobile data.</li>

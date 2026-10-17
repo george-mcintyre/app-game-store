@@ -79,7 +79,7 @@ export async function dashboard(root: HTMLElement): Promise<void> {
             </div>
             <div class="card">
               <h2>Learn and automate</h2>
-              <p class="small muted">The <a href="/dev/guide">guide</a> covers every step from Apple keys to the first install. The <a href="/dev/agents">agents page</a> has API keys and prompts so a coding agent can do the repository work for you.</p>
+              <p class="small muted">The <a href="/dev/guide#tldr">guide's TL;DR</a> lists the few things only you can do (sign in, tokens, Apple portal, approvals). Everything else an agent does with the API key and prompts on the <a href="/dev/agents">agents page</a>.</p>
             </div>
           </div>
         </div>
@@ -693,7 +693,7 @@ export async function agents(root: HTMLElement): Promise<void> {
     me,
     "Agents and API",
     html`
-      ${callout("info", html`<p><b>Everything the console does is an API.</b> Create a key, give it to your coding agent with one of the prompts below, and it can register apps, check releases, create share links and approve devices. Full reference: <a href="/agents.md">ourapps.app/agents.md</a>; repository contract: <a href="/contract.md">ourapps.app/contract.md</a>.</p>`)}
+      ${callout("info", html`<p><b>Everything the console does is an API, and the prompts below explain it all to an agent.</b> What stays with you: signing in, creating the GitHub token and the Apple key, the Apple portal setup for iPhone apps, creating an API key here, approving iPhones by name, and sending links to people. The <a href="/dev/guide#tldr">TL;DR in the guide</a> lists exactly those. Full reference: <a href="/agents.md">ourapps.app/agents.md</a>; repository contract: <a href="/contract.md">ourapps.app/contract.md</a>.</p>`)}
 
       <div class="grid-2 mt">
         <div class="card">

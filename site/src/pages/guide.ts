@@ -11,6 +11,40 @@ const kbd = (text: string) => html`<span class="kbd">${text}</span>`;
 function sections(origin: string, slug: string): Section[] {
   return [
     {
+      id: "tldr",
+      title: "TL;DR: what only you can do",
+      body: html`
+        ${callout("info", html`<p><b>Most of this guide is for your information, not your to-do list.</b> The prompts on <a href="/dev/agents">Agents and API</a> and the documents at <a href="/agents.md">agents.md</a> and <a href="/contract.md">contract.md</a> tell a coding agent everything below. Give an agent an API key and those prompts and it registers the app, sets up the repository, publishes releases, creates share links and checks devices. The steps that remain are the ones that need your identity, your money or your judgement.</p>`)}
+        <h3>You, once per account</h3>
+        <ol class="steps">
+          <li><b>Sign in with GitHub</b> at <a href="/dev">/dev</a>. An agent cannot do this; it is your identity.</li>
+          <li><b>Create a GitHub fine-grained token</b> (Contents, read and write, on your app repositories) and paste it under <a href="/dev/settings#credentials">Settings</a>. Tokens are created on GitHub while signed in as you. <a href="/dev/guide#github-token">Steps</a>.</li>
+          <li><b>iPhone apps only: pay for the Apple Developer Program</b> (99 US dollars a year), then create an <b>App Store Connect API key</b> with the Admin role and paste issuer id, key id and the .p8 contents under Settings, plus your team id. <a href="/dev/guide#apple-key">Steps</a>.</li>
+          <li><b>Create one API key</b> on <a href="/dev/agents">Agents and API</a> and store it where your agent runs. Keys are made from a browser session only; agents cannot mint their own.</li>
+        </ol>
+        <h3>You, once per iPhone app</h3>
+        <ol class="steps">
+          <li><b>In the Apple developer portal:</b> an App ID for the bundle id, an Apple Distribution certificate (exported as .p12 with a password), your own iPhone registered, and an <b>Ad Hoc</b> provisioning profile with a name you choose. <a href="/dev/guide#apple-setup">Steps</a>. Apple has no API for the certificate, so this stays manual.</li>
+          <li><b>Put the signing secrets into the repository:</b> the .p12 as base64, its password, and for Android the keystore and its passwords. The agent can run <code>gh secret set</code> for you if you hand it the values, but the values come from you.</li>
+        </ol>
+        <h3>You, as things happen</h3>
+        <ol class="steps">
+          <li><b>Approve each new iPhone</b> under <a href="/dev/devices">Devices</a>, or tell your agent to approve by name. This is a judgement call because each approval uses one of your 100 yearly device slots.</li>
+          <li><b>Send the share link</b> to the person. The agent can create it and give you the URL and QR code; the message to your friend is yours.</li>
+          <li><b>Before the yearly expiry</b> (shown on each app's Latest release card), ship a build and ask friends to tap Update. The agent can cut the release.</li>
+        </ol>
+        <h3>Everything else: hand it to an agent</h3>
+        <ul class="bullets">
+          <li>Registering the app with its listing text, icon and screenshots (<code>POST /api/dev/apps</code>).</li>
+          <li>Writing the release workflow, my-app.json, the rebuild hook and the in-app update check in the repository (prompt 1).</li>
+          <li>Storing <code>STORE_BUILD_TOKEN</code> and <code>STORE_APP_ID</code> as repository secrets.</li>
+          <li>Cutting releases, checking <code>/release</code> status and fixing what it reports.</li>
+          <li>Creating, labelling, revoking share links; listing waiting devices; approving the ones you name (prompt 2).</li>
+        </ul>
+        <p class="small muted">Rule of thumb: if it needs a password, a payment, a certificate, or a decision about a person, it is yours. If it is typing, reading a file, or calling this API, it is the agent's.</p>
+      `,
+    },
+    {
       id: "overview",
       title: "What ourapps does",
       body: html`
@@ -38,7 +72,7 @@ function sections(origin: string, slug: string): Section[] {
     },
     {
       id: "credentials",
-      title: "2. Keys the console needs",
+      title: "2. Keys the console needs (you)",
       sub: [
         { id: "github-token", title: "GitHub token" },
         { id: "apple-key", title: "App Store Connect key" },
@@ -89,8 +123,9 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
     },
     {
       id: "add-app",
-      title: "3. Add your app",
+      title: "3. Add your app (agent can do this)",
       body: html`
+        ${callout("info", html`<p><b>For your information.</b> With an API key, prompt 2 on <a href="/dev/agents">Agents and API</a> lets an agent do this whole section: it creates the app, stores the build token in the repository, and reports the app id. Read on only if you prefer the form.</p>`)}
         <p>Go to <a href="/dev/apps/new">Apps, Add an app</a>. Every field except the name and repository is optional, and blank fields get sensible placeholders, so you can add the app now and polish the listing later. What each field does:</p>
         <table class="table">
           <tr><th>Field</th><th>Shows up as</th><th>Tip</th></tr>
@@ -115,8 +150,9 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
     },
     {
       id: "release",
-      title: "4. Make the repository publish releases",
+      title: "4. Make the repository publish releases (agent does this)",
       body: html`
+        ${callout("info", html`<p><b>For your information.</b> Prompt 1 on <a href="/dev/agents">Agents and API</a>, pasted into a coding agent inside the repository, writes everything in this section. What remains for you is the signing material in step 2 of the TL;DR.</p>`)}
         <p>The console never looks at your source code. It reads one file, <code>my-app.json</code>, from the latest GitHub Release of the repository, and follows the URLs inside it. Your repository therefore needs a release workflow that:</p>
         <ol class="steps">
           <li>Builds the signed APK and, for iPhone apps, the Ad Hoc signed <code>.ipa</code>.</li>
@@ -156,9 +192,9 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
     },
     {
       id: "share",
-      title: "5. Share with friends",
+      title: "5. Share with friends (agent creates the link, you send it)",
       body: html`
-        <p>Open the app, tap <b>Share links</b>, give the link a label and create it. The link is <code>${origin}/l/</code> followed by a random id; it does not list anywhere and search engines are told to stay away.</p>
+        <p>Open the app, tap <b>Share links</b>, give the link a label and create it, or ask your agent: "create a share link for Poker Night labelled Thursday table". The link is <code>${origin}/l/</code> followed by a random id; it does not list anywhere and search engines are told to stay away. Sending it to the person is the part that stays with you.</p>
         <h3>Good habits</h3>
         <ul class="bullets">
           <li><b>One link per person or group.</b> Labels like "Mum and Dad" or "Tuesday board game crowd" let you revoke one without touching the others.</li>
@@ -181,9 +217,9 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
     },
     {
       id: "devices",
-      title: "6. Approve iPhones",
+      title: "6. Approve iPhones (you decide, agent can execute)",
       body: html`
-        <p>Every iPhone that registers through one of your links shows up in <a href="/dev/devices">Devices</a> with the name the friend typed, the phone model and its state. The overview page also counts the ones waiting for you.</p>
+        <p>Every iPhone that registers through one of your links shows up in <a href="/dev/devices">Devices</a> with the name the friend typed, the phone model and its state. The overview page also counts the ones waiting for you. An agent can list who is waiting and approve the ones you name; the decision stays yours because each approval spends one of the 100 yearly slots.</p>
         <table class="table">
           <tr><th>State</th><th>Meaning</th><th>You</th></tr>
           <tr><td>awaiting device</td><td>Tapped Register, has not installed the profile yet</td><td>Nothing; remove if abandoned</td></tr>
@@ -206,7 +242,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
     },
     {
       id: "updates",
-      title: "7. Updates, auto-update and the yearly re-sign",
+      title: "7. Updates, auto-update and the yearly re-sign (agent does the work)",
       sub: [{ id: "auto-update", title: "Auto-update" }],
       body: html`
         <p><b>Nothing updates on its own.</b> There is no store app running in the background on your friends' phones, so an installed copy stays as it is until someone taps Update. Here is what each side does.</p>
@@ -278,7 +314,7 @@ suspend fun checkForUpdate(context: Context) {
     },
     {
       id: "agents",
-      title: "9. Agents and the API",
+      title: "9. Agents and the API (how to hand it over)",
       body: html`
         <p>Everything in this console is also an API, so a coding agent can do the repetitive parts.</p>
         <ol class="steps">

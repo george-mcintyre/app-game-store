@@ -49,6 +49,15 @@ steps: `SECURITY.md`.
 | `site/public/agents.md` | API reference for agents, served at /agents.md            |
 | `CONTRACT.md` | what an app repository must implement                         |
 
+## Who does what
+
+Only a few steps need a human: signing in with GitHub, creating the GitHub token and the Apple
+App Store Connect key, the one-time Apple portal setup per iPhone app (App ID, distribution
+certificate, Ad Hoc profile), creating an API key for the agent, approving iPhones by name, and
+sending links to people. Everything else (registering the app, the release workflow, releases,
+share links, checks) is done by a coding agent with the prompts on `/dev/agents`. The guide's
+TL;DR at `/dev/guide#tldr` is the definitive list.
+
 ## Add an app
 
 1. Sign in with GitHub at `/dev`.

@@ -2,7 +2,7 @@ import { zipSync, strToU8 } from "fflate";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { handle } from "../src/index.js";
-import { contentType, decorateHtml, extractBundle, inspectHead, isBundleUrl, pickFile, webAppLinkId } from "../src/webapp.js";
+import { contentType, decorateHtml, extractBundle, inspectHead, isBundleUrl, pickName, webAppLinkId } from "../src/webapp.js";
 import { BASE, api, clearDb, createSkull, fakeFetch, githubRoutes, jsonRes, manifest, saveAppleSecrets, signIn, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const HOST = new URL(BASE).host;
@@ -55,11 +55,12 @@ describe("helpers", () => {
   it("strips a single top-level folder and maps paths", () => {
     const files = extractBundle(bundle("dist/"));
     expect(Object.keys(files).sort()).toEqual(["assets/app.js", "icon.svg", "index.html", "manifest.webmanifest"]);
-    expect(pickFile(files, "/")!.name).toBe("index.html");
-    expect(pickFile(files, "/assets/app.js")!.name).toBe("assets/app.js");
-    expect(pickFile(files, "/table/3")!.name).toBe("index.html");
-    expect(pickFile(files, "/missing.png")).toBeNull();
-    expect(pickFile(files, "/../etc/passwd")).toBeNull();
+    const names = Object.keys(files);
+    expect(pickName(names, "/")).toBe("index.html");
+    expect(pickName(names, "/assets/app.js")).toBe("assets/app.js");
+    expect(pickName(names, "/table/3")).toBe("index.html");
+    expect(pickName(names, "/missing.png")).toBeNull();
+    expect(pickName(names, "/../etc/passwd")).toBeNull();
     expect(() => extractBundle(zipSync({ "readme.txt": strToU8("x") }))).toThrow(/index.html/);
     expect(contentType("a.webmanifest")).toBe("application/manifest+json");
     expect(contentType("a.unknown")).toBe("application/octet-stream");
@@ -89,6 +90,31 @@ describe("serving", () => {
     expect((await handle(new Request(`${origin}/nope.png`), env, deps)).status).toBe(404);
     expect((await handle(new Request(`${origin}/api/dev/me`, { headers: { Cookie: cookie } }), env, deps)).status).toBe(404);
     expect((await handle(new Request(`${origin}/`, { method: "POST" }), env, deps)).status).toBe(405);
+  });
+
+  it("unpacks once per release into KV and serves later requests without the zip", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId, appId } = await createSkull(env, deps, cookie);
+    const origin = `https://${linkId}.${HOST}`;
+    const stub = fakeFetch(webRoutes(bundle()));
+    const d = { ...deps, fetch: stub.fetch };
+    expect((await handle(new Request(`${origin}/`), env, d)).status).toBe(200);
+    const zipFetches = () => stub.calls.filter((c) => c.url.endsWith("/assets/9")).length;
+    expect(zipFetches()).toBe(1);
+    expect(await env.WEBAPP_FILES.get(`webapp:${appId}:index`, "json")).toMatchObject({ tag: "v0.1.0", files: expect.arrayContaining(["index.html", "assets/app.js"]) });
+    expect((await handle(new Request(`${origin}/assets/app.js`), env, d)).status).toBe(200);
+    expect((await handle(new Request(`${origin}/table/9`), env, d)).status).toBe(200);
+    expect(zipFetches()).toBe(1);
+
+    // A new release tag triggers one more unpack.
+    const routes = webRoutes(bundle());
+    routes["GET api.github.com/repos/o/skull/releases/latest"] = () =>
+      jsonRes({ tag_name: "v0.2.0", assets: [{ name: "my-app.json", url: "https://api.github.com/repos/o/skull/releases/assets/1" }, { name: "web.zip", url: "https://api.github.com/repos/o/skull/releases/assets/9" }] });
+    const stub2 = fakeFetch(routes);
+    await (globalThis as { caches?: { default?: Cache } }).caches?.default?.delete(new Request(`https://webapp.ourapps.internal/${appId}/release`));
+    expect((await handle(new Request(`${origin}/`), env, { ...deps, fetch: stub2.fetch })).status).toBe(200);
+    expect(stub2.calls.filter((c) => c.url.endsWith("/assets/9")).length).toBe(1);
+    expect((await env.WEBAPP_FILES.get<{ tag: string }>(`webapp:${appId}:index`, "json"))!.tag).toBe("v0.2.0");
   });
 
   it("refuses unknown, revoked and bundle-less links with a plain page", async () => {

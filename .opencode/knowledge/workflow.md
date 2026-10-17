@@ -24,7 +24,8 @@ Never derive the repo from the folder name.
 ## Deploy
 
 1. `npm run build -w site`.
-2. `cd worker`; first time: `npx wrangler d1 create app-game-store` and paste the id into
+2. `cd worker`; first time: `npx wrangler kv namespace create WEBAPP_FILES` and paste the id
+   into `wrangler.jsonc`; `npx wrangler d1 create app-game-store` and paste the id into
    `wrangler.jsonc`; then `npx wrangler d1 migrations apply app-game-store --remote`.
 3. `npx wrangler deploy`.
 4. `PUBLIC_ORIGIN` in `wrangler.jsonc` must equal the live origin; the GitHub OAuth App

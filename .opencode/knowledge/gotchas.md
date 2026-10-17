@@ -37,3 +37,6 @@
 - Per-link app hosts are detected by host suffix in `handle()` before any console routing;
   they never see the session cookie logic, and `/api/*` and `/dl/*` are 404 there on purpose.
   Local `wrangler dev` cannot exercise wildcard hosts; tests cover it with synthetic Requests.
+- Never inflate a web.zip per request: the free plan's 10 ms CPU budget fails on bundles of a
+  few MB (Cloudflare error 1102). `webapp.ts` unpacks once per release tag into the
+  `WEBAPP_FILES` KV namespace and serves single keys; the current tag is cached 60 s.

@@ -79,7 +79,6 @@ export function isBundleUrl(pwa: string | null | undefined, release: { manifestU
 }
 
 const decoder = new TextDecoder();
-const encoder = new TextEncoder();
 
 export interface HeadFacts {
   hasManifest: boolean;
@@ -138,17 +137,6 @@ export function defaultManifest(appName: string, iconUrl: string | null, themeCo
   return JSON.stringify({ name: appName, short_name: appName.slice(0, 12), start_url: "./", scope: "./", display: "standalone", background_color: "#ffffff", theme_color: themeColor, icons });
 }
 
-// Resolves a path inside the bundle; index.html for "/" and for anything that is not a file.
-export function pickFile(files: Record<string, Uint8Array>, pathname: string): { name: string; body: Uint8Array } | null {
-  let path = decodeURIComponent(pathname).replace(/^\/+/, "");
-  if (path.includes("..")) return null;
-  if (path === "" || path.endsWith("/")) path += "index.html";
-  if (files[path]) return { name: path, body: files[path] };
-  if (files[`${path}/index.html`]) return { name: `${path}/index.html`, body: files[`${path}/index.html`] };
-  if (files["index.html"] && !/\.[a-z0-9]{1,8}$/i.test(path)) return { name: "index.html", body: files["index.html"] };
-  return null;
-}
-
 // Unzips a bundle; strips one leading folder when every entry sits under it.
 export function extractBundle(zip: Uint8Array): Record<string, Uint8Array> {
   if (zip.byteLength > MAX_ZIP_BYTES) throw new HttpError(502, "web.zip is larger than 25 MB");
@@ -180,35 +168,57 @@ async function locate(env: Env, deps: Deps, linkId: string): Promise<Located> {
   return { link, app, dev };
 }
 
-function cacheStore(): Cache | null {
-  try {
-    return (globalThis as { caches?: { default?: Cache } }).caches?.default ?? null;
-  } catch {
-    return null;
-  }
+const FILES_TTL_SECONDS = 60 * 60 * 24 * 30;
+const INDEX_KEY = (appId: string) => `webapp:${appId}:index`;
+const FILE_KEY = (appId: string, tag: string, name: string) => `webapp:${appId}:${tag}:${name}`;
+
+interface BundleIndex {
+  tag: string;
+  files: string[];
+  iconHref: string | null;
+  unpackedAt: string;
 }
 
-// Fetches the bundle for the app's latest release, caching the zip per release tag.
-async function loadBundle(env: Env, deps: Deps, app: AppRow, token: string | undefined): Promise<{ files: Record<string, Uint8Array>; tag: string }> {
-  const release = await resolveRelease(env, deps, app, token);
-  const cache = cacheStore();
-  const tag = release.tag ?? "direct";
-  const key = new Request(`https://webapp.ourapps.internal/${app.id}/${encodeURIComponent(tag)}/web.zip`);
-  let zip: Uint8Array | null = null;
+// Which release is current, checked at most once a minute per app so GitHub is not asked on every hit.
+async function currentTag(env: Env, deps: Deps, app: AppRow, token: string | undefined): Promise<{ tag: string; assets: string[] }> {
+  const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
+  const key = new Request(`https://webapp.ourapps.internal/${app.id}/release`);
   if (cache) {
     const hit = await cache.match(key).catch(() => undefined);
-    if (hit) zip = new Uint8Array(await hit.arrayBuffer());
+    if (hit) return (await hit.json()) as { tag: string; assets: string[] };
   }
-  if (!zip) {
-    const asset = await findWebZip(env, deps, app, token, release);
-    const res = await fetchUpstream(env, deps, asset, token);
-    if (!res.ok) throw new HttpError(502, `web.zip could not be fetched (${res.status})`);
-    zip = new Uint8Array(await res.arrayBuffer());
-    if (cache && zip.byteLength <= MAX_ZIP_BYTES) {
-      await cache.put(key, new Response(zip, { headers: { "Content-Type": "application/zip", "Cache-Control": `max-age=${BUNDLE_CACHE_SECONDS}` } })).catch(() => undefined);
-    }
-  }
-  return { files: extractBundle(zip), tag };
+  const release = await resolveRelease(env, deps, app, token);
+  const out = { tag: release.tag ?? "direct", assets: release.assets };
+  if (cache) await cache.put(key, new Response(JSON.stringify(out), { headers: { "Content-Type": "application/json", "Cache-Control": "max-age=60" } })).catch(() => undefined);
+  return out;
+}
+
+// Unpacks the release's web.zip once into KV, one key per file; later requests read single files.
+async function ensureUnpacked(env: Env, deps: Deps, app: AppRow, token: string | undefined, current: { tag: string; assets: string[] }): Promise<BundleIndex> {
+  const existing = await env.WEBAPP_FILES.get<BundleIndex>(INDEX_KEY(app.id), "json");
+  if (existing && existing.tag === current.tag) return existing;
+  const asset = await findWebZip(env, deps, app, token, { manifestUrl: "", assets: current.assets });
+  const res = await fetchUpstream(env, deps, asset, token);
+  if (!res.ok) throw new HttpError(502, `web.zip could not be fetched (${res.status})`);
+  const zip = new Uint8Array(await res.arrayBuffer());
+  const files = extractBundle(zip);
+  const names = Object.keys(files);
+  await Promise.all(names.map((n) => env.WEBAPP_FILES.put(FILE_KEY(app.id, current.tag, n), files[n], { expirationTtl: FILES_TTL_SECONDS })));
+  const index: BundleIndex = { tag: current.tag, files: names, iconHref: inspectHead(decoder.decode(files["index.html"])).iconHref, unpackedAt: deps.now().toISOString() };
+  await env.WEBAPP_FILES.put(INDEX_KEY(app.id), JSON.stringify(index), { expirationTtl: FILES_TTL_SECONDS });
+  return index;
+}
+
+// Resolves the file name to serve from the index alone; no bytes are read yet.
+export function pickName(names: readonly string[], pathname: string): string | null {
+  const set = new Set(names);
+  let path = decodeURIComponent(pathname).replace(/^\/+/, "");
+  if (path.includes("..")) return null;
+  if (path === "" || path.endsWith("/")) path += "index.html";
+  if (set.has(path)) return path;
+  if (set.has(`${path}/index.html`)) return `${path}/index.html`;
+  if (set.has("index.html") && !/\.[a-z0-9]{1,8}$/i.test(path)) return "index.html";
+  return null;
 }
 
 async function findWebZip(env: Env, deps: Deps, app: AppRow, token: string | undefined, release: { manifestUrl: string; assets: string[] }): Promise<string> {
@@ -236,36 +246,48 @@ export async function serveWebApp(request: Request, env: Env, deps: Deps, linkId
     const status = err instanceof HttpError ? err.status : 500;
     return plainPage(status, status === 410 ? "This link is no longer active" : "Nothing here", status === 410 ? "Ask the person who sent it for a new one." : "There is no app at this address.");
   }
-  const secrets = await loadSecrets(env, located.dev.id, ["githubToken"]);
-  let bundle: { files: Record<string, Uint8Array>; tag: string };
-  try {
-    bundle = await loadBundle(env, deps, located.app, secrets.githubToken);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return plainPage(err instanceof HttpError && err.status === 404 ? 404 : 502, "The web app is not available", message);
-  }
   const url = new URL(request.url);
   // Console paths never exist on an app host, so nothing can mistake one for the other.
   if (/^\/(api|dl)(\/|$)/.test(url.pathname)) return plainPage(404, "Not found", "That file is not in the app.");
   const appName = located.app.name || "App";
-  const bundleIcon = inspectHead(decoder.decode(bundle.files["index.html"])).iconHref;
-  const iconUrl = bundleIcon ?? (bundle.files["icon.png"] ? "./icon.png" : bundle.files["icon.svg"] ? "./icon.svg" : null);
   if (url.pathname === BANNER_PATH) {
     return new Response(installBanner, { status: 200, headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": `public, max-age=${FILE_CACHE_SECONDS}` } });
   }
+  const secrets = await loadSecrets(env, located.dev.id, ["githubToken"]);
+  let index: BundleIndex;
+  try {
+    const current = await currentTag(env, deps, located.app, secrets.githubToken);
+    index = await ensureUnpacked(env, deps, located.app, secrets.githubToken, current);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return plainPage(err instanceof HttpError && err.status === 404 ? 404 : 502, "The web app is not available", message);
+  }
+  const names = new Set(index.files);
+  const iconUrl = index.iconHref ?? (names.has("icon.png") ? "./icon.png" : names.has("icon.svg") ? "./icon.svg" : null);
   if (url.pathname === DEFAULT_MANIFEST_PATH) {
     return new Response(defaultManifest(appName, iconUrl), { status: 200, headers: { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" } });
   }
-  const file = pickFile(bundle.files, url.pathname);
-  if (!file) return plainPage(404, "Not found", "That file is not in the app.");
-  const etag = `"${bundle.tag}:${file.name}:${file.body.byteLength}"`;
+  const name = pickName(index.files, url.pathname);
+  if (!name) return plainPage(404, "Not found", "That file is not in the app.");
+  const etag = `"${index.tag}:${name}"`;
   if (request.headers.get("If-None-Match") === etag) return new Response(null, { status: 304, headers: { ETag: etag } });
-  const isHtml = file.name.endsWith(".html");
-  const body = isHtml ? encoder.encode(decorateHtml(decoder.decode(file.body), appName, iconUrl)) : file.body;
-  return new Response(request.method === "HEAD" ? null : body, {
+  const isHtml = name.endsWith(".html");
+  let body: BodyInit | null = null;
+  if (request.method === "GET") {
+    if (isHtml) {
+      const text = await env.WEBAPP_FILES.get(FILE_KEY(located.app.id, index.tag, name), "text");
+      if (text === null) return plainPage(502, "The web app is not available", "A file went missing from the cache; reload in a moment.");
+      body = decorateHtml(text, appName, iconUrl);
+    } else {
+      const stream = await env.WEBAPP_FILES.get(FILE_KEY(located.app.id, index.tag, name), "stream");
+      if (stream === null) return plainPage(502, "The web app is not available", "A file went missing from the cache; reload in a moment.");
+      body = stream;
+    }
+  }
+  return new Response(body, {
     status: 200,
     headers: {
-      "Content-Type": contentType(file.name),
+      "Content-Type": contentType(name),
       ETag: etag,
       "Cache-Control": isHtml ? "no-cache" : `public, max-age=${FILE_CACHE_SECONDS}`,
       "X-Content-Type-Options": "nosniff",

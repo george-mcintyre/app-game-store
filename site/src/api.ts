@@ -59,6 +59,17 @@ export interface Release {
   fallbackScreenshots: string[];
 }
 
+export interface HistoryEntry {
+  version: string;
+  tag: string;
+  title: string;
+  notes: string;
+  date: string | null;
+  sha: string | null;
+  releaseUrl: string | null;
+  commitUrl: string | null;
+}
+
 export interface LinkPage {
   linkId: string | null;
   preview?: boolean;
@@ -66,6 +77,7 @@ export interface LinkPage {
   app: AppDetails;
   release: Release | null;
   releaseError: string | null;
+  history: HistoryEntry[];
 }
 
 export interface ShareLink {

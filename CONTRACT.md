@@ -29,6 +29,15 @@ guessable.
 Repositories that publish elsewhere can set a direct `my-app.json` URL on the app in the
 dashboard instead; the artefact URLs then need to be HTTPS and unguessable.
 
+### Release notes become the revision history
+
+The install page shows a revision history built from the repository's releases: one entry per
+published (non-draft, non-pre-release) release, labelled with the version found in the release
+name or tag, dated from the release, and showing the commit the tag points at. The release
+body is the entry's notes; when it is empty the commit message is used. Write the body for
+your friends (what changed, in plain words); GitHub's generated "by @user in ..." and "Full
+Changelog" lines are stripped. Links to GitHub appear only when the repository is public.
+
 ## 2. Listen for rebuild requests
 
 When a developer approves a new iPhone, the store registers the device with Apple,

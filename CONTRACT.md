@@ -14,6 +14,7 @@ Every build publishes a GitHub Release (not a pre-release, not a draft) with the
 |------------------|--------------|-------------------------------------------------------------|
 | `my-app.json`    | always       | schema 1 manifest (shape and rules in agents.md)             |
 | `icon.png`, `screenshot-*.png` | recommended | referenced from my-app.json `icon` and `screenshots` |
+| `CHANGELOG.md`   | recommended  | Keep a Changelog file; the version's section is the release notes |
 | `manifest.plist` | iOS          | Apple over-the-air manifest pointing at the `.ipa` asset    |
 | `<app>.ipa`      | iOS          | Ad Hoc signed build                                         |
 | `<app>.apk`      | Android      | signed APK                                                  |
@@ -33,10 +34,23 @@ dashboard instead; the artefact URLs then need to be HTTPS and unguessable.
 
 The install page shows a revision history built from the repository's releases: one entry per
 published (non-draft, non-pre-release) release, labelled with the version found in the release
-name or tag, dated from the release, and showing the commit the tag points at. The release
-body is the entry's notes; when it is empty the commit message is used. Write the body for
-your friends (what changed, in plain words); GitHub's generated "by @user in ..." and "Full
-Changelog" lines are stripped. Links to GitHub appear only when the repository is public.
+name or tag, dated from the release, and showing the commit the tag points at.
+
+Notes for each version come, in order of preference, from:
+
+1. The `CHANGELOG.md` asset on the latest release, in Keep a Changelog form: a
+   `## [1.2.0] - 2026-10-17` (or `## 1.2.0`, `## v1.2.0`) section per version, newest first.
+   `### Added`, `### Changed`, `### Fixed` subheadings become labels; bullets stay bullets.
+   An `[Unreleased]` section is ignored. One file covers every version.
+2. The release body.
+3. The commit message of the tagged commit.
+
+Keep `CHANGELOG.md` at the repository root, have the workflow upload it as a release asset
+and use the version's section as the release body, and fail the release when the section is
+missing. Write for the people who use the app. GitHub's generated "by @user in ..." and
+"Full Changelog" lines are stripped; links to GitHub appear only when the repository is
+public. A release named like "Skull 0.7.2 (build 53)" shows only the version; names that say
+more ("First table night") show as a title.
 
 ## 2. Listen for rebuild requests
 

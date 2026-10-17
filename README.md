@@ -28,7 +28,12 @@ endpoint. `/dev/agents` also carries two prompts to paste into a coding agent: o
 app repository to the contract, one drives the console (register, check releases, share,
 approve). `llms.txt` points agents at both documents.
 
-## Security
+## Security and terms
+
+The guide's Security section (`/dev/guide#security`) explains how credentials, account access,
+friends' iPhone records and app files are protected. Developers accept the terms and data
+statement (`/terms`, version in `shared/src/terms.ts`) at first sign-in and after any change;
+the accepted version is shown in the profile, which also offers account deletion.
 
 Credentials are encrypted field by field (AES-256-GCM, key derived per developer from a Worker
 secret, authenticated data binding each field to its owner); API keys, build tokens and session

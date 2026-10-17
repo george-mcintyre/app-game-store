@@ -1,4 +1,5 @@
-import { finishLogin, logout, logoutEverywhere, oauthConfigured, requireDeveloper, startLogin } from "./auth.js";
+import { TERMS_VERSION } from "@my/store-shared";
+import { finishLogin, logout, logoutEverywhere, oauthConfigured, requireDeveloper, requireTerms, startLogin } from "./auth.js";
 import { defaultDeps, type Deps, type Env } from "./env.js";
 import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady } from "./routes/build.js";
@@ -79,6 +80,9 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
   if (p[0] === "dev") {
     const me = await requireDeveloper(request, env, deps);
     if (p[1] === "me" && m === "GET") return dev.me(env, me);
+    if (p[1] === "terms" && m === "POST") return dev.acceptTerms(request, env, deps, me);
+    requireTerms(me, TERMS_VERSION);
+    if (p[1] === "me" && m === "DELETE") return dev.deleteAccount(request, env, me);
     if (p[1] === "me" && m === "PUT") return dev.updateMe(request, env, me);
     if (p[1] === "secrets" && m === "PUT") return dev.updateSecrets(request, env, deps, me);
     if (p[1] === "apps") {

@@ -14,7 +14,8 @@ export type AuditEvent =
   | "build-token-rotated"
   | "device-approved"
   | "device-rejected"
-  | "app-deleted";
+  | "app-deleted"
+  | "terms-accepted";
 
 export async function audit(request: Request | null, env: Env, deps: Deps, developerId: string, event: AuditEvent, detail = ""): Promise<void> {
   const cf = request ? (request as Request & { cf?: { country?: string } }).cf : undefined;

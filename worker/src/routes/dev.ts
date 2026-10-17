@@ -1,4 +1,5 @@
 // Developer dashboard routes, all behind the session cookie.
+import { TERMS_VERSION } from "@my/store-shared";
 import { audit } from "../audit.js";
 import { RESERVED_SLUGS, apiKeyHash, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
 import { randomId, tokenHash, validateAppleKey } from "../crypto.js";
@@ -70,7 +71,30 @@ function secretStatus(s: DeveloperSecrets) {
 // GET /api/dev/me
 export async function me(env: Env, dev: AuthedDeveloper): Promise<Response> {
   const { authVia, scope, keyId: _k, ...developer } = dev;
-  return json({ developer, authVia, scope, secrets: secretStatus(await secretsSummary(env, dev.id)) });
+  return json({ developer, authVia, scope, termsVersion: TERMS_VERSION, secrets: secretStatus(await secretsSummary(env, dev.id)) });
+}
+
+// POST /api/dev/terms - dashboard only; records acceptance of the current terms.
+export async function acceptTerms(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper): Promise<Response> {
+  requireSession(dev);
+  const body = await readJson<{ version?: string }>(request);
+  if (body.version !== TERMS_VERSION) throw new HttpError(400, `the current terms are version ${TERMS_VERSION}`);
+  const now = deps.now().toISOString();
+  await Db.from(env).acceptTerms(dev.id, TERMS_VERSION, now);
+  await audit(request, env, deps, dev.id, "terms-accepted", TERMS_VERSION);
+  return json({ ok: true, termsAcceptedVersion: TERMS_VERSION, termsAcceptedAt: now });
+}
+
+// DELETE /api/dev/me - dashboard only; the body must name the GitHub login to confirm.
+export async function deleteAccount(request: Request, env: Env, dev: AuthedDeveloper): Promise<Response> {
+  requireSession(dev);
+  const body = await readJson<{ confirm?: string }>(request);
+  if (body.confirm !== dev.githubLogin) throw new HttpError(400, "type your GitHub login to confirm");
+  await Db.from(env).deleteDeveloper(dev.id);
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: { "Content-Type": "application/json", "Set-Cookie": `oa_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${env.PUBLIC_ORIGIN.startsWith("https://") ? "; Secure" : ""}` },
+  });
 }
 
 // PUT /api/dev/me

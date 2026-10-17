@@ -76,6 +76,9 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
 }
 
 export async function clearDb(env: Env): Promise<void> {
+  const kv = await env.WEBAPP_FILES.list();
+  await Promise.all(kv.keys.map((k) => env.WEBAPP_FILES.delete(k.name)));
+
   for (const table of ["audit_log", "api_keys", "profiles", "enrolments", "links", "apps", "sessions", "developer_secrets", "developers"]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
   }

@@ -1,5 +1,6 @@
 export interface Env {
   DB: D1Database;
+  WEBAPP_FILES: KVNamespace;
   ASSETS?: Fetcher;
   PUBLIC_ORIGIN: string;
   APPLE_API_BASE: string;

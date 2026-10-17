@@ -152,7 +152,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
     {
       id: "release",
       title: "4. Make the repository publish releases (agent does this)",
-      sub: [{ id: "release-notes", title: "Release notes" }],
+      sub: [{ id: "release-notes", title: "Release notes" }, { id: "web-apps", title: "Web apps: home screen" }],
       body: html`
         ${callout("info", html`<p><b>For your information.</b> Prompt 1 on <a href="/dev/agents">Agents and API</a>, pasted into a coding agent inside the repository, writes everything in this section. What remains for you is the signing material in step 2 of the TL;DR.</p>`)}
         <p>The console never looks at your source code. It reads one file, <code>my-app.json</code>, from the latest GitHub Release of the repository, and follows the URLs inside it. Your repository therefore needs a release workflow that:</p>
@@ -202,6 +202,27 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
 ### Added
 - Rematch button</code></pre>
         <p>Headings like <code>### Added</code> become "Added:" labels on the page; bullets stay bullets; GitHub's generated "by @user in ..." and "Full Changelog" lines are dropped; links to GitHub appear only when the repository is public. The Latest release card in the console says whether the release shipped a changelog. An agent can draft the entry from the commits; the words to your friends are yours to approve.</p>
+
+        <h3 id="web-apps">Web apps: home screen and permissions</h3>
+        <p>When <code>install.pwa</code> names a <code>web.zip</code> release asset, the store serves your site at <code>https://&lt;linkId&gt;.ourapps.app/</code>, its own origin per share link. The store adds, when your page lacks them, a web app manifest, the Apple home screen tags and an icon link, and injects a small banner that offers "Add to home screen": Chrome's native install prompt on Android, the exact Share steps on iPhone Safari, and an "open in Safari" hint inside in-app browsers. Once added, the app launches from the icon in standalone mode and the banner never shows again.</p>
+        <p>No web page can place a shortcut on its own; the user's single tap is required by both platforms. The banner makes that tap obvious. You can ship your own manifest and tags instead; the store leaves them untouched and only adds the banner.</p>
+        <h3>Camera and microphone without asking every time</h3>
+        <p>Permissions are stored per origin, and the home screen app shares the origin, so a grant survives. What to know:</p>
+        <ul class="bullets">
+          <li><b>Android (Chrome):</b> a grant in the installed app is permanent until the user changes it in site settings. The first prompt appears once.</li>
+          <li><b>iPhone Safari in a tab:</b> Safari forgets <code>getUserMedia</code> grants when the tab closes, which is the "asks every time" problem. <b>From the home screen it remembers</b> for as long as the app stays installed. That is the main reason to push the shortcut.</li>
+          <li><b>Ask at the right moment:</b> call <code>getUserMedia</code> from a tap handler (a "Join table" or "Start" button), never on page load; browsers block or silently deny unprompted requests, and users deny what they did not expect.</li>
+          <li><b>Reuse, do not re-ask:</b> keep the stream for the session; stopping all tracks and asking again triggers a fresh prompt on some versions. Check <code>navigator.permissions.query({ name: "camera" })</code> where supported and skip the explanation screen when it is already <code>granted</code>.</li>
+          <li><b>Guard against the in-app browser:</b> Instagram's and Facebook's web views often have no camera access at all. The banner tells users to open in Safari; your app can show the same when <code>getUserMedia</code> is missing.</li>
+        </ul>
+        <pre><code>// Ask from a tap, reuse the stream, remember the outcome.
+let stream;
+startButton.onclick = async () => {
+  if (!navigator.mediaDevices?.getUserMedia) return showOpenInSafariHint();
+  stream ??= await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: true });
+  video.srcObject = stream;
+};</code></pre>
+        <p class="small muted">Push notifications on iPhone also work only from the home screen app (iOS 16.4 or later), another reason to get the shortcut in place.</p>
 
         <h3>Check it</h3>
         <p>Open the app in the console. The <b>Latest release</b> card shows the tag, the version, the platforms and the assets it found, or the exact reason it could not read the release. Tap <b>Check again</b> after you push a fix. Common reasons:</p>

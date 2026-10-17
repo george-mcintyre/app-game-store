@@ -2,7 +2,7 @@ import { zipSync, strToU8 } from "fflate";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { handle } from "../src/index.js";
-import { contentType, extractBundle, isBundleUrl, pickFile, webAppLinkId } from "../src/webapp.js";
+import { contentType, decorateHtml, extractBundle, inspectHead, isBundleUrl, pickFile, webAppLinkId } from "../src/webapp.js";
 import { BASE, api, clearDb, createSkull, fakeFetch, githubRoutes, jsonRes, manifest, saveAppleSecrets, signIn, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const HOST = new URL(BASE).host;
@@ -126,5 +126,50 @@ describe("serving", () => {
     routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () => jsonRes({ ...manifest, install: { ...manifest.install, pwa: "https://skull.example.com/" } });
     const page = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { release: { install: { pwa: string } } };
     expect(page.release.install.pwa).toBe("https://skull.example.com/");
+  });
+});
+
+describe("home screen install", () => {
+  it("adds manifest, apple tags and the banner script to html that lacks them", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const origin = `https://${linkId}.${HOST}`;
+    const html = await (await handle(new Request(`${origin}/`), env, deps)).text();
+    expect(html).toContain('<link rel="manifest" href="/__ourapps/manifest.webmanifest">');
+    expect(html).toContain('<meta name="apple-mobile-web-app-capable" content="yes">');
+    expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Skull">');
+    expect(html).toContain('<link rel="apple-touch-icon" href="./icon.svg">');
+    expect(html).toContain('<script src="/__ourapps/install.js" defer></script>');
+    expect(html.indexOf("<title>Skull web</title>")).toBeGreaterThan(html.indexOf("install.js"));
+
+    const banner = await handle(new Request(`${origin}/__ourapps/install.js`), env, deps);
+    expect(banner.headers.get("Content-Type")).toBe("text/javascript; charset=utf-8");
+    expect(await banner.text()).toContain("beforeinstallprompt");
+
+    const manifest = await handle(new Request(`${origin}/__ourapps/manifest.webmanifest`), env, deps);
+    expect(manifest.headers.get("Content-Type")).toBe("application/manifest+json");
+    expect(await manifest.json()).toMatchObject({ name: "Skull", display: "standalone", start_url: "./", scope: "./", icons: [{ src: "./icon.svg" }] });
+  });
+
+  it("leaves a bundle's own manifest and tags alone", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const own = zipSync({
+      "index.html": strToU8('<!doctype html><html><head><meta name="viewport" content="x"><link rel="manifest" href="./m.webmanifest"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Mine"><link rel="apple-touch-icon" href="./a.png"><meta name="theme-color" content="#000"><meta name="application-name" content="Mine"></head><body>hi</body></html>'),
+      "m.webmanifest": strToU8("{}"),
+    });
+    const html = await (await handle(new Request(`https://${linkId}.${HOST}/`), env, { ...deps, fetch: fakeFetch(webRoutes(own)).fetch })).text();
+    expect(html).not.toContain("__ourapps/manifest");
+    expect(html).not.toContain('apple-mobile-web-app-title" content="Skull"');
+    expect((html.match(/apple-mobile-web-app-capable/g) ?? []).length).toBe(1);
+    expect(html).toContain('<script src="/__ourapps/install.js" defer></script>');
+  });
+
+  it("inspects heads and decorates html without a head", () => {
+    const facts = inspectHead('<html><head><link href="/fav.ico" rel="icon"><meta name="theme-color" content="#fff"></head></html>');
+    expect(facts).toMatchObject({ iconHref: "/fav.ico", hasThemeColor: true, hasManifest: false });
+    const out = decorateHtml("<p>bare</p>", "X", null);
+    expect(out.startsWith('<meta name="viewport"')).toBe(true);
+    expect(out).toContain("<p>bare</p>");
   });
 });

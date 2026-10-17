@@ -5,3 +5,4 @@ dist/
 *.p8
 .DS_Store
 .omo/
+site/public/contract.md

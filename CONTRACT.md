@@ -2,6 +2,9 @@
 
 What an app's GitHub repository must do so the store can install it on friends' phones.
 The store never looks at your source; it reads one release asset and talks to one workflow.
+Served at https://ourapps.app/contract.md; the API reference for agents is at
+https://ourapps.app/agents.md. The store dashboard at /dev/agents carries a prompt that sets a
+repository up to this contract.
 
 ## 1. Publish a release with `my-app.json`
 
@@ -9,7 +12,8 @@ Every build publishes a GitHub Release (not a pre-release, not a draft) with the
 
 | asset            | required for | content                                                     |
 |------------------|--------------|-------------------------------------------------------------|
-| `my-app.json`    | always       | schema 1 manifest, see `../.opencode/knowledge/app-manifest.md` |
+| `my-app.json`    | always       | schema 1 manifest (shape and rules in agents.md)             |
+| `icon.png`, `screenshot-*.png` | recommended | referenced from my-app.json `icon` and `screenshots` |
 | `manifest.plist` | iOS          | Apple over-the-air manifest pointing at the `.ipa` asset    |
 | `<app>.ipa`      | iOS          | Ad Hoc signed build                                         |
 | `<app>.apk`      | Android      | signed APK                                                  |

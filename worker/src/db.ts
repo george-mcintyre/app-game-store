@@ -70,6 +70,17 @@ export interface EnrolmentRow {
   updatedAt: string;
 }
 
+export interface ApiKeyRow {
+  id: string;
+  developerId: string;
+  name: string;
+  prefix: string;
+  keyHash: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
 export interface ProfileRow {
   appId: string;
   uuid: string;
@@ -257,6 +268,33 @@ export class Db {
 
   async deleteEnrolment(id: string): Promise<void> {
     await this.d1.prepare("DELETE FROM enrolments WHERE id = ?").bind(id).run();
+  }
+
+  // API keys
+
+  async apiKeyByHash(hash: string): Promise<ApiKeyRow | null> {
+    return row<ApiKeyRow>(await this.d1.prepare("SELECT * FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL").bind(hash).first());
+  }
+
+  async apiKeysByDeveloper(developerId: string): Promise<ApiKeyRow[]> {
+    const res = await this.d1.prepare("SELECT * FROM api_keys WHERE developer_id = ? AND revoked_at IS NULL ORDER BY created_at DESC").bind(developerId).all<Raw>();
+    return res.results.map((r) => row<ApiKeyRow>(r)!);
+  }
+
+  async insertApiKey(k: ApiKeyRow): Promise<void> {
+    await this.d1
+      .prepare("INSERT INTO api_keys (id, developer_id, name, prefix, key_hash, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(k.id, k.developerId, k.name, k.prefix, k.keyHash, k.createdAt, k.lastUsedAt, k.revokedAt)
+      .run();
+  }
+
+  async touchApiKey(id: string, now: string): Promise<void> {
+    await this.d1.prepare("UPDATE api_keys SET last_used_at = ? WHERE id = ?").bind(now, id).run();
+  }
+
+  async revokeApiKey(id: string, developerId: string, now: string): Promise<boolean> {
+    const res = await this.d1.prepare("UPDATE api_keys SET revoked_at = ? WHERE id = ? AND developer_id = ? AND revoked_at IS NULL").bind(now, id, developerId).run();
+    return (res.meta.changes ?? 0) > 0;
   }
 
   // Profiles

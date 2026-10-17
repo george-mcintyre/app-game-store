@@ -1,212 +1,427 @@
-import { ApiError, api, type DevApp, type Enrolment, type Me, type ShareLink } from "../api.js";
-import { html, mount, raw, type Raw } from "../html.js";
+import { ApiError, api, type ApiKey, type DevApp, type Enrolment, type Me, type ReleaseStatus, type ShareLink } from "../api.js";
+import { html, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
-import { layout } from "./public.js";
+import { appIcon, callout, copyRow, copyText, emptyState, errorBox, fmtDate, icon, pill, statePill, toast, wireCopy, wireImages } from "../ui.js";
+import { AGENT_REPO_PROMPT, AGENT_STORE_PROMPT } from "./prompts.js";
+import { failed, mountShell, requireMe } from "./shell.js";
 
-async function requireMe(root: HTMLElement): Promise<Me | null> {
-  try {
-    return await api<Me>("GET", "/api/dev/me");
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      mount(root, layout(html`<div class="card"><h1>Developers</h1><p>Sign in to manage your apps and share links.</p><a class="button" href="/api/auth/github">Sign in with GitHub</a></div>`));
-    } else {
-      mount(root, layout(html`<div class="error">${String(err)}</div>`));
-    }
-    return null;
-  }
+type Ctx = { root: HTMLElement; me: Me };
+
+function showError(root: HTMLElement, err: unknown, selector = "#error"): void {
+  const box = root.querySelector<HTMLElement>(selector);
+  if (box) box.innerHTML = errorBox(err).html;
+  else toast(err instanceof Error ? err.message : String(err));
 }
 
-function devNav(me: Me): Raw {
-  return html`
-    <div class="row wrap small" style="margin-bottom:8px">
-      <a href="/dev">Apps</a>
-      <a href="/dev/devices">Devices</a>
-      <a href="/dev/settings">Settings</a>
-      <a href="/${me.developer.slug}">My page</a>
-      <span class="grow"></span>
-      <span class="muted">${me.developer.displayName}</span>
-      <form method="post" action="/api/auth/logout" style="display:inline"><button class="button secondary" style="padding:4px 12px;font-size:13px">Sign out</button></form>
-    </div>
-  `;
+async function confirmAction(message: string): Promise<boolean> {
+  return confirm(message);
 }
 
-function showError(root: HTMLElement, err: unknown): void {
-  const box = root.querySelector("#error");
-  if (box) box.innerHTML = `<div class="error">${String(err instanceof Error ? err.message : err).replace(/</g, "&lt;")}</div>`;
-}
+/* ------------------------------------------------------------------ */
+/* Overview                                                            */
+/* ------------------------------------------------------------------ */
 
 export async function dashboard(root: HTMLElement): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
-  const { apps } = await api<{ apps: DevApp[] }>("GET", "/api/dev/apps");
-  const setup: Raw[] = [];
-  if (!me.secrets.apple) setup.push(html`<li>Add your App Store Connect API key in <a href="/dev/settings">Settings</a> so iPhones can be registered.</li>`);
-  if (!me.secrets.github) setup.push(html`<li>Add a GitHub token in <a href="/dev/settings">Settings</a> so the store can read releases and trigger rebuilds.</li>`);
-  mount(
-    root,
-    layout(html`
-      ${devNav(me)}
-      <h1>Your apps</h1>
-      ${setup.length > 0 ? html`<div class="notice"><b>Before sharing:</b><ul class="steps">${setup}</ul></div>` : ""}
-      ${apps.map(
-        (a) => html`
-          <div class="card row">
-            ${a.iconUrl || a.releaseIcon ? html`<img class="icon small" src="${a.iconUrl || a.releaseIcon}" alt="" />` : html`<div class="icon small"></div>`}
-            <div class="grow">
-              <b><a href="/dev/apps/${a.id}">${a.name}</a></b>
-              <div class="muted small">${a.repo}${a.showOnPage ? " · on your page" : ""}</div>
-            </div>
-            <a class="button secondary" href="/dev/apps/${a.id}/links">Share links</a>
+  try {
+    const [{ apps }, { enrolments }] = await Promise.all([api<{ apps: DevApp[] }>("GET", "/api/dev/apps"), api<{ enrolments: Enrolment[] }>("GET", "/api/dev/devices")]);
+    const releases = await Promise.all(apps.slice(0, 6).map((a) => api<ReleaseStatus>("GET", `/api/dev/apps/${a.id}/release`).catch(() => null)));
+    const links = await Promise.all(apps.map((a) => api<{ links: ShareLink[] }>("GET", `/api/dev/apps/${a.id}`).then((r) => r.links).catch(() => [] as ShareLink[])));
+    const now = Date.now();
+    const activeLinks = links.flat().filter((l) => !l.revokedAt && (!l.expiresAt || Date.parse(l.expiresAt) > now)).length;
+    const pending = enrolments.filter((e) => e.state === "pending-approval");
+    const ready = enrolments.filter((e) => e.state === "ready").length;
+    const anyRelease = releases.some((r) => r?.ok);
+    const needsIos = releases.some((r) => r?.install?.ios) || apps.some((a) => a.profileName);
+
+    const steps: { done: boolean; title: string; why: string; href: string; cta: string; optional?: boolean }[] = [
+      { done: true, title: "Sign in with GitHub", why: "Done. Your page is /" + me.developer.slug + ".", href: "/dev/settings", cta: "Profile" },
+      { done: me.secrets.github, title: "Save a GitHub token", why: "Lets the console read releases from private repositories and ask them to rebuild.", href: "/dev/settings#credentials", cta: "Settings" },
+      { done: me.secrets.apple, title: "Save your App Store Connect key", why: needsIos ? "Needed to register friends' iPhones with Apple." : "Only needed for iPhone apps.", href: "/dev/settings#credentials", cta: "Settings", optional: !needsIos },
+      { done: apps.length > 0, title: "Add your first app", why: "Name, icon, a few lines, and the repository that publishes it.", href: "/dev/apps/new", cta: "Add app" },
+      { done: anyRelease, title: "Publish a release the console can read", why: "A GitHub Release with my-app.json and the app files. The guide and the agent prompt show exactly how.", href: apps[0] ? `/dev/apps/${apps[0].id}` : "/dev/guide#release", cta: apps[0] ? "Check release" : "Guide" },
+      { done: activeLinks > 0, title: "Create a share link", why: "Each link is private, has a QR code and can be revoked.", href: apps[0] ? `/dev/apps/${apps[0].id}/links` : "/dev/apps", cta: "Links" },
+      { done: ready > 0, title: "Get the first iPhone installed", why: needsIos ? "Approve the device when it appears; the console does the rest." : "Not needed for Android or web apps.", href: "/dev/devices", cta: "Devices", optional: !needsIos },
+    ];
+    const required = steps.filter((s) => !s.optional);
+    const doneCount = required.filter((s) => s.done).length;
+    const next = steps.find((s) => !s.done && !s.optional) ?? steps.find((s) => !s.done);
+
+    mountShell(
+      root,
+      me,
+      `Hello, ${me.developer.displayName.split(" ")[0]}`,
+      html`
+        <div class="stats">
+          <div class="stat"><b>${apps.length}</b><span>app${apps.length === 1 ? "" : "s"}</span></div>
+          <div class="stat"><b>${activeLinks}</b><span>active share link${activeLinks === 1 ? "" : "s"}</span></div>
+          <div class="stat"><b>${pending.length}</b><span>iPhone${pending.length === 1 ? "" : "s"} waiting for approval</span>${pending.length > 0 ? html`<div class="delta">needs you</div>` : ""}</div>
+          <div class="stat"><b>${ready}</b><span>device${ready === 1 ? "" : "s"} ready to install</span></div>
+        </div>
+
+        ${pending.length > 0 ? html`<div class="card mt" style="border-color:var(--warn)"><div class="row wrap"><div class="grow"><h2>${pending.length === 1 ? "An iPhone is waiting" : `${pending.length} iPhones are waiting`}</h2><p class="muted small">${pending.map((p) => p.name).join(", ")} registered and ${pending.length === 1 ? "needs" : "need"} your approval before Apple will allow the app on ${pending.length === 1 ? "their phone" : "their phones"}.</p></div><a class="btn" href="/dev/devices">Review devices ${icon("arrow")}</a></div></div>` : ""}
+
+        <div class="grid-2 mt">
+          <div class="card">
+            <div class="row"><h2 class="grow">Setup</h2><span class="pill ${doneCount === required.length ? "ok" : "accent"}">${doneCount} of ${required.length}</span></div>
+            <div class="progress"><i style="width:${Math.round((doneCount / required.length) * 100)}%"></i></div>
+            ${next ? html`<p class="small muted">Next: <b>${next.title}</b>. ${next.why}</p>` : html`<p class="small muted">Everything is set up. Share links and approve devices as friends arrive.</p>`}
+            <ul class="checklist">
+              ${steps.map((s) => html`<li class="${s.done ? "done" : ""}"><span class="tick">${s.done ? icon("check", "icon-16") : ""}</span><div class="what"><b>${s.title}${s.optional ? html` <span class="pill">optional</span>` : ""}</b><span>${s.why}</span></div>${s.done ? "" : html`<a class="btn sm ${s === next ? "" : "secondary"}" href="${s.href}">${s.cta}</a>`}</li>`)}
+            </ul>
           </div>
-        `,
-      )}
-      <a class="button" href="/dev/apps/new">Add an app</a>
-    `),
-  );
+          <div class="stack">
+            <div class="card">
+              <div class="row"><h2 class="grow">Apps</h2><a class="btn sm" href="/dev/apps/new">${icon("plus")} Add</a></div>
+              ${apps.length === 0 ? emptyState("apps", "No apps yet", "Add the first one; it takes two minutes.", html`<a class="btn mt-s" href="/dev/apps/new">Add an app</a>`) : html`<div class="list">${apps.map((a, i) => appRow(a, releases[i] ?? null))}</div>`}
+            </div>
+            <div class="card">
+              <h2>Learn and automate</h2>
+              <p class="small muted">The <a href="/dev/guide">guide</a> covers every step from Apple keys to the first install. The <a href="/dev/agents">agents page</a> has API keys and prompts so a coding agent can do the repository work for you.</p>
+            </div>
+          </div>
+        </div>
+      `,
+      { sub: "Your private app store for friends and family." },
+    );
+  } catch (err) {
+    failed(root, me, err);
+  }
 }
 
-const FIELDS: { key: keyof DevApp; label: string; type: "text" | "url" | "textarea"; hint?: string }[] = [
-  { key: "name", label: "Name", type: "text" },
-  { key: "tagline", label: "Tagline", type: "text", hint: "One line under the name." },
-  { key: "repo", label: "GitHub repository (owner/name)", type: "text", hint: "The store reads my-app.json from the latest release and sends rebuild requests here." },
-  { key: "profileName", label: "Ad Hoc provisioning profile name", type: "text", hint: "Create the profile once in the Apple developer portal; the store recreates it with each new device." },
-  { key: "iconUrl", label: "Icon URL", type: "url", hint: "Square, at least 512 pixels. Leave blank to use the icon from my-app.json." },
-  { key: "description", label: "Description", type: "textarea" },
-  { key: "whatsNew", label: "What's new", type: "textarea" },
-  { key: "size", label: "Size", type: "text", hint: "For example 24 MB." },
-  { key: "minOs", label: "Compatibility", type: "text", hint: "For example iOS 17 or later, Android 10 or later." },
-  { key: "ageNote", label: "Age note", type: "text", hint: "Optional, for example 12+." },
-  { key: "privacySummary", label: "Privacy summary", type: "textarea", hint: "In your own words: what the app collects and where it goes." },
-  { key: "manifestUrl", label: "my-app.json URL (optional)", type: "url", hint: "Only if the file is not a release asset on the repository above." },
+function appRow(a: DevApp, r: ReleaseStatus | null): Raw {
+  const state = r === null ? pill("checking", "") : r.ok ? pill(`v${r.version}`, "ok", true) : pill("no release", "warn", true);
+  return html`<li class="row"><a href="/dev/apps/${a.id}">${appIcon(a.name, a.iconUrl || a.releaseIcon, "sm")}</a><div class="grow"><a href="/dev/apps/${a.id}"><b>${a.name}</b></a><div class="small muted">${a.repo}</div></div>${state}<a class="btn sm secondary" href="/dev/apps/${a.id}/links">Links</a></li>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Apps list                                                           */
+/* ------------------------------------------------------------------ */
+
+export async function appsPage(root: HTMLElement): Promise<void> {
+  const me = await requireMe(root);
+  if (!me) return;
+  try {
+    const { apps } = await api<{ apps: DevApp[] }>("GET", "/api/dev/apps");
+    mountShell(
+      root,
+      me,
+      "Apps",
+      apps.length === 0
+        ? html`<div class="card">${emptyState("apps", "No apps yet", "An app is a name, an icon, a few lines and the GitHub repository that publishes it.", html`<a class="btn mt-s" href="/dev/apps/new">Add your first app</a>`)}</div>`
+        : html`<div class="app-grid">${apps.map((a) => html`
+            <div class="app-card">
+              ${appIcon(a.name, a.iconUrl || a.releaseIcon, "md")}
+              <div>
+                <div class="name">${a.name}</div>
+                <div class="meta"><span>${a.repo}</span>${a.showOnPage ? pill("on your page", "accent") : ""}</div>
+                <div class="small muted" style="margin-top:4px">${a.tagline || "No tagline yet"}</div>
+                <div class="actions"><a class="btn sm" href="/dev/apps/${a.id}">Edit</a><a class="btn sm secondary" href="/dev/apps/${a.id}/links">Share links</a><a class="btn sm ghost" href="/dev/apps/${a.id}/preview">Preview</a></div>
+              </div>
+            </div>`)}</div>`,
+      { sub: "Each app has its own listing, build token and share links.", actions: html`<a class="btn" href="/dev/apps/new">${icon("plus")} Add an app</a>` },
+    );
+  } catch (err) {
+    failed(root, me, err);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* App form                                                            */
+/* ------------------------------------------------------------------ */
+
+type FieldKey = "name" | "tagline" | "iconUrl" | "description" | "whatsNew" | "privacySummary" | "size" | "minOs" | "ageNote" | "repo" | "profileName" | "manifestUrl";
+interface Field { key: FieldKey; label: string; type: "text" | "url" | "textarea"; hint?: string; placeholder?: string; required?: boolean }
+
+const SECTIONS: { title: string; about: string; fields: Field[] }[] = [
+  {
+    title: "Listing",
+    about: "What a friend sees first: icon, name and one line. Anything you leave blank gets a tasteful placeholder, so a bare entry still looks finished.",
+    fields: [
+      { key: "name", label: "Name", type: "text", required: true, placeholder: "Skull" },
+      { key: "tagline", label: "Tagline", type: "text", placeholder: "Bluff your friends, lose your skull", hint: "One line under the name." },
+      { key: "iconUrl", label: "Icon URL", type: "url", placeholder: "https://...", hint: "Square, 512 pixels or more. Leave blank to use the icon from my-app.json or a generated one." },
+    ],
+  },
+  {
+    title: "Story",
+    about: "The text of the store page. Write like you are telling a friend what it is and why you made it.",
+    fields: [
+      { key: "description", label: "Description", type: "textarea", placeholder: "A quick bluffing card game for 3 to 6 people, played on your own phones around a table." },
+      { key: "whatsNew", label: "What's new", type: "textarea", placeholder: "Faster dealing, bigger buttons, a rematch option." },
+      { key: "privacySummary", label: "Privacy summary", type: "textarea", placeholder: "Stores your chosen nickname on your phone only. Game moves go through my server and are deleted when the table closes.", hint: "In your own words: what the app collects and where it goes." },
+    ],
+  },
+  {
+    title: "Facts",
+    about: "Small details shown in the Information section.",
+    fields: [
+      { key: "size", label: "Size", type: "text", placeholder: "24 MB" },
+      { key: "minOs", label: "Compatibility", type: "text", placeholder: "iOS 17 or later, Android 10 or later" },
+      { key: "ageNote", label: "Age note", type: "text", placeholder: "12+" },
+    ],
+  },
+  {
+    title: "Build and publishing",
+    about: "Where the console reads releases from and how it asks for iPhone rebuilds. The repository must follow the contract; the agent prompt sets it up for you.",
+    fields: [
+      { key: "repo", label: "GitHub repository", type: "text", required: true, placeholder: "owner/name", hint: "The latest release on this repository must carry an asset named my-app.json." },
+      { key: "profileName", label: "Ad Hoc provisioning profile name", type: "text", placeholder: "Skull Ad Hoc", hint: "iPhone only. Create the profile once in the Apple developer portal; the console recreates it with every new device." },
+      { key: "manifestUrl", label: "my-app.json URL", type: "url", hint: "Only when the file is hosted somewhere other than the repository's releases." },
+    ],
+  },
 ];
 
 export async function appForm(root: HTMLElement, appId: string | null): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
   let app: Partial<DevApp> = { screenshots: [], showOnPage: false };
+  let links: ShareLink[] = [];
+  let release: ReleaseStatus | null = null;
   if (appId) {
     try {
-      app = (await api<{ app: DevApp }>("GET", `/api/dev/apps/${appId}`)).app;
+      const detail = await api<{ app: DevApp; links: ShareLink[] }>("GET", `/api/dev/apps/${appId}`);
+      app = detail.app;
+      links = detail.links;
     } catch (err) {
-      return mount(root, layout(html`${devNav(me)}<div class="error">${String(err)}</div>`));
+      return failed(root, me, err);
     }
   }
-  mount(
+  const isNew = !appId;
+
+  const field = (f: Field): Raw => {
+    const value = (app[f.key] as string | undefined) ?? "";
+    const input = f.type === "textarea"
+      ? html`<textarea name="${f.key}" placeholder="${f.placeholder ?? ""}">${value}</textarea>`
+      : html`<input type="${f.type}" name="${f.key}" value="${value}" placeholder="${f.placeholder ?? ""}" ${f.required ? "required" : ""} />`;
+    return html`<div class="field"><label for="f-${f.key}">${f.label}${f.required ? "" : html` <span class="faint tiny">optional</span>`}</label>${input}${f.hint ? html`<div class="hint">${f.hint}</div>` : ""}</div>`;
+  };
+
+  mountShell(
     root,
-    layout(html`
-      ${devNav(me)}
-      <h1>${appId ? app.name : "New app"}</h1>
-      <form id="app-form" class="card">
-        ${FIELDS.map((f) => {
-          const value = (app[f.key] as string | undefined) ?? "";
-          const input = f.type === "textarea" ? html`<textarea name="${f.key}">${value}</textarea>` : html`<input type="${f.type}" name="${f.key}" value="${value}" ${f.key === "name" || f.key === "repo" ? "required" : ""} />`;
-          return html`<label>${f.label}</label>${input}${f.hint ? html`<div class="small muted">${f.hint}</div>` : ""}`;
-        })}
-        <label>Screenshot URLs, one per line (blank uses the list in my-app.json)</label>
-        <textarea name="screenshots">${(app.screenshots ?? []).join("\n")}</textarea>
-        <label class="check"><input type="checkbox" name="showOnPage" ${app.showOnPage ? "checked" : ""} /> Show on my public page (details only, no install)</label>
+    me,
+    isNew ? "New app" : app.name ?? "App",
+    html`
+      ${!isNew ? html`<div id="release-card">${releaseCardSkeleton()}</div>` : ""}
+      <form id="app-form" class="card mt">
+        ${SECTIONS.map((s) => html`<div class="form-section"><div class="about"><h3>${s.title}</h3><p>${s.about}</p></div><div>${s.fields.map(field)}</div></div>`)}
+        <div class="form-section">
+          <div class="about"><h3>Screenshots</h3><p>Up to 10 image URLs, one per line. Leave blank to use the list from my-app.json or generated previews.</p></div>
+          <div>
+            <div class="field"><textarea name="screenshots" placeholder="https://...">${(app.screenshots ?? []).join("\n")}</textarea></div>
+            <div class="shot-previews" id="shot-previews">${(app.screenshots ?? []).map((s) => html`<img src="${s}" alt="" />`)}</div>
+          </div>
+        </div>
+        <div class="form-section">
+          <div class="about"><h3>Visibility</h3><p>Your public page at /${me.developer.slug} lists apps you switch on, details only, no install links. Share links work either way.</p></div>
+          <label class="check"><input type="checkbox" name="showOnPage" ${app.showOnPage ? "checked" : ""} /> <span>Show on my public page</span></label>
+        </div>
         <div id="error"></div>
-        <div class="row wrap" style="margin-top:16px">
-          <button class="button" type="submit">${appId ? "Save" : "Create"}</button>
-          ${appId ? html`<a class="button secondary" href="/dev/apps/${appId}/links">Share links</a><button class="button secondary" type="button" id="rotate">New build token</button><button class="button danger" type="button" id="delete">Delete app</button>` : ""}
+        <div class="sticky-save form-actions">
+          <button class="btn" type="submit">${isNew ? "Create app" : "Save changes"}</button>
+          ${!isNew ? html`<a class="btn secondary" href="/dev/apps/${appId}/preview">${icon("eye")} Preview install page</a><a class="btn secondary" href="/dev/apps/${appId}/links">${icon("link")} Share links (${links.length})</a><span class="grow"></span><button class="btn ghost" type="button" id="rotate">${icon("refresh")} New build token</button><button class="btn danger" type="button" id="delete">${icon("trash")} Delete</button>` : ""}
         </div>
       </form>
       <div id="token"></div>
-    `),
+    `,
+    {
+      crumbs: html`<a href="/dev/apps">Apps</a> / ${isNew ? "New" : app.name}`,
+      sub: isNew ? "Two minutes now, a finished store page straight away." : app.repo,
+    },
   );
+
   const form = root.querySelector<HTMLFormElement>("#app-form")!;
+  const shotsInput = form.elements.namedItem("screenshots") as HTMLTextAreaElement;
+  shotsInput.addEventListener("input", () => {
+    const urls = shotsInput.value.split("\n").map((s) => s.trim()).filter((s) => /^https:\/\//.test(s));
+    root.querySelector("#shot-previews")!.innerHTML = urls.map((u) => `<img src="${u.replace(/"/g, "")}" alt="" />`).join("");
+  });
+
   form.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
     const body: Record<string, unknown> = {};
-    for (const f of FIELDS) body[f.key] = String(fd.get(f.key) ?? "");
+    for (const s of SECTIONS) for (const f of s.fields) body[f.key] = String(fd.get(f.key) ?? "");
     body.screenshots = String(fd.get("screenshots") ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
     body.showOnPage = fd.get("showOnPage") === "on";
     try {
       if (appId) {
         await api("PUT", `/api/dev/apps/${appId}`, body);
-        navigate("/dev");
+        toast("Saved");
+        navigate(`/dev/apps/${appId}`);
       } else {
         const res = await api<{ app: DevApp; buildToken: string }>("POST", "/api/dev/apps", body);
-        showToken(root, res.app.id, res.buildToken);
-        appId = res.app.id;
-        root.querySelector("h1")!.textContent = res.app.name;
+        sessionStorage.setItem(`buildToken:${res.app.id}`, res.buildToken);
+        navigate(`/dev/apps/${res.app.id}`);
       }
     } catch (err) {
       showError(root, err);
+      root.querySelector("#error")?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   };
   root.querySelector<HTMLButtonElement>("#rotate")?.addEventListener("click", async () => {
-    if (!confirm("The old token stops working at once. Continue?")) return;
+    if (!(await confirmAction("The old token stops working at once. Continue?"))) return;
     const res = await api<{ buildToken: string }>("POST", `/api/dev/apps/${appId}/build-token`);
     showToken(root, appId!, res.buildToken);
   });
   root.querySelector<HTMLButtonElement>("#delete")?.addEventListener("click", async () => {
-    if (!confirm("Delete this app, its links and its device records?")) return;
+    if (!(await confirmAction(`Delete ${app.name}, its links and its device records? Friends who already installed keep the app.`))) return;
     await api("DELETE", `/api/dev/apps/${appId}`);
-    navigate("/dev");
+    navigate("/dev/apps");
   });
+
+  if (appId) {
+    const fresh = sessionStorage.getItem(`buildToken:${appId}`);
+    if (fresh) {
+      sessionStorage.removeItem(`buildToken:${appId}`);
+      showToken(root, appId, fresh);
+    }
+    void loadReleaseCard(root, appId, app as DevApp);
+  }
 }
 
-function showToken(root: HTMLElement, appId: string, token: string): void {
-  root.querySelector("#token")!.innerHTML = html`
+function releaseCardSkeleton(): Raw {
+  return html`<div class="card"><div class="row"><div class="skeleton" style="width:120px;height:20px"></div><div class="grow"></div><div class="skeleton" style="width:80px;height:20px"></div></div><div class="skeleton mt" style="height:14px;width:60%"></div></div>`;
+}
+
+async function loadReleaseCard(root: HTMLElement, appId: string, app: DevApp): Promise<void> {
+  const box = root.querySelector<HTMLElement>("#release-card");
+  if (!box) return;
+  try {
+    release = await api<ReleaseStatus>("GET", `/api/dev/apps/${appId}/release`);
+  } catch (err) {
+    box.innerHTML = errorBox(err).html;
+    return;
+  }
+  const r = release;
+  const platforms = r.install ? [r.install.ios ? "iPhone" : "", r.install.android ? "Android" : "", r.install.pwa ? "Web" : ""].filter(Boolean).join(", ") : "";
+  box.innerHTML = html`
     <div class="card">
-      <h2>Build token (shown once)</h2>
-      <p>Copy it now; the store keeps only a hash. If you lose it, make a new one with "New build token".</p>
-      <p><code>STORE_BUILD_TOKEN</code> = <code>${token}</code></p>
-      <p><code>STORE_APP_ID</code> = <code>${appId}</code></p>
-      <p class="small">STORE_APP_ID is the opaque id of this app. The store sends it as "app" in every rebuild request and the workflow echoes it back in /api/build-ready and the profile route.</p>
+      <div class="row wrap">
+        <h2 class="grow">Latest release</h2>
+        ${r.ok ? pill(`v${r.version}`, "ok", true) : pill("not readable", "bad", true)}
+        <button class="btn sm secondary" id="recheck">${icon("refresh")} Check again</button>
+      </div>
+      ${r.ok
+        ? html`
+          <dl class="kv mt-s">
+            <dt>Release</dt><dd>${r.tag ?? "direct URL"}${r.publishedAt ? html` <span class="faint">published ${fmtDate(r.publishedAt)}</span>` : ""}</dd>
+            <dt>Platforms</dt><dd>${platforms || "none"}</dd>
+            <dt>Assets</dt><dd>${r.assets.length > 0 ? r.assets.join(", ") : "n/a"}</dd>
+            <dt>Screenshots in manifest</dt><dd>${r.screenshots}</dd>
+            ${r.install?.ios ? html`<dt>Ad Hoc profile</dt><dd>${r.profile ? html`${r.profile.devices} device${r.profile.devices === 1 ? "" : "s"}, expires ${fmtDate(r.profile.expirationDate)}` : "not created yet; it is created when you approve the first iPhone"}</dd>` : ""}
+          </dl>
+          ${r.install?.ios && !r.appleKey ? callout("warn", html`<p>This app has an iPhone build but no App Store Connect key is saved. <a href="/dev/settings#credentials">Add it in Settings</a> before approving devices.</p>`) : ""}
+          ${r.install?.ios && !app.profileName ? callout("warn", html`<p>Set the Ad Hoc provisioning profile name below so the console can recreate it when a device is added.</p>`) : ""}
+        `
+        : html`
+          ${callout("bad", html`<b>The console cannot read a release for ${app.repo}.</b>${r.errors.map((e) => html`<p>${e}</p>`)}`)}
+          <div class="mt small muted">
+            Fix in this order:
+            <ol class="bullets">
+              ${!r.githubToken ? html`<li>Save a GitHub token in <a href="/dev/settings#credentials">Settings</a> (private repositories are invisible without one).</li>` : ""}
+              <li>Publish a GitHub Release (not a draft, not a pre-release) with an asset named <code>my-app.json</code>.</li>
+              <li>Make sure my-app.json follows schema 1; the error above names the field when it does not.</li>
+              <li>Let a coding agent do it: copy the prompt from <a href="/dev/agents">Agents and API</a>.</li>
+            </ol>
+          </div>
+        `}
+    </div>
+  `.html;
+  root.querySelector<HTMLButtonElement>("#recheck")!.onclick = () => {
+    box.innerHTML = releaseCardSkeleton().html;
+    void loadReleaseCard(root, appId, app);
+  };
+}
+let release: ReleaseStatus | null = null;
+
+function showToken(root: HTMLElement, appId: string, token: string): void {
+  const box = root.querySelector<HTMLElement>("#token")!;
+  box.innerHTML = html`
+    <div class="card once mt">
+      <h2>${icon("lock", "icon-20")} Build token, shown once</h2>
+      <p>Copy it now; the console keeps only a hash. If you lose it, make a new one with "New build token".</p>
+      <div class="field"><span class="label">STORE_BUILD_TOKEN</span>${copyRow(token)}</div>
+      <div class="field"><span class="label">STORE_APP_ID</span>${copyRow(appId)}<div class="hint">The opaque id of this app. The console sends it as <code>app</code> in every rebuild request and the workflow echoes it in <code>/api/build-ready</code> and the profile route.</div></div>
       <p><b>Add both as Actions secrets on the app's GitHub repository.</b> Either route works:</p>
       <ol class="steps small">
         <li>On GitHub: open the repository, then <b>Settings</b>, <b>Secrets and variables</b>, <b>Actions</b>, <b>Repository secrets</b>, <b>New repository secret</b>. Create <code>STORE_BUILD_TOKEN</code> and <code>STORE_APP_ID</code>.</li>
-        <li>In a terminal inside a checkout of the repository: <code>gh secret set STORE_BUILD_TOKEN</code> then <code>gh secret set STORE_APP_ID</code>, pasting each value when asked.</li>
+        <li>In a terminal inside a checkout of the repository: ${copyRow(`gh secret set STORE_BUILD_TOKEN --body "${token}" && gh secret set STORE_APP_ID --body "${appId}"`, "Copy command")}</li>
       </ol>
-      <p class="small muted">See CONTRACT.md in the store repository for the workflow the app needs.</p>
-      <a class="button" href="/dev/apps/${appId}/links">Create a share link</a>
+      <p class="small muted">Then make the repository follow the <a href="/contract.md">contract</a>, or hand that to an agent with the prompt on <a href="/dev/agents">Agents and API</a>.</p>
     </div>
   `.html;
+  wireCopy(box);
+  box.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+/* ------------------------------------------------------------------ */
+/* Share links                                                         */
+/* ------------------------------------------------------------------ */
 
 export async function appLinks(root: HTMLElement, appId: string): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
-  const { app, links } = await api<{ app: DevApp; links: ShareLink[] }>("GET", `/api/dev/apps/${appId}`);
+  let app: DevApp;
+  let links: ShareLink[];
+  try {
+    ({ app, links } = await api<{ app: DevApp; links: ShareLink[] }>("GET", `/api/dev/apps/${appId}`));
+  } catch (err) {
+    return failed(root, me, err);
+  }
   const now = Date.now();
   const state = (l: ShareLink) => (l.revokedAt ? "revoked" : l.expiresAt && Date.parse(l.expiresAt) < now ? "expired" : "active");
-  mount(
+  const url = (l: ShareLink) => `${location.origin}/l/${l.id}`;
+
+  mountShell(
     root,
-    layout(html`
-      ${devNav(me)}
-      <h1>${app.name}: share links</h1>
-      <form id="link-form" class="card">
-        <label>Label (who it is for)</label>
-        <input type="text" name="label" maxlength="80" placeholder="Family group" />
-        <label>Expires (optional)</label>
-        <input type="datetime-local" name="expiresAt" />
-        <div id="error"></div>
-        <button class="button" type="submit" style="margin-top:12px">Create link</button>
-      </form>
-      ${links.map(
-        (l) => html`
-          <div class="card" data-link="${l.id}">
-            <div class="row">
-              <div class="grow">
-                <b>${l.label || "Untitled"}</b> <span class="state ${state(l)}">${state(l)}</span>
-                <div class="small"><code>${location.origin}/l/${l.id}</code></div>
-                <div class="small muted">Created ${new Date(l.createdAt).toLocaleDateString()}${l.expiresAt ? `, expires ${new Date(l.expiresAt).toLocaleString()}` : ""}</div>
+    me,
+    `Share links`,
+    html`
+      <div class="grid-2">
+        <form id="link-form" class="card">
+          <h2>New link</h2>
+          <p class="small muted">Make one per person or group. A label tells you later who has it, and you can revoke one without affecting the others.</p>
+          <div class="field"><label>Label</label><input type="text" name="label" maxlength="80" placeholder="Mum and Dad" /></div>
+          <div class="field"><label>Expires <span class="faint tiny">optional</span></label><input type="datetime-local" name="expiresAt" /><div class="hint">After this moment the link shows "no longer active". Friends who already installed keep the app.</div></div>
+          <div id="error"></div>
+          <button class="btn" type="submit">${icon("plus")} Create link</button>
+        </form>
+        <div class="card">
+          <h2>How to send it</h2>
+          <ol class="steps small">
+            <li><b>Messages or WhatsApp:</b> tap Share on a link below and pick the person. On iPhone the link opens in Safari's own view, where installs work.</li>
+            <li><b>In person:</b> show the QR code; the camera app opens it.</li>
+            <li><b>Email:</b> paste the link. Gmail's built-in browser cannot install, but the page tells the friend to open it in Safari or Chrome.</li>
+          </ol>
+          <p class="small muted">Instagram, Facebook and TikTok messages open pages inside their own browsers, which cannot install apps. The page explains the one extra tap.</p>
+        </div>
+      </div>
+      <div class="section-title"><h2>${links.length === 0 ? "No links yet" : `${links.length} link${links.length === 1 ? "" : "s"}`}</h2></div>
+      <div class="stack">
+        ${links.map((l) => {
+          const s = state(l);
+          return html`
+            <div class="link-card" data-link="${l.id}">
+              <div>
+                <div class="row wrap"><b style="font-size:16px">${l.label || "Untitled link"}</b>${statePill(s)}</div>
+                <div class="small muted" style="margin:4px 0 10px">Created ${fmtDate(l.createdAt)}${l.expiresAt ? `, expires ${fmtDate(l.expiresAt, true)}` : ""}${l.revokedAt ? `, revoked ${fmtDate(l.revokedAt, true)}` : ""}</div>
+                ${copyRow(url(l))}
+                <div class="row wrap mt-s">
+                  ${s === "active" ? html`<button class="btn sm" data-share="${l.id}">${icon("share")} Share</button><a class="btn sm secondary" href="${url(l)}" target="_blank" rel="noopener">${icon("eye")} Open</a><a class="btn sm secondary" href="/api/public/links/${l.id}/qr.svg" download="${(app.name || "app").replace(/\s+/g, "-")}-qr.svg">${icon("qr")} QR file</a><button class="btn sm ghost" data-revoke="${l.id}">Revoke</button>` : ""}
+                  <button class="btn sm danger" data-delete="${l.id}">${icon("trash")} Delete</button>
+                </div>
               </div>
-            </div>
-            ${state(l) === "active" ? html`<div class="qr" style="margin:12px 0">${qrSvg(`${location.origin}/l/${l.id}`)}</div>` : ""}
-            <div class="row wrap">
-              ${state(l) === "active" ? html`<button class="button secondary" data-share="${l.id}">Share</button><button class="button secondary" data-revoke="${l.id}">Revoke</button>` : ""}
-              <button class="button danger" data-delete="${l.id}">Delete</button>
-            </div>
-          </div>
-        `,
-      )}
-    `),
+              ${s === "active" ? html`<div class="qr">${qrSvg(url(l))}</div>` : ""}
+            </div>`;
+        })}
+      </div>
+    `,
+    { crumbs: html`<a href="/dev/apps">Apps</a> / <a href="/dev/apps/${appId}">${app.name}</a> / Share links`, sub: `${app.name}. Links open the install page at /l/<id>; the id is random and never lists anywhere.` },
   );
+
   const form = root.querySelector<HTMLFormElement>("#link-form")!;
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -214,6 +429,7 @@ export async function appLinks(root: HTMLElement, appId: string): Promise<void> 
     const expires = String(fd.get("expiresAt") ?? "");
     try {
       await api("POST", `/api/dev/apps/${appId}/links`, { label: String(fd.get("label") ?? ""), expiresAt: expires ? new Date(expires).toISOString() : null });
+      toast("Link created");
       await appLinks(root, appId);
     } catch (err) {
       showError(root, err);
@@ -221,72 +437,100 @@ export async function appLinks(root: HTMLElement, appId: string): Promise<void> 
   };
   root.querySelectorAll<HTMLButtonElement>("[data-share]").forEach((b) => (b.onclick = async () => {
     const result = await shareOrCopy(`${location.origin}/l/${b.dataset.share}`, app.name);
-    b.textContent = result === "copied" ? "Copied" : result === "shared" ? "Shared" : "Could not share";
+    if (result === "copied") toast("Link copied");
   }));
   root.querySelectorAll<HTMLButtonElement>("[data-revoke]").forEach((b) => (b.onclick = async () => {
+    if (!(await confirmAction("Revoke this link? Anyone opening it sees \"no longer active\"."))) return;
     await api("POST", `/api/dev/links/${b.dataset.revoke}/revoke`);
     await appLinks(root, appId);
   }));
   root.querySelectorAll<HTMLButtonElement>("[data-delete]").forEach((b) => (b.onclick = async () => {
-    if (!confirm("Delete this link? Anyone holding it loses access.")) return;
+    if (!(await confirmAction("Delete this link for good?"))) return;
     await api("DELETE", `/api/dev/links/${b.dataset.delete}`);
     await appLinks(root, appId);
   }));
 }
 
+/* ------------------------------------------------------------------ */
+/* Devices                                                             */
+/* ------------------------------------------------------------------ */
+
+const STATE_HELP: Record<string, string> = {
+  "awaiting-device": "The friend tapped Register but has not installed the profile yet. Nothing to do; it will move on by itself or you can remove it.",
+  "pending-approval": "The iPhone reported its device number. Approve to register it with Apple and start a build, or reject.",
+  registering: "Talking to Apple.",
+  building: "Apple accepted the device. The repository was asked to rebuild; the friend's page flips to Install when the workflow calls build-ready.",
+  ready: "Installed or ready to install. The friend's page shows the Install button.",
+  rejected: "You declined this device.",
+  failed: "Apple or GitHub refused; the message says why. Fix the cause and approve again.",
+};
+
 export async function devices(root: HTMLElement): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
-  const [{ enrolments }, { apps }] = await Promise.all([api<{ enrolments: Enrolment[] }>("GET", "/api/dev/devices"), api<{ apps: DevApp[] }>("GET", "/api/dev/apps")]);
-  const appName = (id: string) => apps.find((a) => a.id === id)?.name ?? id;
-  mount(
-    root,
-    layout(html`
-      ${devNav(me)}
-      <h1>Devices</h1>
-      <p class="muted small">Approving sends the iPhone to Apple, recreates the Ad Hoc profile and asks the app repository for a new build. Apple allows 100 iPhones per membership year; removing a record here does not free the slot.</p>
-      <div id="error"></div>
-      ${enrolments.length === 0 ? html`<p class="card">No devices yet. Share a link and ask a friend to register.</p>` : ""}
-      ${enrolments.map(
-        (e) => html`
-          <div class="card">
-            <div class="row">
-              <div class="grow">
-                <b>${e.name}</b> <span class="state ${e.state}">${e.state}</span>
-                <div class="small muted">${appName(e.appId)}${e.product ? ` · ${e.product}` : ""} · ${new Date(e.createdAt).toLocaleString()}</div>
-                ${e.udid ? html`<div class="small"><code>${e.udid}</code></div>` : ""}
-                ${e.message ? html`<div class="small muted">${e.message}</div>` : ""}
+  try {
+    const [{ enrolments }, { apps }] = await Promise.all([api<{ enrolments: Enrolment[] }>("GET", "/api/dev/devices"), api<{ apps: DevApp[] }>("GET", "/api/dev/apps")]);
+    const appName = (id: string) => apps.find((a) => a.id === id)?.name ?? "deleted app";
+    const groups: [string, string, Enrolment[]][] = [
+      ["Waiting for you", "pending-approval", enrolments.filter((e) => e.state === "pending-approval" || e.state === "failed")],
+      ["In progress", "building", enrolments.filter((e) => ["awaiting-device", "registering", "building"].includes(e.state))],
+      ["Done", "ready", enrolments.filter((e) => ["ready", "rejected"].includes(e.state))],
+    ];
+    mountShell(
+      root,
+      me,
+      "Devices",
+      html`
+        ${callout("info", html`<p><b>How approval works.</b> Approving sends the iPhone to Apple, recreates the Ad Hoc profile with every registered device, and asks the app's repository to rebuild. Apple allows 100 iPhones per membership year and does not give a slot back when you remove a device, so approve people, not tests.</p>`)}
+        ${!me.secrets.apple ? callout("warn", html`<p>No App Store Connect key is saved, so approvals will fail. <a href="/dev/settings#credentials">Add it in Settings</a>.</p>`) : ""}
+        ${enrolments.length === 0 ? html`<div class="card mt">${emptyState("devices", "No devices yet", "When a friend taps Register on an install page, their iPhone appears here.")}</div>` : ""}
+        ${groups.filter(([, , list]) => list.length > 0).map(([title, , list]) => html`
+          <div class="section-title"><h2>${title}</h2><span class="muted small">${list.length}</span></div>
+          <div class="stack">${list.map((e) => html`
+            <div class="device-card">
+              <div class="head"><b>${e.name}</b>${statePill(e.state)}<span class="muted small">${appName(e.appId)}${e.product ? ` · ${e.product}` : ""} · ${fmtDate(e.createdAt, true)}</span></div>
+              <p class="small muted" style="margin:6px 0">${STATE_HELP[e.state] ?? ""}${e.message ? html` <span class="faint">(${e.message})</span>` : ""}</p>
+              ${e.udid ? html`<div class="tiny faint">UDID <code>${e.udid}</code>${e.profileUuid ? html` · profile <code>${e.profileUuid}</code>` : ""}</div>` : ""}
+              <div class="row wrap mt-s">
+                ${["pending-approval", "failed"].includes(e.state) ? html`<button class="btn sm ok" data-approve="${e.id}">${icon("check")} Approve</button>` : ""}
+                ${["awaiting-device", "pending-approval"].includes(e.state) ? html`<button class="btn sm secondary" data-reject="${e.id}">Reject</button>` : ""}
+                <button class="btn sm ghost" data-remove="${e.id}">Remove record</button>
               </div>
-            </div>
-            <div class="row wrap" style="margin-top:8px">
-              ${["pending-approval", "failed"].includes(e.state) ? html`<button class="button" data-approve="${e.id}">Approve</button>` : ""}
-              ${["awaiting-device", "pending-approval"].includes(e.state) ? html`<button class="button secondary" data-reject="${e.id}">Reject</button>` : ""}
-              <button class="button danger" data-remove="${e.id}">Remove</button>
-            </div>
-          </div>
-        `,
-      )}
-    `),
-  );
-  const act = async (b: HTMLButtonElement, fn: () => Promise<unknown>) => {
-    b.disabled = true;
-    try {
-      await fn();
-      await devices(root);
-    } catch (err) {
-      b.disabled = false;
-      showError(root, err);
-    }
-  };
-  root.querySelectorAll<HTMLButtonElement>("[data-approve]").forEach((b) => (b.onclick = () => act(b, () => api("POST", `/api/dev/devices/${b.dataset.approve}/approve`))));
-  root.querySelectorAll<HTMLButtonElement>("[data-reject]").forEach((b) => (b.onclick = () => act(b, () => api("POST", `/api/dev/devices/${b.dataset.reject}/reject`))));
-  root.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((b) => (b.onclick = () => confirm("Remove this record?") && act(b, () => api("DELETE", `/api/dev/devices/${b.dataset.remove}`))));
+            </div>`)}</div>
+        `)}
+        <div id="error" class="mt"></div>
+      `,
+      { sub: "Every iPhone that registered through one of your links." },
+    );
+    const act = async (b: HTMLButtonElement, fn: () => Promise<unknown>, busy: string) => {
+      b.disabled = true;
+      const label = b.innerHTML;
+      b.textContent = busy;
+      try {
+        await fn();
+        await devices(root);
+      } catch (err) {
+        b.disabled = false;
+        b.innerHTML = label;
+        showError(root, err);
+        root.querySelector("#error")?.scrollIntoView({ behavior: "smooth" });
+      }
+    };
+    root.querySelectorAll<HTMLButtonElement>("[data-approve]").forEach((b) => (b.onclick = () => act(b, () => api("POST", `/api/dev/devices/${b.dataset.approve}/approve`), "Talking to Apple...")));
+    root.querySelectorAll<HTMLButtonElement>("[data-reject]").forEach((b) => (b.onclick = () => act(b, () => api("POST", `/api/dev/devices/${b.dataset.reject}/reject`), "Rejecting")));
+    root.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((b) => (b.onclick = async () => (await confirmAction("Remove this record? The Apple device slot stays used.")) && act(b, () => api("DELETE", `/api/dev/devices/${b.dataset.remove}`), "Removing")));
+  } catch (err) {
+    failed(root, me, err);
+  }
 }
 
+/* ------------------------------------------------------------------ */
+/* Settings                                                            */
+/* ------------------------------------------------------------------ */
+
 function savedMarker(present: boolean, savedAt: string | null, group: string): Raw {
-  if (!present) return html`<span class="state">not saved</span>`;
-  const when = savedAt ? new Date(savedAt).toLocaleString() : "";
-  return html`<span class="state ready">Saved ${when}</span> <button type="button" class="button secondary" style="padding:2px 10px;font-size:12px" data-remove-secret="${group}">Remove</button>`;
+  if (!present) return pill("not saved", "warn");
+  return html`${pill(`saved${savedAt ? " " + fmtDate(savedAt, true) : ""}`, "ok", true)} <button type="button" class="btn sm ghost" data-remove-secret="${group}">Remove</button>`;
 }
 
 const SECRET_GROUPS: Record<string, string[]> = {
@@ -295,51 +539,79 @@ const SECRET_GROUPS: Record<string, string[]> = {
   githubToken: ["githubToken"],
 };
 
-export async function settings(root: HTMLElement, savedNote = ""): Promise<void> {
+export async function settings(root: HTMLElement, note = ""): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
-  mount(
+  mountShell(
     root,
-    layout(html`
-      ${devNav(me)}
-      <h1>Settings</h1>
-      <form id="me-form" class="card">
-        <h2>Your page</h2>
-        <label>Display name</label>
-        <input type="text" name="displayName" value="${me.developer.displayName}" required maxlength="80" />
-        <label>Page address</label>
-        <input type="text" name="slug" value="${me.developer.slug}" required maxlength="40" />
-        <div class="small muted">${location.origin}/${me.developer.slug}</div>
-        <div id="error"></div>
-        <button class="button" type="submit" style="margin-top:12px">Save</button>
-      </form>
-      <form id="secrets-form" class="card">
+    me,
+    "Settings",
+    html`
+      <div class="grid-2">
+        <form id="me-form" class="card">
+          <h2>Profile</h2>
+          <div class="field"><label>Display name</label><input type="text" name="displayName" value="${me.developer.displayName}" required maxlength="80" /><div class="hint">Shown to friends on every install page.</div></div>
+          <div class="field"><label>Public page address</label><input type="text" name="slug" value="${me.developer.slug}" required maxlength="40" /><div class="hint">${location.origin}/${me.developer.slug}</div></div>
+          <div id="error"></div>
+          <button class="btn" type="submit">Save profile</button>
+        </form>
+        <div class="card">
+          <h2>Account</h2>
+          <dl class="kv">
+            <dt>GitHub</dt><dd>@${me.developer.githubLogin}</dd>
+            <dt>Member since</dt><dd>${fmtDate(me.developer.createdAt)}</dd>
+            <dt>Public page</dt><dd><a href="/${me.developer.slug}">/${me.developer.slug}</a></dd>
+          </dl>
+          <p class="small muted mt">Sign-in only reads your public GitHub profile. Repository access comes from the token you save below, which you control and can revoke on GitHub at any time.</p>
+        </div>
+      </div>
+
+      <form id="secrets-form" class="card mt" >
+        <a id="credentials"></a>
         <h2>Credentials</h2>
-        <p class="small muted">Stored encrypted and never shown again. Leave a field blank to keep what is saved.</p>
-        ${savedNote ? html`<div class="notice">${savedNote}</div>` : ""}
-        <h2 class="small">App Store Connect API key ${savedMarker(me.secrets.apple, me.secrets.appleSavedAt, "apple")}</h2>
-        <label>Issuer id</label>
-        <input type="text" name="appleIssuerId" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : ""}" />
-        <label>Key id</label>
-        <input type="text" name="appleKeyId" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : ""}" />
-        <label>Private key (.p8 contents)</label>
-        <textarea name="applePrivateKey" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : ""}"></textarea>
-        <h2 class="small">Apple team id ${savedMarker(Boolean(me.secrets.appleTeamId), me.secrets.appleTeamIdSavedAt, "appleTeamId")}</h2>
-        <input type="text" name="appleTeamId" value="${me.secrets.appleTeamId}" autocomplete="off" />
-        <h2 class="small">GitHub fine-grained token ${savedMarker(me.secrets.github, me.secrets.githubSavedAt, "githubToken")}</h2>
-        <div class="small muted">Contents: read and write on your app repositories.</div>
-        <input type="text" name="githubToken" autocomplete="off" placeholder="${me.secrets.github ? "saved" : ""}" />
+        <p class="small muted">Stored encrypted with a key derived for your account and never shown again. Leave a field blank to keep what is saved.</p>
+        ${note ? callout("ok", html`<p>${note}</p>`) : ""}
+
+        <div class="form-section">
+          <div class="about"><h3>GitHub token</h3><p>Lets the console read release assets from private repositories and send rebuild requests. <a href="/dev/guide#github-token">How to create one</a>.</p></div>
+          <div>
+            <div class="row wrap mb">${savedMarker(me.secrets.github, me.secrets.githubSavedAt, "githubToken")}</div>
+            <div class="field"><label>Fine-grained token</label><input type="text" name="githubToken" autocomplete="off" placeholder="${me.secrets.github ? "saved; paste a new one to replace" : "github_pat_..."}" /><div class="hint">Permissions: Contents, read and write, on the app repositories only.</div></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="about"><h3>App Store Connect API key</h3><p>Registers friends' iPhones and recreates the Ad Hoc profile. Needs the Admin role. <a href="/dev/guide#apple-key">How to create one</a>.</p></div>
+          <div>
+            <div class="row wrap mb">${savedMarker(me.secrets.apple, me.secrets.appleSavedAt, "apple")}</div>
+            <div class="field"><label>Issuer ID</label><input type="text" name="appleIssuerId" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : "57246542-96fe-1a63-e053-0824d011072a"}" /></div>
+            <div class="field"><label>Key ID</label><input type="text" name="appleKeyId" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : "2X9R4HXF34"}" /></div>
+            <div class="field"><label>Private key (.p8 contents)</label><textarea name="applePrivateKey" autocomplete="off" placeholder="${me.secrets.apple ? "saved" : "-----BEGIN PRIVATE KEY-----"}"></textarea></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="about"><h3>Apple team ID</h3><p>Ten characters, shown under Membership details on developer.apple.com.</p></div>
+          <div>
+            <div class="row wrap mb">${savedMarker(Boolean(me.secrets.appleTeamId), me.secrets.appleTeamIdSavedAt, "appleTeamId")}</div>
+            <div class="field"><input type="text" name="appleTeamId" value="${me.secrets.appleTeamId}" autocomplete="off" placeholder="ABCDE12345" /></div>
+          </div>
+        </div>
         <div id="secrets-error"></div>
-        <button class="button" type="submit" style="margin-top:12px">Save credentials</button>
+        <div class="form-actions"><button class="btn" type="submit">Save credentials</button></div>
       </form>
-    `),
+    `,
+    { sub: "Who you are to your friends, and the keys the console uses on your behalf." },
   );
+  if (location.hash === "#credentials") root.querySelector("#credentials")?.scrollIntoView();
+
   const meForm = root.querySelector<HTMLFormElement>("#me-form")!;
   meForm.onsubmit = async (e) => {
     e.preventDefault();
     const fd = new FormData(meForm);
     try {
       await api("PUT", "/api/dev/me", { displayName: fd.get("displayName"), slug: fd.get("slug") });
+      toast("Profile saved");
       await settings(root);
     } catch (err) {
       showError(root, err);
@@ -351,20 +623,125 @@ export async function settings(root: HTMLElement, savedNote = ""): Promise<void>
     const fd = new FormData(secretsForm);
     const body: Record<string, unknown> = {};
     for (const k of ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken"]) body[k] = fd.get(k);
-    const changed = Object.entries(body).filter(([, v]) => String(v ?? "").trim() !== "").length;
+    const changed = Object.values(body).filter((v) => String(v ?? "").trim() !== "").length;
     try {
       await api("PUT", "/api/dev/secrets", body);
       await settings(root, changed > 0 ? "Credentials saved." : "Nothing to save; all fields were blank.");
     } catch (err) {
-      root.querySelector("#secrets-error")!.innerHTML = raw(`<div class="error">${String(err instanceof Error ? err.message : err).replace(/</g, "&lt;")}</div>`).html;
+      showError(root, err, "#secrets-error");
     }
   };
   root.querySelectorAll<HTMLButtonElement>("[data-remove-secret]").forEach((b) => (b.onclick = async () => {
-    const group = b.dataset.removeSecret!;
-    if (!confirm("Remove this credential? Approvals and release reads that need it will stop working.")) return;
+    if (!(await confirmAction("Remove this credential? Approvals and release reads that need it stop working."))) return;
     const body: Record<string, string> = {};
-    for (const k of SECRET_GROUPS[group]) body[k] = "-";
+    for (const k of SECRET_GROUPS[b.dataset.removeSecret!]) body[k] = "-";
     await api("PUT", "/api/dev/secrets", body);
     await settings(root, "Credential removed.");
   }));
 }
+
+/* ------------------------------------------------------------------ */
+/* Agents and API                                                      */
+/* ------------------------------------------------------------------ */
+
+export async function agents(root: HTMLElement): Promise<void> {
+  const me = await requireMe(root);
+  if (!me) return;
+  let keys: ApiKey[] = [];
+  let apps: DevApp[] = [];
+  try {
+    [{ keys }, { apps }] = await Promise.all([api<{ keys: ApiKey[] }>("GET", "/api/dev/keys"), api<{ apps: DevApp[] }>("GET", "/api/dev/apps")]);
+  } catch (err) {
+    return failed(root, me, err);
+  }
+  const first = apps[0];
+  const repoPrompt = AGENT_REPO_PROMPT({ repo: first?.repo || "<owner>/<name>", appId: first?.id || "<STORE_APP_ID>", profileName: first?.profileName || "<profile name>", name: first?.name || "<app name>" });
+  const storePrompt = AGENT_STORE_PROMPT();
+
+  mountShell(
+    root,
+    me,
+    "Agents and API",
+    html`
+      ${callout("info", html`<p><b>Everything the console does is an API.</b> Create a key, give it to your coding agent with one of the prompts below, and it can register apps, check releases, create share links and approve devices. Full reference: <a href="/agents.md">ourapps.app/agents.md</a>; repository contract: <a href="/contract.md">ourapps.app/contract.md</a>.</p>`)}
+
+      <div class="grid-2 mt">
+        <div class="card">
+          <h2>API keys</h2>
+          <p class="small muted">A key acts as you, except it cannot create or revoke keys. Make one per agent or machine so you can revoke them one at a time.</p>
+          <form id="key-form" class="row wrap mt"><input type="text" name="name" placeholder="Name, for example laptop agent" maxlength="60" style="flex:1;min-width:180px" /><button class="btn" type="submit">${icon("plus")} Create key</button></form>
+          <div id="error"></div>
+          <div id="new-key"></div>
+          <div class="mt">
+            ${keys.length === 0 ? html`<p class="small muted">No keys yet.</p>` : keys.map((k) => html`<div class="key-row"><div><b>${k.name}</b> <code>${k.prefix}...</code><div class="tiny faint">Created ${fmtDate(k.createdAt)}${k.lastUsedAt ? `, last used ${fmtDate(k.lastUsedAt, true)}` : ", never used"}</div></div><button class="btn sm danger" data-revoke-key="${k.id}">Revoke</button></div>`)}
+          </div>
+        </div>
+        <div class="card">
+          <h2>Quick reference</h2>
+          <p class="small muted">Base URL <code>${location.origin}</code>. Header <code>Authorization: Bearer oa_...</code>. JSON in, JSON out, errors as <code>{"error": "..."}</code>.</p>
+          <table class="table small mt-s">
+            <tr><td><code>GET /api/dev/me</code></td><td>who the key belongs to</td></tr>
+            <tr><td><code>GET, POST /api/dev/apps</code></td><td>list, create (returns the build token once)</td></tr>
+            <tr><td><code>GET, PUT, DELETE /api/dev/apps/:id</code></td><td>read with links, update, delete</td></tr>
+            <tr><td><code>GET /api/dev/apps/:id/release</code></td><td>what the latest release looks like and why it fails</td></tr>
+            <tr><td><code>POST /api/dev/apps/:id/links</code></td><td>new share link</td></tr>
+            <tr><td><code>GET /api/public/links/:id/qr.svg</code></td><td>QR for a link</td></tr>
+            <tr><td><code>GET /api/dev/devices</code></td><td>iPhones and their states</td></tr>
+            <tr><td><code>POST /api/dev/devices/:id/approve</code></td><td>register with Apple and rebuild</td></tr>
+          </table>
+          <pre class="mt-s"><code>curl -H "Authorization: Bearer $OURAPPS_API_KEY" \\
+  ${location.origin}/api/dev/apps</code></pre>
+        </div>
+      </div>
+
+      <div class="section-title"><h2>Prompts for your agents</h2></div>
+      <p class="muted small">Copy, fill in the angle brackets if any remain, and paste into your coding agent. The first one works inside the app repository; the second one drives this console through the API.</p>
+      <div class="card">
+        <h3>1. Set up the app repository ${first ? html`<span class="faint small">(filled in for ${first.name})</span>` : ""}</h3>
+        <p class="small muted">Give this to an agent running inside the repository (Claude Code, Codex, Cursor, opencode). It creates the release workflow, my-app.json and the rebuild hook the contract asks for.</p>
+        <div class="prompt-box"><button class="btn sm secondary" data-copy="${repoPrompt}">${icon("copy")} Copy</button><pre>${repoPrompt}</pre></div>
+      </div>
+      <div class="card">
+        <h3>2. Manage the console through the API</h3>
+        <p class="small muted">Give this to an agent that has your API key in the environment variable <code>OURAPPS_API_KEY</code>. It can register apps, check releases, hand you share links and approve devices you confirm.</p>
+        <div class="prompt-box"><button class="btn sm secondary" data-copy="${storePrompt}">${icon("copy")} Copy</button><pre>${storePrompt}</pre></div>
+      </div>
+    `,
+    { sub: "Let a coding agent do the repository work and drive this console for you." },
+  );
+
+  const form = root.querySelector<HTMLFormElement>("#key-form")!;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api<{ key: string; apiKey: ApiKey }>("POST", "/api/dev/keys", { name: new FormData(form).get("name") });
+      const box = root.querySelector<HTMLElement>("#new-key")!;
+      box.innerHTML = html`<div class="once mt"><b>${icon("lock", "icon-16")} Key for "${res.apiKey.name}", shown once</b>${copyRow(res.key)}<p class="small mt-s">Store it where the agent runs, for example <code>export OURAPPS_API_KEY=${res.key}</code>. It cannot be shown again.</p></div>`.html;
+      wireCopy(box);
+      form.reset();
+      await refreshKeys(root);
+    } catch (err) {
+      showError(root, err);
+    }
+  };
+  root.querySelectorAll<HTMLButtonElement>("[data-revoke-key]").forEach((b) => (b.onclick = async () => {
+    if (!(await confirmAction("Revoke this key? Anything using it stops working at once."))) return;
+    await api("DELETE", `/api/dev/keys/${b.dataset.revokeKey}`);
+    toast("Key revoked");
+    await agents(root);
+  }));
+}
+
+async function refreshKeys(root: HTMLElement): Promise<void> {
+  const { keys } = await api<{ keys: ApiKey[] }>("GET", "/api/dev/keys");
+  const rows = root.querySelector<HTMLElement>("#key-form")!.parentElement!.querySelector<HTMLElement>(".mt:last-of-type");
+  if (!rows) return;
+  rows.innerHTML = keys.length === 0 ? `<p class="small muted">No keys yet.</p>` : keys.map((k) => html`<div class="key-row"><div><b>${k.name}</b> <code>${k.prefix}...</code><div class="tiny faint">Created ${fmtDate(k.createdAt)}</div></div><button class="btn sm danger" data-revoke-key="${k.id}">Revoke</button></div>`.html).join("");
+  rows.querySelectorAll<HTMLButtonElement>("[data-revoke-key]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("Revoke this key? Anything using it stops working at once.")) return;
+    await api("DELETE", `/api/dev/keys/${b.dataset.revokeKey}`);
+    await agents(root);
+  }));
+}
+
+export { raw, wireImages, copyText, ApiError };

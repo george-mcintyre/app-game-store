@@ -289,3 +289,79 @@ describe("approve, rebuild and build-ready", () => {
     expect((await handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://x", profileUuid: "nope" }, auth), env, deps)).status).toBe(409);
   });
 });
+
+describe("API keys and agent endpoints", () => {
+  it("creates a key from the dashboard and accepts it as a bearer", async () => {
+    const res = await handle(api(cookie, "POST", "/api/dev/keys", { name: "My agent" }), env, deps);
+    expect(res.status).toBe(201);
+    const { key, apiKey } = (await res.json()) as { key: string; apiKey: { id: string; prefix: string; name: string; keyHash?: string } };
+    expect(key).toMatch(/^oa_[0-9a-f]{40}$/);
+    expect(apiKey).toMatchObject({ name: "My agent", prefix: key.slice(0, 11) });
+    expect(apiKey.keyHash).toBeUndefined();
+
+    const me = await handle(api(null, "GET", "/api/dev/me", undefined, { Authorization: `Bearer ${key}` }), env, deps);
+    expect(me.status).toBe(200);
+    expect(((await me.json()) as { authVia: string }).authVia).toBe("key");
+
+    const created = await handle(api(null, "POST", "/api/dev/apps", { name: "Agent app", repo: "o/skull" }, { Authorization: `Bearer ${key}` }), env, deps);
+    expect(created.status).toBe(201);
+
+    const list = (await (await handle(api(cookie, "GET", "/api/dev/keys"), env, deps)).json()) as { keys: { id: string; lastUsedAt: string | null }[] };
+    expect(list.keys).toHaveLength(1);
+    expect(list.keys[0].lastUsedAt).not.toBeNull();
+
+    expect((await handle(api(null, "POST", "/api/dev/keys", { name: "x" }, { Authorization: `Bearer ${key}` }), env, deps)).status).toBe(403);
+    expect((await handle(api(null, "DELETE", `/api/dev/keys/${apiKey.id}`, undefined, { Authorization: `Bearer ${key}` }), env, deps)).status).toBe(403);
+
+    expect((await handle(api(cookie, "DELETE", `/api/dev/keys/${apiKey.id}`), env, deps)).status).toBe(200);
+    expect((await handle(api(null, "GET", "/api/dev/me", undefined, { Authorization: `Bearer ${key}` }), env, deps)).status).toBe(401);
+    expect((await handle(api(null, "GET", "/api/dev/me", undefined, { Authorization: "Bearer oa_nope" }), env, deps)).status).toBe(401);
+  });
+
+  it("keys are scoped to their developer", async () => {
+    const { appId } = await createSkull(env, deps, cookie);
+    const other = await signIn(env, deps, { id: 9, login: "sue", name: "Sue" });
+    const { key } = (await (await handle(api(other, "POST", "/api/dev/keys", {}), env, deps)).json()) as { key: string };
+    expect((await handle(api(null, "GET", `/api/dev/apps/${appId}`, undefined, { Authorization: `Bearer ${key}` }), env, deps)).status).toBe(404);
+  });
+
+  it("refuses cookie writes from another origin", async () => {
+    const evil = await handle(api(cookie, "POST", "/api/dev/apps", { name: "X", repo: "o/x" }, { Origin: "https://evil.example" }), env, deps);
+    expect(evil.status).toBe(403);
+    const same = await handle(api(cookie, "POST", "/api/dev/apps", { name: "X", repo: "o/x" }, { Origin: env.PUBLIC_ORIGIN }), env, deps);
+    expect(same.status).toBe(201);
+  });
+
+  it("reports release status", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { appId } = await createSkull(env, deps, cookie);
+    const ok = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/release`), env, deps)).json()) as Record<string, unknown>;
+    expect(ok).toMatchObject({ ok: true, version: "0.1.0", githubToken: true, appleKey: true, install: { ios: true, android: true, pwa: false }, screenshots: 2, errors: [] });
+    expect(ok.assets).toEqual(["my-app.json"]);
+
+    const offline = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/release`), env, testDeps())).json()) as { ok: boolean; errors: string[] };
+    expect(offline.ok).toBe(false);
+    expect(offline.errors[0]).toMatch(/599/);
+
+    const noToken = await signIn(env, deps, { id: 11, login: "tom", name: "Tom" });
+    const { app } = (await (await handle(api(noToken, "POST", "/api/dev/apps", { name: "Private", repo: "o/private" }), env, deps)).json()) as { app: { id: string } };
+    const routes = { "GET api.github.com/repos/o/private/releases/latest": () => new Response("{}", { status: 404 }) };
+    const missing = (await (await handle(api(noToken, "GET", `/api/dev/apps/${app.id}/release`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { errors: string[] };
+    expect(missing.errors[0]).toMatch(/GitHub token/);
+  });
+
+  it("previews the install page and serves a QR for active links", async () => {
+    const { appId, linkId } = await createSkull(env, deps, cookie);
+    const preview = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/preview`), env, deps)).json()) as { preview: boolean; linkId: null; app: { name: string }; release: { version: string } | null };
+    expect(preview.preview).toBe(true);
+    expect(preview.linkId).toBeNull();
+    expect(preview.app.name).toBe("Skull");
+    expect(preview.release?.version).toBe("0.1.0");
+
+    const qr = await handle(api(null, "GET", `/api/public/links/${linkId}/qr.svg`), env, deps);
+    expect(qr.status).toBe(200);
+    expect(qr.headers.get("Content-Type")).toBe("image/svg+xml");
+    expect(await qr.text()).toMatch(/^<svg/);
+    expect((await handle(api(null, "GET", "/api/public/links/nope/qr.svg"), env, deps)).status).toBe(404);
+  });
+});

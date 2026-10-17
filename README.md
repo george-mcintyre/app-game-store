@@ -13,6 +13,24 @@ the app lands on their home screen. No App Store, no Google Play, no accounts fo
 One Cloudflare Worker serves the site, the API and the artefact links. Data lives in D1.
 Everything runs on free tiers.
 
+## Two faces
+
+- Friends see an App Store style page at `/l/<id>`: icon, tagline, facts strip, screenshots,
+  about, what's new, privacy, information, share. Blank fields get generated placeholders so a
+  bare listing still looks finished. The page detects iPhone, Android, desktop and in-app
+  browsers and shows the right install steps.
+- Developers see a console at `/dev`: overview with a setup checklist and stats, apps, share
+  links with QR codes, devices, settings, an A to Z guide, and an agents page with API keys
+  and prompts. Signed-in developers see an owner bar on their own install pages.
+
+## Agents and the API
+
+Everything the console does is an API. Create a key on `/dev/agents` (shown once, `oa_...`),
+send it as `Authorization: Bearer`, and read https://ourapps.app/agents.md for every
+endpoint. `/dev/agents` also carries two prompts to paste into a coding agent: one sets up an
+app repository to the contract, one drives the console (register, check releases, share,
+approve). `llms.txt` points agents at both documents.
+
 ## Layout
 
 | path       | what                                                            |
@@ -20,6 +38,7 @@ Everything runs on free tiers.
 | `worker/`  | Cloudflare Worker: sign-in, dashboard API, enrolment, build hooks, artefact proxy |
 | `site/`    | Vite + TypeScript site served by the worker                      |
 | `shared/`  | my-app.json validation and the enrolment state machine           |
+| `site/public/agents.md` | API reference for agents, served at /agents.md            |
 | `CONTRACT.md` | what an app repository must implement                         |
 
 ## Add an app
@@ -35,6 +54,9 @@ Everything runs on free tiers.
 5. Make the repository follow `CONTRACT.md`: publish releases with `my-app.json`, listen
    for `my-store-rebuild`, call `/api/build-ready`.
 6. Create a share link for the app and send it, or show the QR code.
+
+The in-app guide at `/dev/guide` covers all of this with exact clicks, including how to create
+the Apple key, the GitHub token and the Ad Hoc profile.
 
 ## Share
 
@@ -74,7 +96,7 @@ needs an OAuth App whose callback is `<PUBLIC_ORIGIN>/api/auth/callback`.
 ```
 cd worker
 npx wrangler d1 create app-game-store          # paste the id into wrangler.jsonc
-npx wrangler d1 migrations apply app-game-store --remote
+npx wrangler d1 migrations apply app-game-store --remote   # also after adding a migration
 npx wrangler secret put LINK_SECRET
 npx wrangler secret put MASTER_KEY
 npx wrangler secret put GITHUB_OAUTH_CLIENT_ID

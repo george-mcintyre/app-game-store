@@ -1,12 +1,13 @@
 // Developer dashboard routes, all behind the session cookie.
-import { RESERVED_SLUGS, normaliseSlug } from "../auth.js";
+import { RESERVED_SLUGS, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
 import { randomId, sha256Hex } from "../crypto.js";
-import { Db, type AppRow, type Developer, type DeveloperSecrets, type LinkRow } from "../db.js";
+import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
 import { approveEnrolment, dlUrl, transition } from "../flow.js";
 import { HttpError, httpsUrlOrEmpty, json, readJson, text } from "../http.js";
 import { appleReady, loadSecrets, saveSecrets } from "../secrets.js";
-import { loadManifest } from "../upstream.js";
+import { fetchManifest, loadManifest, resolveRelease } from "../upstream.js";
+import { buildLinkPage } from "./public.js";
 
 type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName", string>> & {
   screenshots?: unknown;
@@ -61,8 +62,9 @@ function secretStatus(s: DeveloperSecrets) {
 }
 
 // GET /api/dev/me
-export async function me(env: Env, dev: Developer): Promise<Response> {
-  return json({ developer: dev, secrets: secretStatus(await loadSecrets(env, dev.id)) });
+export async function me(env: Env, dev: AuthedDeveloper): Promise<Response> {
+  const { authVia, ...developer } = dev;
+  return json({ developer, authVia, secrets: secretStatus(await loadSecrets(env, dev.id)) });
 }
 
 // PUT /api/dev/me
@@ -244,5 +246,76 @@ export async function removeDevice(env: Env, dev: Developer, id: string): Promis
   const record = await db.enrolmentById(id);
   if (!record || record.developerId !== dev.id) throw new HttpError(404, "unknown device");
   await db.deleteEnrolment(id);
+  return json({ ok: true });
+}
+
+// GET /api/dev/apps/:id/release - what the latest release looks like from the store's side.
+export async function releaseStatus(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+  const db = Db.from(env);
+  const app = await ownedApp(db, dev, id);
+  const secrets = await loadSecrets(env, dev.id);
+  const latest = await db.latestProfile(app.id);
+  const profile = latest ? { uuid: latest.uuid, expirationDate: latest.expirationDate, devices: latest.udids.length } : null;
+  const base = { githubToken: Boolean(secrets.githubToken), appleKey: appleReady(secrets), profile };
+  try {
+    const release = await resolveRelease(env, deps, app, secrets.githubToken);
+    const manifest = await fetchManifest(env, deps, app, release.manifestUrl, secrets.githubToken);
+    return json({
+      ok: true,
+      ...base,
+      tag: release.tag,
+      publishedAt: release.publishedAt,
+      assets: release.assets,
+      manifestUrl: release.manifestUrl,
+      version: manifest.version,
+      install: { ios: Boolean(manifest.install.ios), android: Boolean(manifest.install.android), pwa: Boolean(manifest.install.pwa) },
+      screenshots: (manifest.screenshots ?? []).length,
+      errors: [],
+    });
+  } catch (err) {
+    return json({ ok: false, ...base, tag: null, publishedAt: null, assets: [], manifestUrl: null, version: null, install: null, screenshots: 0, errors: [err instanceof Error ? err.message : String(err)] });
+  }
+}
+
+// GET /api/dev/apps/:id/preview - the install page data without a share link.
+export async function previewApp(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+  const app = await ownedApp(Db.from(env), dev, id);
+  return json({ ...(await buildLinkPage(env, deps, app, dev, null)), preview: true });
+}
+
+function publicKey(k: ApiKeyRow) {
+  const { keyHash: _hash, ...rest } = k;
+  return rest;
+}
+
+// GET /api/dev/keys
+export async function listKeys(env: Env, dev: Developer): Promise<Response> {
+  return json({ keys: (await Db.from(env).apiKeysByDeveloper(dev.id)).map(publicKey) });
+}
+
+// POST /api/dev/keys - dashboard only; the key is returned once.
+export async function createKey(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper): Promise<Response> {
+  requireSession(dev);
+  const body = await readJson<{ name?: string }>(request);
+  const key = newApiKey();
+  const row: ApiKeyRow = {
+    id: randomId(8),
+    developerId: dev.id,
+    name: text(body.name, 60) || "Agent",
+    prefix: key.slice(0, 11),
+    keyHash: await sha256Hex(key),
+    createdAt: deps.now().toISOString(),
+    lastUsedAt: null,
+    revokedAt: null,
+  };
+  await Db.from(env).insertApiKey(row);
+  return json({ key, apiKey: publicKey(row) }, 201);
+}
+
+// DELETE /api/dev/keys/:id - dashboard only.
+export async function revokeKey(env: Env, deps: Deps, dev: AuthedDeveloper, id: string): Promise<Response> {
+  requireSession(dev);
+  const ok = await Db.from(env).revokeApiKey(id, dev.id, deps.now().toISOString());
+  if (!ok) throw new HttpError(404, "unknown key");
   return json({ ok: true });
 }

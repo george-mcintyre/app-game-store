@@ -11,8 +11,12 @@ describe("matchRoute", () => {
     expect(matchRoute("/dev/apps/new")).toEqual({ page: "app-new" });
     expect(matchRoute("/dev/apps/a1")).toEqual({ page: "app-edit", appId: "a1" });
     expect(matchRoute("/dev/apps/a1/links")).toEqual({ page: "app-links", appId: "a1" });
+    expect(matchRoute("/dev/apps")).toEqual({ page: "apps" });
+    expect(matchRoute("/dev/apps/a1/preview")).toEqual({ page: "app-preview", appId: "a1" });
     expect(matchRoute("/dev/devices")).toEqual({ page: "devices" });
     expect(matchRoute("/dev/settings")).toEqual({ page: "settings" });
+    expect(matchRoute("/dev/guide")).toEqual({ page: "guide" });
+    expect(matchRoute("/dev/agents")).toEqual({ page: "agents" });
   });
 
   it("rejects everything else", () => {

@@ -4,7 +4,7 @@ import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
 import { enrolCallback, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
-import { devPage, linkPage, serveArtefact } from "./routes/public.js";
+import { devPage, linkPage, linkQr, serveArtefact } from "./routes/public.js";
 
 // Sent on every response so browsers and scanners see a locked-down site.
 export const SECURITY_HEADERS: Record<string, string> = {
@@ -59,6 +59,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
   if (p[0] === "public") {
     if (p[1] === "dev" && p.length === 3 && m === "GET") return devPage(env, p[2]);
     if (p[1] === "links" && p.length === 3 && m === "GET") return linkPage(env, deps, p[2]);
+    if (p[1] === "links" && p.length === 4 && p[3] === "qr.svg" && m === "GET") return linkQr(env, deps, p[2]);
   }
 
   if (p[0] === "enrol") {
@@ -83,10 +84,17 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
       if (p.length === 3 && m === "PUT") return dev.updateApp(request, env, deps, me, p[2]);
       if (p.length === 3 && m === "DELETE") return dev.deleteApp(env, me, p[2]);
       if (p.length === 4 && p[3] === "build-token" && m === "POST") return dev.rotateBuildToken(env, deps, me, p[2]);
+      if (p.length === 4 && p[3] === "release" && m === "GET") return dev.releaseStatus(env, deps, me, p[2]);
+      if (p.length === 4 && p[3] === "preview" && m === "GET") return dev.previewApp(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "links" && m === "POST") return dev.createLink(request, env, deps, me, p[2]);
     }
     if (p[1] === "links" && p.length === 4 && p[3] === "revoke" && m === "POST") return dev.revokeLink(env, deps, me, p[2], false);
     if (p[1] === "links" && p.length === 3 && m === "DELETE") return dev.revokeLink(env, deps, me, p[2], true);
+    if (p[1] === "keys") {
+      if (p.length === 2 && m === "GET") return dev.listKeys(env, me);
+      if (p.length === 2 && m === "POST") return dev.createKey(request, env, deps, me);
+      if (p.length === 3 && m === "DELETE") return dev.revokeKey(env, deps, me, p[2]);
+    }
     if (p[1] === "devices") {
       if (p.length === 2 && m === "GET") return dev.listDevices(env, me);
       if (p.length === 4 && p[3] === "approve" && m === "POST") return dev.approveDevice(env, deps, me, p[2]);

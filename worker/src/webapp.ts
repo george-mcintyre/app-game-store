@@ -1,5 +1,6 @@
 // Serves a developer's web.zip bundle at https://<linkId>.<store host>/ with nothing from the console origin.
 import { unzipSync } from "fflate";
+import installBanner from "./assets/install-banner.js";
 import { Db, type AppRow, type Developer, type LinkRow } from "./db.js";
 import type { Deps, Env } from "./env.js";
 import { HttpError } from "./http.js";
@@ -12,6 +13,8 @@ const MAX_ZIP_BYTES = 25 * 1024 * 1024;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const BUNDLE_CACHE_SECONDS = 60 * 60;
 const FILE_CACHE_SECONDS = 60 * 60 * 24;
+export const BANNER_PATH = "/__ourapps/install.js";
+export const DEFAULT_MANIFEST_PATH = "/__ourapps/manifest.webmanifest";
 
 const TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8",
@@ -73,6 +76,66 @@ export function isBundleUrl(pwa: string | null | undefined, release: { manifestU
     return false;
   }
   return release ? release.assets.some((n) => WEB_ZIP_ASSET.test(n)) : true;
+}
+
+const decoder = new TextDecoder();
+const encoder = new TextEncoder();
+
+export interface HeadFacts {
+  hasManifest: boolean;
+  hasAppleCapable: boolean;
+  hasAppleTitle: boolean;
+  hasAppleIcon: boolean;
+  hasThemeColor: boolean;
+  hasViewport: boolean;
+  hasAppName: boolean;
+  iconHref: string | null;
+}
+
+export function inspectHead(htmlText: string): HeadFacts {
+  const head = htmlText.slice(0, 64 * 1024);
+  const has = (re: RegExp) => re.test(head);
+  const icon = /<link[^>]+rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i.exec(head) ?? /<link[^>]+href=["']([^"']+)["'][^>]*rel=["'](?:shortcut )?icon["']/i.exec(head);
+  return {
+    hasManifest: has(/<link[^>]+rel=["']manifest["']/i),
+    hasAppleCapable: has(/<meta[^>]+name=["']apple-mobile-web-app-capable["']/i),
+    hasAppleTitle: has(/<meta[^>]+name=["']apple-mobile-web-app-title["']/i),
+    hasAppleIcon: has(/<link[^>]+rel=["']apple-touch-icon["']/i),
+    hasThemeColor: has(/<meta[^>]+name=["']theme-color["']/i),
+    hasViewport: has(/<meta[^>]+name=["']viewport["']/i),
+    hasAppName: has(/<meta[^>]+name=["']application-name["']/i),
+    iconHref: icon ? icon[1] : null,
+  };
+}
+
+// Adds what "Add to Home Screen" needs when the bundle left it out, plus the install banner.
+export function decorateHtml(htmlText: string, appName: string, iconUrl: string | null): string {
+  const f = inspectHead(htmlText);
+  const safeName = appName.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const parts: string[] = [];
+  if (!f.hasViewport) parts.push('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">');
+  if (!f.hasManifest) parts.push(`<link rel="manifest" href="${DEFAULT_MANIFEST_PATH}">`);
+  if (!f.hasAppleCapable) parts.push('<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">');
+  if (!f.hasAppleTitle) parts.push(`<meta name="apple-mobile-web-app-title" content="${safeName}">`);
+  if (!f.hasAppName) parts.push(`<meta name="application-name" content="${safeName}">`);
+  if (!f.hasAppleIcon) {
+    const href = f.iconHref ?? iconUrl;
+    if (href) parts.push(`<link rel="apple-touch-icon" href="${href.replace(/"/g, "&quot;")}">`);
+  }
+  if (!f.hasThemeColor) parts.push('<meta name="theme-color" content="#1d1d1f">');
+  parts.push(`<script src="${BANNER_PATH}" defer></script>`);
+  const inject = parts.join("");
+  const headClose = htmlText.search(/<\/head\s*>/i);
+  if (headClose >= 0) return htmlText.slice(0, headClose) + inject + htmlText.slice(headClose);
+  const headOpen = /<head[^>]*>/i.exec(htmlText);
+  if (headOpen) return htmlText.slice(0, headOpen.index + headOpen[0].length) + inject + htmlText.slice(headOpen.index + headOpen[0].length);
+  return inject + htmlText;
+}
+
+// Manifest for bundles that ship none: enough for a standalone home screen app.
+export function defaultManifest(appName: string, iconUrl: string | null, themeColor = "#1d1d1f"): string {
+  const icons = iconUrl ? [{ src: iconUrl, sizes: "any", purpose: "any" }] : [];
+  return JSON.stringify({ name: appName, short_name: appName.slice(0, 12), start_url: "./", scope: "./", display: "standalone", background_color: "#ffffff", theme_color: themeColor, icons });
 }
 
 // Resolves a path inside the bundle; index.html for "/" and for anything that is not a file.
@@ -184,12 +247,22 @@ export async function serveWebApp(request: Request, env: Env, deps: Deps, linkId
   const url = new URL(request.url);
   // Console paths never exist on an app host, so nothing can mistake one for the other.
   if (/^\/(api|dl)(\/|$)/.test(url.pathname)) return plainPage(404, "Not found", "That file is not in the app.");
+  const appName = located.app.name || "App";
+  const bundleIcon = inspectHead(decoder.decode(bundle.files["index.html"])).iconHref;
+  const iconUrl = bundleIcon ?? (bundle.files["icon.png"] ? "./icon.png" : bundle.files["icon.svg"] ? "./icon.svg" : null);
+  if (url.pathname === BANNER_PATH) {
+    return new Response(installBanner, { status: 200, headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": `public, max-age=${FILE_CACHE_SECONDS}` } });
+  }
+  if (url.pathname === DEFAULT_MANIFEST_PATH) {
+    return new Response(defaultManifest(appName, iconUrl), { status: 200, headers: { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" } });
+  }
   const file = pickFile(bundle.files, url.pathname);
   if (!file) return plainPage(404, "Not found", "That file is not in the app.");
   const etag = `"${bundle.tag}:${file.name}:${file.body.byteLength}"`;
   if (request.headers.get("If-None-Match") === etag) return new Response(null, { status: 304, headers: { ETag: etag } });
   const isHtml = file.name.endsWith(".html");
-  return new Response(request.method === "HEAD" ? null : file.body, {
+  const body = isHtml ? encoder.encode(decorateHtml(decoder.decode(file.body), appName, iconUrl)) : file.body;
+  return new Response(request.method === "HEAD" ? null : body, {
     status: 200,
     headers: {
       "Content-Type": contentType(file.name),

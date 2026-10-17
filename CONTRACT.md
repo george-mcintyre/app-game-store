@@ -144,7 +144,13 @@ more `my-store-rebuild` for them automatically. Response:
   entries only; zip at most 25 MB, any file at most 10 MB. Unknown paths get `index.html`;
   `/api/*` and `/dl/*` are reserved. HTML is served with `no-cache`, other files cached for a
   day with an ETag per release, so a new release shows at once. The bundle is read from the
-  latest release and cached for an hour per release tag.
+  latest release and cached for an hour per release tag. The store injects a script at
+  `/__ourapps/install.js` into every HTML file (an "add to home screen" banner: Chrome's native
+  prompt, Safari steps, in-app browser hint) and, only when the page lacks them, a manifest
+  link (`/__ourapps/manifest.webmanifest`, standalone display), the Apple home screen meta
+  tags, an `apple-touch-icon` and a theme colour. Ship your own to override; the `/__ourapps/`
+  path prefix is reserved. Camera and microphone grants persist for the installed app because
+  it shares the origin; ask for them from a tap handler, never on load.
 - Any other https URL, including a release asset with another name: opened as is.
 
 ## Optional: in-app updates

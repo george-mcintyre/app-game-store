@@ -4,6 +4,7 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
+  "rules": [{ "type": "Text", "globs": ["**/assets/*.js"] }],
   "routes": [
     { "pattern": "ourapps.app", "custom_domain": true },
     { "pattern": "*.ourapps.app/*", "zone_name": "ourapps.app" }

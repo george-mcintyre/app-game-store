@@ -25,6 +25,17 @@ GET /api/dev/me
 
 `secrets.github` false means the developer has not saved a GitHub token; the console cannot read private release assets or send rebuilds until they do (only they can do that, at `/dev/settings`). `secrets.apple` false means iPhone approvals will fail.
 
+## What the developer must do themselves
+
+Tell the developer plainly when a task is theirs; do not try to work around it:
+
+- Signing in with GitHub, and creating the GitHub fine-grained token and the Apple App Store Connect API key (saved at `/dev/settings`; there is no API for credentials).
+- The Apple portal setup per iPhone app: App ID, Apple Distribution certificate (.p12 and password), their own iPhone registered, an Ad Hoc provisioning profile with a chosen name.
+- Providing signing material values (the .p12, keystore and passwords); you may store them with `gh secret set` once handed over.
+- Creating API keys (browser session only).
+- Deciding which iPhones to approve: list the waiting devices and approve only the people they name.
+- Sending share links to people.
+
 ## Concepts
 
 - App: a listing plus a GitHub repository. Has an opaque `id` (used by the repository as `STORE_APP_ID`) and a build token (used by the repository as `STORE_BUILD_TOKEN`; returned once on creation).

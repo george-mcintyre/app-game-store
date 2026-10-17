@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prebuild": "cp ../CONTRACT.md public/contract.md",
+    "predev": "cp ../CONTRACT.md public/contract.md"
   },
   "dependencies": {
     "@my/store-shared": "*",

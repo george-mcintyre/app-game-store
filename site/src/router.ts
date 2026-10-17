@@ -1,4 +1,4 @@
-// Path matching for the few pages the site has.
+// Path matching for the pages the site has.
 
 export type Route =
   | { page: "landing" }
@@ -6,11 +6,15 @@ export type Route =
   | { page: "install"; linkId: string }
   | { page: "wait"; linkId: string; enrolmentId: string }
   | { page: "dashboard" }
+  | { page: "apps" }
   | { page: "app-new" }
   | { page: "app-edit"; appId: string }
   | { page: "app-links"; appId: string }
+  | { page: "app-preview"; appId: string }
   | { page: "devices" }
   | { page: "settings" }
+  | { page: "guide" }
+  | { page: "agents" }
   | { page: "not-found" };
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -25,11 +29,15 @@ export function matchRoute(pathname: string): Route {
   }
   if (parts[0] === "dev") {
     if (parts.length === 1) return { page: "dashboard" };
+    if (parts[1] === "apps" && parts.length === 2) return { page: "apps" };
     if (parts[1] === "apps" && parts[2] === "new" && parts.length === 3) return { page: "app-new" };
     if (parts[1] === "apps" && parts.length === 3) return { page: "app-edit", appId: parts[2] };
     if (parts[1] === "apps" && parts.length === 4 && parts[3] === "links") return { page: "app-links", appId: parts[2] };
+    if (parts[1] === "apps" && parts.length === 4 && parts[3] === "preview") return { page: "app-preview", appId: parts[2] };
     if (parts[1] === "devices" && parts.length === 2) return { page: "devices" };
     if (parts[1] === "settings" && parts.length === 2) return { page: "settings" };
+    if (parts[1] === "guide" && parts.length === 2) return { page: "guide" };
+    if (parts[1] === "agents" && parts.length === 2) return { page: "agents" };
     return { page: "not-found" };
   }
   if (parts.length === 1 && SLUG.test(parts[0])) return { page: "dev-page", slug: parts[0] };

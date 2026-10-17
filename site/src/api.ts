@@ -30,6 +30,7 @@ export interface AppDetails {
   privacySummary: string;
   iconUrl: string;
   screenshots: string[];
+  updatedAt: string;
 }
 
 export interface DevApp extends AppDetails {
@@ -39,7 +40,6 @@ export interface DevApp extends AppDetails {
   showOnPage: boolean;
   releaseIcon?: string;
   createdAt: string;
-  updatedAt: string;
 }
 
 export interface Install {
@@ -48,11 +48,23 @@ export interface Install {
   ios: { bundleId: string; adhoc: string | null; testflight: string | null } | null;
 }
 
+export interface Release {
+  version: string;
+  minPlayers: number;
+  maxPlayers: number;
+  install: Install;
+  fallbackName: string;
+  fallbackIcon: string;
+  fallbackDescription: string;
+  fallbackScreenshots: string[];
+}
+
 export interface LinkPage {
-  linkId: string;
-  developer: { slug: string; displayName: string };
+  linkId: string | null;
+  preview?: boolean;
+  developer: { id: string; slug: string; displayName: string };
   app: AppDetails;
-  release: { version: string; minPlayers: number; maxPlayers: number; install: Install; fallbackName: string; fallbackIcon: string; fallbackDescription: string; fallbackScreenshots: string[] } | null;
+  release: Release | null;
   releaseError: string | null;
 }
 
@@ -79,7 +91,49 @@ export interface Enrolment {
   updatedAt: string;
 }
 
+export interface SecretStatus {
+  apple: boolean;
+  appleSavedAt: string | null;
+  appleTeamId: string;
+  appleTeamIdSavedAt: string | null;
+  github: boolean;
+  githubSavedAt: string | null;
+}
+
 export interface Me {
-  developer: { id: string; slug: string; displayName: string; githubLogin: string };
-  secrets: { apple: boolean; appleSavedAt: string | null; appleTeamId: string; appleTeamIdSavedAt: string | null; github: boolean; githubSavedAt: string | null };
+  developer: { id: string; slug: string; displayName: string; githubLogin: string; createdAt: string };
+  authVia: "session" | "key";
+  secrets: SecretStatus;
+}
+
+export interface ReleaseStatus {
+  ok: boolean;
+  githubToken: boolean;
+  appleKey: boolean;
+  profile: { uuid: string; expirationDate: string | null; devices: number } | null;
+  tag: string | null;
+  publishedAt: string | null;
+  assets: string[];
+  manifestUrl: string | null;
+  version: string | null;
+  install: { ios: boolean; android: boolean; pwa: boolean } | null;
+  screenshots: number;
+  errors: string[];
+}
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+// Cached for the page lifetime so store pages can show the owner bar without a second round trip.
+let mePromise: Promise<Me | null> | null = null;
+export function whoAmI(force = false): Promise<Me | null> {
+  if (!mePromise || force) {
+    mePromise = api<Me>("GET", "/api/dev/me").catch(() => null);
+  }
+  return mePromise;
 }

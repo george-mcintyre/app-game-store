@@ -179,7 +179,10 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   const description = app.description || data.release?.fallbackDescription || "";
   const shots = app.screenshots.length > 0 ? app.screenshots : (data.release?.fallbackScreenshots ?? []);
   const history = data.history ?? [];
-  const whatsNew = app.whatsNew || history[0]?.notes || "";
+  // The latest release's notes are the truth; the dashboard field only fills in when there are none.
+  const latest = history.find((h) => h.version === data.release?.version) ?? history[0];
+  const whatsNew = latest?.notes || app.whatsNew || "";
+  const updated = latest?.date ?? (history.length === 0 ? app.updatedAt : null);
   const owner = opts.me?.developer.id === data.developer.id;
   setTheme("store", `${name} by ${data.developer.displayName}`);
 
@@ -197,7 +200,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     ["Compatibility", app.minOs || compat(data)],
     ["Age", app.ageNote],
     ["Version", data.release?.version ?? ""],
-    ["Updated", app.updatedAt ? new Date(app.updatedAt).toLocaleDateString(undefined, { dateStyle: "medium" }) : ""],
+    ["Updated", updated ? new Date(updated).toLocaleDateString(undefined, { dateStyle: "medium" }) : ""],
   ];
 
   mount(

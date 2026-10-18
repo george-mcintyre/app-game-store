@@ -8,6 +8,11 @@ drawing or above the matching description card.
 Image generators often misspell text. Keep the labels as given, check every word in the result,
 and regenerate or touch up in an editor when a label is wrong.
 
+Status: all eight generated (1672 by 941) and checked for spelling and technical accuracy on
+2026-10-18. The PNGs are the masters; the site serves WebP copies made with
+`cwebp -q 92 -m 6 <name>.png -o <name>.webp` in `site/public/reference/`. Regenerate both when
+the system changes in a way a diagram shows (new install path, renamed component, new limit).
+
 ## Shared style (already included in every prompt below)
 
 Clean flat vector technical diagram for a developer documentation site, 16:9, two-dimensional,

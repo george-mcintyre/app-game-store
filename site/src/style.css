@@ -513,8 +513,12 @@ select { appearance: auto; }
 /* Technical reference */
 .ref-diagram { margin: 14px 0 18px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-m); padding: 16px; }
 .ref-diagram .hidden { display: none; }
-img.ref-figure { display: none; width: 100%; height: auto; border-radius: var(--r-s); margin-bottom: 10px; }
-img.ref-figure.loaded { display: block; }
+img.ref-figure { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; border-radius: var(--r-s); background: var(--surface-2); }
+.figure-link { display: block; position: relative; margin-bottom: 12px; border-radius: var(--r-s); overflow: hidden; border: 1px solid var(--line); }
+.figure-link:hover { text-decoration: none; box-shadow: var(--shadow-m); }
+.figure-hint { position: absolute; right: 10px; bottom: 10px; background: rgba(15, 23, 42, 0.78); color: #fff; font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; opacity: 0; transition: opacity .15s; }
+.figure-link:hover .figure-hint, .figure-link:focus-visible .figure-hint { opacity: 1; }
+@media (hover: none) { .figure-hint { opacity: 1; } }
 .reference section { padding: 8px 0 22px; }
 .reference section h2 { font-size: 24px; margin: 16px 0 10px; }
 .reference section h3 { font-size: 17px; margin: 16px 0 6px; }

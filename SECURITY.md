@@ -73,5 +73,9 @@ Rotating `LINK_SECRET` only invalidates download links that are less than an hou
 - Brute force against sign-in is bounded by GitHub; against API keys it is bounded by 160 bits.
   No per-IP rate limit is applied on the free tier.
 
-Report a problem by opening an issue on the repository or messaging the developer directly;
-please do not post secrets in the report.
+## Reporting a vulnerability
+
+Report it privately at https://github.com/george-mcintyre/ourapps/security/advisories/new
+(GitHub's private vulnerability reporting: only the maintainer sees it). Do not open a public
+issue for a security problem, and do not include real secrets or personal data in any report.
+Expect a reply within a few days; fixes are released before details are published.

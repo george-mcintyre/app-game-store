@@ -339,11 +339,26 @@ function historyBlock(history: HistoryEntry[]): Raw {
   `;
 }
 
+// "iPhone and iPad", "iPhone" or "iPad" from install.ios.devices; "iOS" when the developer makes no claim.
+export function appleTargets(devices: ("iphone" | "ipad")[] | undefined): string {
+  if (!devices || devices.length === 0) return "iOS";
+  const names = devices.map((d) => (d === "ipad" ? "iPad" : "iPhone"));
+  return names.length === 2 ? "iPhone and iPad" : names[0];
+}
+
+// A note shown on the Apple device the build was not made for; never blocks the install.
+export function deviceNote(devices: ("iphone" | "ipad")[] | undefined, device: "iPhone" | "iPad"): string {
+  if (!devices || devices.length === 0) return "";
+  if (device === "iPad" && !devices.includes("ipad")) return "Made for iPhone. On this iPad it runs in a phone-sized window, and registering uses one of the developer's iPad slots.";
+  if (device === "iPhone" && !devices.includes("iphone")) return "Made for iPad. It will not install on an iPhone; open this page on an iPad instead.";
+  return "";
+}
+
 function compat(data: LinkPage): string {
   const i = data.release?.install;
   if (!i) return "";
   const parts = [];
-  if (i.ios) parts.push("iPhone");
+  if (i.ios) parts.push(appleTargets(i.ios.devices));
   if (i.android) parts.push("Android");
   if (i.pwa) parts.push("Web");
   return parts.join(", ");
@@ -381,7 +396,7 @@ function installArea(data: LinkPage, d: Detected, name: string, preview: boolean
   }
   const install = data.release.install;
   if (d.platform === "ios") {
-    if (install.ios?.adhoc) return iosEnrol(name, d.device);
+    if (install.ios?.adhoc) return iosEnrol(name, d.device, install.ios.devices);
     if (install.ios?.testflight) return html`<div class="install-card"><h3>Install through TestFlight</h3><p class="muted small">Apple's TestFlight app opens; tap Install there.</p><a class="btn block" href="${install.ios.testflight}">Open in TestFlight</a></div>`;
     if (install.pwa) return pwaSteps(install.pwa, "ios");
     return html`<div class="install-card"><h3>Not on ${d.device} yet</h3><p class="muted">There is no ${d.device} version of ${name} at the moment.</p></div>`;
@@ -400,10 +415,13 @@ function installArea(data: LinkPage, d: Detected, name: string, preview: boolean
   `;
 }
 
-function iosEnrol(name: string, device: "iPhone" | "iPad"): Raw {
+function iosEnrol(name: string, device: "iPhone" | "iPad", devices?: ("iphone" | "ipad")[]): Raw {
+  const note = deviceNote(devices, device);
   return html`
     <form id="enrol-form" class="install-card">
       <h3>${icon("phone", "icon-20")} Install on this ${device}</h3>
+      ${devices && devices.length > 0 ? html`<p class="small muted">For ${appleTargets(devices)}.</p>` : ""}
+      ${note ? callout("warn", html`<p>${note}</p>`) : ""}
       <p class="muted small">Apple only lets ${name} run on devices the developer has registered. Step one registers this ${device}, step two builds your copy. The page keeps you posted.</p>
       <div class="field">
         <label for="friend-name">Your name, so the developer knows whose ${device} this is</label>

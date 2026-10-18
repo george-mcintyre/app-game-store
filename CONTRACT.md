@@ -125,7 +125,10 @@ more `my-store-rebuild` for them automatically. Response:
 ## iPad
 
 A universal app needs nothing extra: build one `.ipa` with `TARGETED_DEVICE_FAMILY` set to
-`1,2`. iPads enrol and install exactly like iPhones, appear in the same Ad Hoc profile, and use
+`1,2`. Optionally say which devices the build targets with `install.ios.devices`, any of
+`"iphone"` and `"ipad"` (for example `["iphone", "ipad"]`). It is display only: the install page
+says "for iPhone and iPad" or "for iPhone", and warns on the device a build was not made for, but
+never blocks an install. Absent, the page makes no claim. iPads enrol and install exactly like iPhones, appear in the same Ad Hoc profile, and use
 Apple's separate allowance of 100 iPads per membership year. An iPhone-only build also installs
 on iPads (in a phone-sized window) and uses an iPad slot there.
 

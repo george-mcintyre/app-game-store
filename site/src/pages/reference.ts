@@ -258,7 +258,7 @@ function body(): Raw {
             <li>Limits: 100 devices per product family per membership year (iPhone and iPad counted separately); slots return only at renewal. Builds stop launching a year after the profile was created.</li>
             <li>Updates install over the existing app when the bundle id is the same and <code>CFBundleVersion</code> is higher; data stays.</li>
             <li>ourapps never holds your signing certificate; your workflow does.</li>
-            <li><b>iPad and universal apps:</b> build one .ipa with <code>TARGETED_DEVICE_FAMILY</code> <code>1,2</code>; nothing else changes. iPads detect, enrol, register and install exactly like iPhones and use Apple's separate iPad allowance. An iPhone-only build also installs on an iPad, where it runs in a phone-sized window and still uses an iPad slot.</li>
+            <li><b>iPad and universal apps:</b> build one .ipa with <code>TARGETED_DEVICE_FAMILY</code> <code>1,2</code>; nothing else changes. iPads detect, enrol, register and install exactly like iPhones and use Apple's separate iPad allowance. An iPhone-only build also installs on an iPad, where it runs in a phone-sized window and still uses an iPad slot. Say which devices a build targets with the optional <code>install.ios.devices</code> (<code>["iphone", "ipad"]</code>); the page shows it and warns on the other device, but never blocks.</li>
           </ul>
         </section>
 

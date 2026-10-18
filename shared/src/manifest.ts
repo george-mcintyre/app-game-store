@@ -15,9 +15,13 @@ export interface AppManifest {
   install: {
     pwa: string | null;
     android: { apk: string } | null;
-    ios: { bundleId: string; adhoc: string | null; testflight: string | null } | null;
+    // devices is display only: which Apple devices the build targets; absent makes no claim.
+    ios: { bundleId: string; adhoc: string | null; testflight: string | null; devices?: IosDevice[] } | null;
   };
 }
+
+export type IosDevice = "iphone" | "ipad";
+export const IOS_DEVICES: readonly IosDevice[] = ["iphone", "ipad"];
 
 export type ManifestResult = { ok: true; manifest: AppManifest } | { ok: false; errors: string[] };
 
@@ -79,6 +83,11 @@ export function validateManifest(input: unknown): ManifestResult {
       if (ios.adhoc !== null && !isHttpsUrl(ios.adhoc)) errors.push("install.ios.adhoc must be an https URL or null");
       if (ios.testflight !== null && !isHttpsUrl(ios.testflight)) errors.push("install.ios.testflight must be an https URL or null");
       if (ios.adhoc === null && ios.testflight === null) errors.push("install.ios needs adhoc or testflight");
+      if (ios.devices !== undefined) {
+        const d = ios.devices;
+        const valid = Array.isArray(d) && d.length > 0 && d.every((x) => (IOS_DEVICES as readonly unknown[]).includes(x)) && new Set(d).size === d.length;
+        if (!valid) errors.push('install.ios.devices must list "iphone" and/or "ipad", each once');
+      }
     }
   }
   if (pwa === null && android === null && ios === null) errors.push("install needs at least one of pwa, android, ios");

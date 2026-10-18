@@ -45,7 +45,7 @@ export interface DevApp extends AppDetails {
 export interface Install {
   pwa: string | null;
   android: { apk: string } | null;
-  ios: { bundleId: string; adhoc: string | null; testflight: string | null } | null;
+  ios: { bundleId: string; adhoc: string | null; testflight: string | null; devices?: ("iphone" | "ipad")[] } | null;
 }
 
 export interface Release {

@@ -90,6 +90,17 @@ describe("validateManifest", () => {
     expect(validateManifest(withPatch({ screenshots: "x" })).ok).toBe(false);
   });
 
+  it("accepts an optional ios.devices list and rejects bad ones", () => {
+    const ios = (devices: unknown) => withPatch({ install: { pwa: null, android: null, ios: { bundleId: "a.b", adhoc: "https://x/m.plist", testflight: null, devices } } });
+    expect(validateManifest(ios(["iphone", "ipad"])).ok).toBe(true);
+    expect(validateManifest(ios(["ipad"])).ok).toBe(true);
+    for (const bad of [[], ["watch"], ["iphone", "iphone"], "iphone"]) {
+      const r = validateManifest(ios(bad));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.errors).toContain('install.ios.devices must list "iphone" and/or "ipad", each once');
+    }
+  });
+
   it("collects several errors at once", () => {
     const result = validateManifest(withPatch({ name: "", version: "", icon: "nope" }));
     expect(result.ok).toBe(false);

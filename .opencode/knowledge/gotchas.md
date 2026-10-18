@@ -52,3 +52,8 @@
   ever see `ourapps.app`.
 - Never create a new GitHub repository named `app-game-store` under the account; it would break
   GitHub's forwarding from the old name.
+- Client-facing error text must be thrown as `HttpError`; any other error becomes a generic 500
+  with a reference (`errorResponse` in `worker/src/index.ts`), and public web app pages show a
+  fixed sentence. Plain `Error` messages can name private repositories, so never return them.
+  CodeQL `js/stack-trace-exposure` still flags the HttpError path; alert 1 was dismissed as a
+  false positive for that reason.

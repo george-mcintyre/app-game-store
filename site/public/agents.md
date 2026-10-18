@@ -25,6 +25,15 @@ GET /api/dev/me
 
 `secrets.github` false means the developer has not saved a GitHub token; the console cannot read private release assets or send rebuilds until they do (only they can do that, at `/dev/settings`). `secrets.apple` false means iPhone approvals will fail.
 
+## Supported app types (summary)
+
+Full detail: https://ourapps.app/reference.
+
+- Native iPhone and iPad (.ipa, Ad Hoc; 100 devices per product family per membership year), native Android (signed universal .apk; no .aab), and anything that compiles to those (Flutter, React Native, .NET MAUI, Capacitor, Kotlin Multiplatform, Unity and Godot mobile).
+- Static web apps and web games as a `web.zip` bundle served by ourapps on `https://<linkId>.ourapps.app/` (25 MB zip, 32 MB unpacked, built with `zip -0`; pre-compressed `.br`/`.gz` files and an allowlisted `_headers` file supported).
+- Web apps needing a server: host them yourself and put their URL in `install.pwa`; ourapps links to them, never proxies.
+- Backends, APIs and databases are never hosted by ourapps; apps call them directly. Web bundles must allow the link origins in CORS and authenticate with tokens, not cookies.
+
 ## What the developer must do themselves
 
 Tell the developer plainly when a task is theirs; do not try to work around it:

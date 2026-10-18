@@ -131,7 +131,7 @@ function openCache(): Cache | null {
 export async function loadHistory(env: Env, deps: Deps, app: AppRow, githubToken: string | undefined): Promise<HistoryEntry[]> {
   if (!app.repo) return [];
   const cache = openCache();
-  const key = new Request(`https://history.ourapps.internal/${app.id}`);
+  const key = new Request(`${env.PUBLIC_ORIGIN}/__cache/history/${app.id}`);
   if (cache) {
     const hit = await cache.match(key).catch(() => undefined);
     if (hit) return (await hit.json()) as HistoryEntry[];

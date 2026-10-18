@@ -12,6 +12,7 @@ const NAV: { href: string; label: string; icon: string; match: (p: string) => bo
   { href: "/dev/apps", label: "Apps", icon: "apps", match: (p) => p.startsWith("/dev/apps") },
   { href: "/dev/devices", label: "Devices", icon: "devices", match: (p) => p.startsWith("/dev/devices") },
   { href: "/dev/guide", label: "Guide", icon: "book", match: (p) => p.startsWith("/dev/guide") },
+  { href: "/reference", label: "Reference", icon: "info", match: (p) => p.startsWith("/reference") },
   { href: "/dev/agents", label: "Agents and API", icon: "bot", match: (p) => p.startsWith("/dev/agents") },
   { href: "/dev/settings", label: "Settings", icon: "gear", match: (p) => p.startsWith("/dev/settings") },
 ];

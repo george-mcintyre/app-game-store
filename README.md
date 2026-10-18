@@ -51,6 +51,13 @@ steps: `SECURITY.md`.
 | `site/public/agents.md` | API reference for agents, served at /agents.md            |
 | `CONTRACT.md` | what an app repository must implement                         |
 
+## What kinds of app
+
+Native iPhone and Android apps (and anything that compiles to them), static web apps and web
+games served by ourapps, and server-rendered web apps linked from it. ourapps never hosts an
+app's API or database. Details and limits: `/reference` (source `site/src/pages/reference.ts`);
+diagram prompts for the illustrated versions: `docs/diagram-prompts.md`.
+
 ## Who does what
 
 Only a few steps need a human: signing in with GitHub, creating the GitHub token and the Apple

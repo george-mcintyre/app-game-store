@@ -112,6 +112,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     }
     if (p[1] === "links" && p.length === 4 && p[3] === "revoke" && m === "POST") return dev.revokeLink(env, deps, me, p[2], false);
     if (p[1] === "links" && p.length === 3 && m === "DELETE") return dev.revokeLink(env, deps, me, p[2], true);
+    if (p[1] === "links" && p.length === 3 && m === "PUT") return dev.renameLink(request, env, me, p[2]);
     if (p[1] === "keys") {
       if (p.length === 2 && m === "GET") return dev.listKeys(env, me);
       if (p.length === 2 && m === "POST") return dev.createKey(request, env, deps, me);

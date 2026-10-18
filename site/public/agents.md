@@ -125,6 +125,7 @@ Friends see the revision history on the install page, so every release needs not
 POST /api/dev/apps/:id/links      body: { "label": "Mum and Dad", "expiresAt": "2027-01-01T00:00:00Z" | null }
 -> 201 { "link": { "id", "appId", "developerId", "label", "createdAt", "expiresAt", "revokedAt" }, "url": "https://ourapps.app/l/<id>" }
 
+PUT /api/dev/links/:id            body: { "label": "Thursday table" } -> { "link": {...} }   (label only; the address does not change)
 POST /api/dev/links/:id/revoke    -> { "ok": true }
 DELETE /api/dev/links/:id         -> { "ok": true }
 

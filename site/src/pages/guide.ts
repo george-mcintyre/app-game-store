@@ -246,7 +246,7 @@ startButton.onclick = async () => {
         <p>Open the app, tap <b>Share links</b>, give the link a label and create it, or ask your agent: "create a share link for Poker Night labelled Thursday table". The link is <code>${origin}/l/</code> followed by a random id; it does not list anywhere and search engines are told to stay away. Sending it to the person is the part that stays with you.</p>
         <h3>Good habits</h3>
         <ul class="bullets">
-          <li><b>One link per person or group.</b> Labels like "Mum and Dad" or "Tuesday board game crowd" let you revoke one without touching the others.</li>
+          <li><b>One link per person or group.</b> Labels like "Mum and Dad" or "Tuesday board game crowd" let you revoke one without touching the others. Rename a link any time with <b>Rename</b> next to its label; its address does not change.</li>
           <li><b>Expiry</b> is optional. Friends who installed keep the app when a link expires or is revoked; only new installs stop.</li>
           <li><b>QR code.</b> Each active link shows one and you can download it as a file for a printed card.</li>
         </ul>

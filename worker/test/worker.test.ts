@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
-import { handle } from "../src/index.js";
+import { errorResponse, handle } from "../src/index.js";
 import { BASE, GH_TOKEN, api, jsonRes, manifest, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const UDID_1 = "00008030-000A1B2C3D4E5F67";
@@ -472,11 +472,15 @@ describe("API keys and agent endpoints", () => {
     const { linkId } = await createSkull(env, deps, cookie);
     const routes = githubRoutes();
     routes["GET api.github.com/repos/o/skull/releases/latest"] = () => new Response("{}", { status: 404 });
-    const res = await handle(api(null, "GET", `/api/public/links/${linkId}/latest`, undefined, { "cf-ray": "abc123" }), env, { ...deps, fetch: fakeFetch(routes).fetch });
-    expect(res.status).toBe(500);
+    const res = await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, { ...deps, fetch: fakeFetch(routes).fetch });
+    expect(res.status).toBe(503);
     const text = await res.text();
-    expect(text).toBe(JSON.stringify({ error: "something went wrong (reference abc123)" }));
+    expect(text).toBe(JSON.stringify({ error: "no release of this app is available right now" }));
     expect(text).not.toContain("o/skull");
+    // Any other unexpected error gives a reference only.
+    const generic = errorResponse(new Request(`${BASE}/x`, { headers: { "cf-ray": "abc123" } }), new Error("D1_ERROR: no such table: secrets at offset 14"));
+    expect(generic.status).toBe(500);
+    expect(await generic.text()).toBe(JSON.stringify({ error: "something went wrong (reference abc123)" }));
     // Deliberate messages still come through.
     expect(((await (await handle(api(null, "GET", "/api/public/links/nope/latest"), env, deps)).json()) as { error: string }).error).toBe("no app behind this link");
   });

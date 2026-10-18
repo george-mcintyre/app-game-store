@@ -102,8 +102,16 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
 export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<Response> {
   const { app, dev } = await activeLink(env, deps, linkId);
   const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
-  const release = await resolveRelease(env, deps, app, secrets.githubToken);
-  const manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
+  let release: Awaited<ReturnType<typeof resolveRelease>>;
+  let manifest: Awaited<ReturnType<typeof loadManifest>>;
+  try {
+    release = await resolveRelease(env, deps, app, secrets.githubToken);
+    manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
+  } catch (err) {
+    // The detail can name a private repository, so the update check only learns that no release is readable.
+    console.error(`latest ${linkId}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new HttpError(503, "no release of this app is available right now");
+  }
   if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = webAppUrl(env, linkId);
   const adhoc = manifest.install.ios?.adhoc ?? null;
   return json({

@@ -31,7 +31,7 @@ export const POKER_NIGHT: LinkPage = {
     install: {
       pwa: null,
       android: { apk: "https://example.invalid/poker-night.apk" },
-      ios: { bundleId: "com.example.pokernight", adhoc: "https://example.invalid/manifest.plist", testflight: null },
+      ios: { bundleId: "com.example.pokernight", adhoc: "https://example.invalid/manifest.plist", testflight: null, devices: ["iphone", "ipad"] },
     },
     fallbackName: "Poker Night",
     fallbackIcon: "",

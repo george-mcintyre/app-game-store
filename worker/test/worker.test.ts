@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { handle } from "../src/index.js";
-import { BASE, GH_TOKEN, api, jsonRes, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
+import { BASE, GH_TOKEN, api, jsonRes, manifest, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const UDID_1 = "00008030-000A1B2C3D4E5F67";
 const UDID_2 = "00008030-000F0E0D0C0B0A09";
@@ -451,6 +451,16 @@ describe("API keys and agent endpoints", () => {
     expect(await (await handle(new Request(body.android.apkUrl), env, deps)).text()).toBe("APKBYTES");
     await handle(api(cookie, "POST", `/api/dev/links/${linkId}/revoke`), env, deps);
     expect((await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, deps)).status).toBe(410);
+  });
+
+  it("passes install.ios.devices through to the install page", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () => jsonRes({ ...manifest, install: { ...manifest.install, ios: { ...manifest.install.ios, devices: ["iphone", "ipad"] } } });
+    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { release: { install: { ios: { devices: string[]; adhoc: string } } } };
+    expect(body.release.install.ios.devices).toEqual(["iphone", "ipad"]);
+    expect(body.release.install.ios.adhoc).toMatch(new RegExp(`^${BASE}/dl/`));
   });
 
   it("hides internal detail of unexpected errors from public endpoints", async () => {

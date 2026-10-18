@@ -136,7 +136,7 @@ GET /api/public/links/:id/latest  (no auth) -> { "name", "version", "ios": { "in
 
 Give the developer the `url`; one link per person or group is the convention so links can be revoked one at a time.
 
-`/latest` is what an installed app polls to offer updates: compare `version` with the running version, then open `ios.installUrl` (iOS shows its own Install prompt) or `android.apkUrl`. The signed links inside are good for one hour, so fetch right before opening. Recommend a dedicated link labelled "In-app updates" that is never revoked.
+`/latest` returns 503 `{"error": "no release of this app is available right now"}` when no release can be read (none published, or the developer's GitHub token cannot see the repository); treat that as "no update". It is what an installed app polls to offer updates: compare `version` with the running version, then open `ios.installUrl` (iOS shows its own Install prompt) or `android.apkUrl`. The signed links inside are good for one hour, so fetch right before opening. Recommend a dedicated link labelled "In-app updates" that is never revoked.
 
 ## Limits worth telling the developer
 

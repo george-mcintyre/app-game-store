@@ -278,6 +278,10 @@ export class Db {
     await this.d1.prepare("UPDATE links SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").bind(now, id).run();
   }
 
+  async renameLink(id: string, label: string): Promise<void> {
+    await this.d1.prepare("UPDATE links SET label = ? WHERE id = ?").bind(label, id).run();
+  }
+
   async deleteLink(id: string): Promise<void> {
     await this.d1.prepare("DELETE FROM links WHERE id = ?").bind(id).run();
   }

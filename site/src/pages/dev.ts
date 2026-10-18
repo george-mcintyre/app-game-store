@@ -390,7 +390,7 @@ export async function appLinks(root: HTMLElement, appId: string): Promise<void> 
       <div class="grid-2">
         <form id="link-form" class="card">
           <h2>New link</h2>
-          <p class="small muted">Make one per person or group. A label tells you later who has it, and you can revoke one without affecting the others.</p>
+          <p class="small muted">Make one per person or group. A label tells you later who has it; rename it any time, and revoke one without affecting the others.</p>
           <div class="field"><label>Label</label><input type="text" name="label" maxlength="80" placeholder="Mum and Dad" /></div>
           <div class="field"><label>Expires <span class="faint tiny">optional</span></label><input type="datetime-local" name="expiresAt" /><div class="hint">After this moment the link shows "no longer active". Friends who already installed keep the app.</div></div>
           <div id="error"></div>
@@ -413,7 +413,7 @@ export async function appLinks(root: HTMLElement, appId: string): Promise<void> 
           return html`
             <div class="link-card" data-link="${l.id}">
               <div>
-                <div class="row wrap"><b style="font-size:16px">${l.label || "Untitled link"}</b>${statePill(s)}</div>
+                <div class="row wrap" data-title="${l.id}"><b style="font-size:16px">${l.label || "Untitled link"}</b>${statePill(s)}<button class="btn sm ghost" data-rename="${l.id}" data-label="${l.label}" title="Rename this link">${icon("edit")} Rename</button></div>
                 <div class="small muted" style="margin:4px 0 10px">Created ${fmtDate(l.createdAt)}${l.expiresAt ? `, expires ${fmtDate(l.expiresAt, true)}` : ""}${l.revokedAt ? `, revoked ${fmtDate(l.revokedAt, true)}` : ""}</div>
                 ${copyRow(url(l))}
                 <div class="row wrap mt-s">
@@ -446,6 +446,7 @@ export async function appLinks(root: HTMLElement, appId: string): Promise<void> 
     const result = await shareOrCopy(`${location.origin}/l/${b.dataset.share}`, app.name);
     if (result === "copied") toast("Link copied");
   }));
+  root.querySelectorAll<HTMLButtonElement>("[data-rename]").forEach((b) => (b.onclick = () => startRename(root, appId, b.dataset.rename!, b.dataset.label ?? "")));
   root.querySelectorAll<HTMLButtonElement>("[data-revoke]").forEach((b) => (b.onclick = async () => {
     if (!(await confirmAction("Revoke this link? Anyone opening it sees \"no longer active\"."))) return;
     await api("POST", `/api/dev/links/${b.dataset.revoke}/revoke`);
@@ -456,6 +457,36 @@ export async function appLinks(root: HTMLElement, appId: string): Promise<void> 
     await api("DELETE", `/api/dev/links/${b.dataset.delete}`);
     await appLinks(root, appId);
   }));
+}
+
+// Swaps a link's title for a small form; Enter saves, Escape cancels. The link's address never changes.
+function startRename(root: HTMLElement, appId: string, linkId: string, current: string): void {
+  const title = root.querySelector<HTMLElement>(`[data-title="${linkId}"]`);
+  if (!title) return;
+  const original = title.innerHTML;
+  title.innerHTML = html`<form class="row wrap" data-rename-form style="flex:1"><input type="text" name="label" value="${current}" maxlength="80" placeholder="Who has this link" aria-label="Link label" style="flex:1;min-width:180px" /><button class="btn sm" type="submit">Save</button><button class="btn sm secondary" type="button" data-cancel>Cancel</button></form>`.html;
+  const form = title.querySelector<HTMLFormElement>("[data-rename-form]")!;
+  const input = form.querySelector<HTMLInputElement>("input")!;
+  const cancel = () => {
+    title.innerHTML = original;
+    title.querySelector<HTMLButtonElement>("[data-rename]")!.onclick = () => startRename(root, appId, linkId, current);
+  };
+  input.focus();
+  input.select();
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") cancel();
+  });
+  form.querySelector<HTMLButtonElement>("[data-cancel]")!.onclick = cancel;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api("PUT", `/api/dev/links/${linkId}`, { label: input.value });
+      toast("Renamed");
+      await appLinks(root, appId);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err));
+    }
+  };
 }
 
 /* ------------------------------------------------------------------ */

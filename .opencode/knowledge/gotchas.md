@@ -63,3 +63,7 @@
   flagged by Safe Browsing (deferred until the owner has investigated options).
 - iPads use the same path as iPhones (`platform` "ios"); wording comes from `appleDeviceName`.
   Apple lists devices 200 per page, so `listEnabledIosDevices` follows `links.next`.
+- `wrangler dev` presents requests as coming from the route's host (ourapps.app), so with
+  `PUBLIC_ORIGIN=http://localhost:8787` every console save was refused as cross-site locally.
+  `npm run dev -w worker` passes `--local-upstream localhost:8787`; running plain `wrangler dev`
+  reproduces the refusal. Production is unaffected.

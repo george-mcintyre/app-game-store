@@ -176,6 +176,21 @@ describe("share links and public pages", () => {
     expect((await handle(new Request(`${body.release.install.android.apk}x`), env, deps)).status).toBe(403);
   });
 
+  it("renames a link without changing its address", async () => {
+    const { appId, linkId } = await createSkull(env, deps, cookie);
+    const res = await handle(api(cookie, "PUT", `/api/dev/links/${linkId}`, { label: "  Thursday table  " }), env, deps);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { link: { id: string; label: string } }).link).toMatchObject({ id: linkId, label: "Thursday table" });
+    const detail = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}`), env, deps)).json()) as { links: { id: string; label: string }[] };
+    expect(detail.links.find((l) => l.id === linkId)!.label).toBe("Thursday table");
+    expect((await handle(api(null, "GET", `/api/public/links/${linkId}`), env, deps)).status).toBe(200);
+    const long = (await (await handle(api(cookie, "PUT", `/api/dev/links/${linkId}`, { label: "x".repeat(200) }), env, deps)).json()) as { link: { label: string } };
+    expect(long.link.label.length).toBe(80);
+    expect((await handle(api(cookie, "PUT", `/api/dev/links/${linkId}`, { label: 5 }), env, deps)).status).toBe(400);
+    const other = await signIn(env, deps, { id: 9, login: "sue", name: "Sue" });
+    expect((await handle(api(other, "PUT", `/api/dev/links/${linkId}`, { label: "mine" }), env, deps)).status).toBe(404);
+  });
+
   it("treats revoked and expired share links as inactive", async () => {
     const { appId } = await createSkull(env, deps, cookie);
     const expiring = (await (await handle(api(cookie, "POST", `/api/dev/apps/${appId}/links`, { label: "short", expiresAt: "2026-10-16T11:00:00Z" }), env, deps)).json()) as { link: { id: string } };

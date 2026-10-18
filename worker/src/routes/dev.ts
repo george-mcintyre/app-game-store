@@ -253,6 +253,18 @@ export async function createLink(request: Request, env: Env, deps: Deps, dev: De
 }
 
 // POST /api/dev/links/:id/revoke and DELETE /api/dev/links/:id
+// PUT /api/dev/links/:id - change the label only; the link's address stays the same.
+export async function renameLink(request: Request, env: Env, dev: Developer, id: string): Promise<Response> {
+  const db = Db.from(env);
+  const link = await db.linkById(id);
+  if (!link || link.developerId !== dev.id) throw new HttpError(404, "unknown link");
+  const body = await readJson<{ label?: unknown }>(request);
+  if (typeof body.label !== "string") throw new HttpError(400, "label must be a string");
+  const label = text(body.label, 80);
+  await db.renameLink(id, label);
+  return json({ link: { ...link, label } });
+}
+
 export async function revokeLink(env: Env, deps: Deps, dev: Developer, id: string, remove: boolean): Promise<Response> {
   const db = Db.from(env);
   const link = await db.linkById(id);

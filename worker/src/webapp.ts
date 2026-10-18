@@ -416,8 +416,10 @@ export async function serveWebApp(request: Request, env: Env, deps: Deps, linkId
     current = await currentTag(env, deps, located.app, secrets.githubToken);
     index = await ensureUnpacked(env, deps, located.app, secrets.githubToken, current);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return plainPage(err instanceof HttpError && err.status === 404 ? 404 : 502, "The web app is not available", message);
+    // Only deliberate messages reach a public page; others (which can name a private repository) are logged.
+    if (err instanceof HttpError) return plainPage(err.status === 404 ? 404 : 502, "The web app is not available", err.message);
+    console.error(`web app ${linkId}: ${err instanceof Error ? err.message : String(err)}`);
+    return plainPage(502, "The web app is not available", "Its latest release could not be read. Try again later, or ask the person who sent the link.");
   }
   const names = Object.keys(index.files);
   const iconUrl = index.iconHref ?? (index.files["icon.png"] ? "./icon.png" : index.files["icon.svg"] ? "./icon.svg" : null);

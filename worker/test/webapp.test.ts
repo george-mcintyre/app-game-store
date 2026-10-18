@@ -138,6 +138,17 @@ describe("serving", () => {
     expect(await none.text()).toContain("no web.zip");
   });
 
+  it("does not name the repository on a public page when the release cannot be read", async () => {
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = webRoutes(bundle());
+    routes["GET api.github.com/repos/o/skull/releases/latest"] = () => new Response("{}", { status: 404 });
+    const page = await handle(new Request(`https://${linkId}.${HOST}/`), env, { ...deps, fetch: fakeFetch(routes).fetch });
+    expect(page.status).toBe(502);
+    const text = await page.text();
+    expect(text).toContain("latest release could not be read");
+    expect(text).not.toContain("o/skull");
+  });
+
   it("points the install page and /latest at the served app, never at GitHub", async () => {
     await saveAppleSecrets(env, deps, cookie);
     const { appId, linkId } = await createSkull(env, deps, cookie);

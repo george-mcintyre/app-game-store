@@ -1,6 +1,7 @@
 import { TERMS_VERSION } from "@my/store-shared";
 import { finishLogin, logout, logoutEverywhere, oauthConfigured, requireDeveloper, requireTerms, startLogin } from "./auth.js";
 import { defaultDeps, type Deps, type Env } from "./env.js";
+import { randomId } from "./crypto.js";
 import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
@@ -21,6 +22,18 @@ export const SECURITY_HEADERS: Record<string, string> = {
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'",
 };
 
+// HttpError messages are written for clients; anything else may carry internal detail, so it is
+// logged and the client gets a reference only.
+export function errorResponse(request: Request, err: unknown): Response {
+  if (err instanceof HttpError) {
+    if (err.status >= 500) console.error(err.message);
+    return json({ error: err.message }, err.status);
+  }
+  const ref = request.headers.get("cf-ray") ?? randomId(6);
+  console.error(`unexpected error ${ref}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+  return json({ error: `something went wrong (reference ${ref})` }, 500);
+}
+
 export async function handle(request: Request, env: Env, deps: Deps = defaultDeps): Promise<Response> {
   // Per-link app hosts get the bundle and nothing else; they set their own headers.
   const webLink = webAppLinkId(request, env);
@@ -29,10 +42,7 @@ export async function handle(request: Request, env: Env, deps: Deps = defaultDep
   try {
     res = await route(request, env, deps);
   } catch (err) {
-    const status = err instanceof HttpError ? err.status : 500;
-    const message = err instanceof Error ? err.message : "unknown error";
-    if (status >= 500) console.error(message);
-    res = json({ error: message }, status);
+    res = errorResponse(request, err);
   }
   res = new Response(res.body, res);
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!res.headers.has(k)) res.headers.set(k, v);

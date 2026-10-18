@@ -433,6 +433,20 @@ describe("API keys and agent endpoints", () => {
     expect((await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, deps)).status).toBe(410);
   });
 
+  it("hides internal detail of unexpected errors from public endpoints", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases/latest"] = () => new Response("{}", { status: 404 });
+    const res = await handle(api(null, "GET", `/api/public/links/${linkId}/latest`, undefined, { "cf-ray": "abc123" }), env, { ...deps, fetch: fakeFetch(routes).fetch });
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(text).toBe(JSON.stringify({ error: "something went wrong (reference abc123)" }));
+    expect(text).not.toContain("o/skull");
+    // Deliberate messages still come through.
+    expect(((await (await handle(api(null, "GET", "/api/public/links/nope/latest"), env, deps)).json()) as { error: string }).error).toBe("no app behind this link");
+  });
+
   it("previews the install page and serves a QR for active links", async () => {
     const { appId, linkId } = await createSkull(env, deps, cookie);
     const preview = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/preview`), env, deps)).json()) as { preview: boolean; linkId: null; app: { name: string }; release: { version: string } | null };

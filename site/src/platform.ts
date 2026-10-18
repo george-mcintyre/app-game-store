@@ -17,6 +17,13 @@ export function detectPlatform(userAgent: string, platformHint = "", maxTouchPoi
   return "other";
 }
 
+// "iPad" or "iPhone" for wording; iPadOS 13+ reports as a Mac with touch points.
+export function appleDeviceName(userAgent: string, platformHint = "", maxTouchPoints = 0): "iPhone" | "iPad" {
+  if (/iPad/.test(userAgent)) return "iPad";
+  if (platformHint === "MacIntel" && maxTouchPoints > 1 && !/iPhone|iPod/.test(userAgent)) return "iPad";
+  return "iPhone";
+}
+
 // Hosts whose built-in browser cannot run an install. Order matters: first match wins.
 const HOSTS: { name: string; test: RegExp; installWorks: boolean }[] = [
   { name: "Instagram", test: /Instagram/i, installWorks: false },

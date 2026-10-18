@@ -140,7 +140,7 @@ Give the developer the `url`; one link per person or group is the convention so 
 
 ## Limits worth telling the developer
 
-- Apple: 100 iPhones per membership year across all of the developer's apps, counted per device; removing a device does not free its slot; Ad Hoc builds expire one year after their profile was made.
+- Apple: 100 iPhones and, separately, 100 iPads per membership year across all of the developer's apps, counted per device; removing a device does not free its slot; Ad Hoc builds expire one year after their profile was made. Universal iPhone and iPad apps need no extra fields; build one .ipa with TARGETED_DEVICE_FAMILY 1,2.
 - Android and web: no device limit.
 - Nothing auto-updates; friends tap Update. Version numbers must increase and the Android signing key must stay the same.
 

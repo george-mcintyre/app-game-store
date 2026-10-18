@@ -57,3 +57,9 @@
   fixed sentence. Plain `Error` messages can name private repositories, so never return them.
   CodeQL `js/stack-trace-exposure` still flags the HttpError path; alert 1 was dismissed as a
   false positive for that reason.
+- Accepted risks, decided by the owner on 2026-10-18; do not "fix" them unasked: (1) anyone can
+  use up the free plan's 100,000 requests a day, stopping installs until the next day; (2) open
+  sign-up lets any GitHub user serve files through ourapps.app, which could get the domain
+  flagged by Safe Browsing (deferred until the owner has investigated options).
+- iPads use the same path as iPhones (`platform` "ios"); wording comes from `appleDeviceName`.
+  Apple lists devices 200 per page, so `listEnabledIosDevices` follows `links.next`.

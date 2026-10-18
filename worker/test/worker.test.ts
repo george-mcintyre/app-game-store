@@ -295,6 +295,26 @@ describe("approve, rebuild and build-ready", () => {
     expect(detail.profile).toMatchObject({ uuid: "uuid-1", devices: 1 });
   });
 
+  it("includes devices from every page of Apple's device list in the new profile", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const id = await enrol(env, deps, linkId, "Bob", UDID_1);
+    const state = { devices: [{ id: "ipad-1", udid: "00008103-0001AAAAAAAAAAAA" }, { id: "iphone-1", udid: "00008110-0002BBBBBBBBBBBB" }], profileCount: 0 };
+    const routes = { ...githubRoutes(), ...appleRoutes(state) };
+    routes["GET api.appstoreconnect.apple.com/v1/devices"] = (call) => {
+      const u = new URL(call.url);
+      const udid = u.searchParams.get("filter[udid]");
+      const all = state.devices.map((d) => ({ id: d.id, type: "devices", attributes: { udid: d.udid } }));
+      if (udid) return jsonRes({ data: all.filter((d) => d.attributes.udid === udid) });
+      if (u.searchParams.get("cursor") === "p2") return jsonRes({ data: all.slice(2) });
+      return jsonRes({ data: all.slice(0, 2), links: { next: "https://api.appstoreconnect.apple.com/v1/devices?cursor=p2&limit=200" } });
+    };
+    const { fetch, calls } = fakeFetch(routes);
+    expect((await handle(api(cookie, "POST", `/api/dev/devices/${id}/approve`), env, { ...deps, fetch })).status).toBe(200);
+    const create = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/profiles"))!;
+    expect(JSON.parse(create.body!).data.relationships.devices.data.map((d: { id: string }) => d.id)).toEqual(["ipad-1", "iphone-1", "dev-3"]);
+  });
+
   it("marks failed when Apple refuses", async () => {
     await saveAppleSecrets(env, deps, cookie);
     const { linkId } = await createSkull(env, deps, cookie);

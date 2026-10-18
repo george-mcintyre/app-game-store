@@ -3,7 +3,7 @@ import { html, mount, paragraphs, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { notesHtml } from "../notes.js";
 import { screenshotSvg } from "../placeholders.js";
-import { detectInAppBrowser, detectPlatform, itmsLink, type InAppBrowser, type Platform } from "../platform.js";
+import { appleDeviceName, detectInAppBrowser, detectPlatform, itmsLink, type InAppBrowser, type Platform } from "../platform.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
 import { setTheme } from "../theme.js";
 import { appIcon, avatar, callout, copyRow, fmtDate, icon, toast, wireCopy, wireImages } from "../ui.js";
@@ -133,12 +133,14 @@ export function inactive(root: HTMLElement): void {
 export interface Detected {
   platform: Platform;
   inApp: InAppBrowser | null;
+  // "iPhone" or "iPad", used in wording on Apple devices.
+  device: "iPhone" | "iPad";
 }
 
 export function detect(): Detected {
   const ua = navigator.userAgent;
   const platform = detectPlatform(ua, navigator.platform, navigator.maxTouchPoints);
-  return { platform, inApp: detectInAppBrowser(ua, platform) };
+  return { platform, inApp: detectInAppBrowser(ua, platform), device: appleDeviceName(ua, navigator.platform, navigator.maxTouchPoints) };
 }
 
 export async function installPage(root: HTMLElement, linkId: string): Promise<void> {
@@ -356,7 +358,7 @@ function ctaArea(data: LinkPage, d: Detected, name: string): Raw {
     if (install.ios?.adhoc) return html`<button class="btn get" data-get>Get</button><span class="small muted">Two quick steps</span>`;
     if (install.ios?.testflight) return html`<a class="btn get" href="${install.ios.testflight}">Get</a><span class="small muted">via TestFlight</span>`;
     if (install.pwa) return html`<a class="btn get" href="${install.pwa}">Open</a><span class="small muted">web app</span>`;
-    return html`<span class="pill">Not for iPhone yet</span>`;
+    return html`<span class="pill">Not for ${d.device} yet</span>`;
   }
   if (d.platform === "android") {
     if (install.android) return html`<a class="btn get" href="${install.android.apk}">Get</a><span class="small muted">direct download</span>`;
@@ -379,10 +381,10 @@ function installArea(data: LinkPage, d: Detected, name: string, preview: boolean
   }
   const install = data.release.install;
   if (d.platform === "ios") {
-    if (install.ios?.adhoc) return iosEnrol(name);
+    if (install.ios?.adhoc) return iosEnrol(name, d.device);
     if (install.ios?.testflight) return html`<div class="install-card"><h3>Install through TestFlight</h3><p class="muted small">Apple's TestFlight app opens; tap Install there.</p><a class="btn block" href="${install.ios.testflight}">Open in TestFlight</a></div>`;
     if (install.pwa) return pwaSteps(install.pwa, "ios");
-    return html`<div class="install-card"><h3>Not on iPhone yet</h3><p class="muted">There is no iPhone version of ${name} at the moment.</p></div>`;
+    return html`<div class="install-card"><h3>Not on ${d.device} yet</h3><p class="muted">There is no ${d.device} version of ${name} at the moment.</p></div>`;
   }
   if (d.platform === "android") {
     if (install.android) return androidSteps(install.android.apk, name);
@@ -398,17 +400,17 @@ function installArea(data: LinkPage, d: Detected, name: string, preview: boolean
   `;
 }
 
-function iosEnrol(name: string): Raw {
+function iosEnrol(name: string, device: "iPhone" | "iPad"): Raw {
   return html`
     <form id="enrol-form" class="install-card">
-      <h3>${icon("phone", "icon-20")} Install on this iPhone</h3>
-      <p class="muted small">Apple only lets ${name} run on phones the developer has registered. Step one registers this iPhone, step two builds your copy. The page keeps you posted.</p>
+      <h3>${icon("phone", "icon-20")} Install on this ${device}</h3>
+      <p class="muted small">Apple only lets ${name} run on devices the developer has registered. Step one registers this ${device}, step two builds your copy. The page keeps you posted.</p>
       <div class="field">
-        <label for="friend-name">Your name, so the developer knows whose phone this is</label>
+        <label for="friend-name">Your name, so the developer knows whose ${device} this is</label>
         <input type="text" id="friend-name" name="name" required maxlength="60" autocomplete="given-name" placeholder="Sam" />
       </div>
-      <button class="btn block lg" type="submit">Register this iPhone</button>
-      <p class="tiny faint mt-s">A small profile downloads. Open <b>Settings</b>, tap <b>Profile Downloaded</b>, then <b>Install</b>. It tells the developer your phone's device number and nothing else.</p>
+      <button class="btn block lg" type="submit">Register this ${device}</button>
+      <p class="tiny faint mt-s">A small profile downloads. Open <b>Settings</b>, tap <b>Profile Downloaded</b>, then <b>Install</b>. It tells the developer your ${device}'s device number and nothing else.</p>
     </form>
   `;
 }
@@ -461,24 +463,28 @@ function pwaSteps(url: string, platform: Platform): Raw {
 }
 
 const STEPS = [
-  { key: "register", title: "Register this iPhone", states: ["awaiting-device"] },
+  { key: "register", title: "Register this device", states: ["awaiting-device"] },
   { key: "approve", title: "Developer approval", states: ["pending-approval"] },
   { key: "build", title: "Build your copy", states: ["registering", "building"] },
   { key: "install", title: "Install", states: ["ready"] },
 ];
 
-const WAIT_COPY: Record<string, string> = {
-  "awaiting-device": "Open Settings, tap Profile Downloaded, then Install. This page updates by itself once your iPhone has reported in.",
-  "pending-approval": "Your iPhone is registered with this page. The developer approves it next; this page updates by itself when they do, so you can close it and come back to the same link.",
-  registering: "Registering your iPhone with Apple.",
-  building: "A fresh build that includes your iPhone is on its way. This usually takes 10 to 20 minutes. You can close this page and come back to the same link.",
-  ready: "Tap Install, then tap Install again when your iPhone asks. The icon appears on your home screen.",
-  rejected: "The developer did not approve this iPhone. Get in touch with them if you think that is a mistake.",
-  failed: "Something went wrong on the developer's side and they have been told. Try again later or get in touch with them.",
-};
+function waitCopy(state: string, device: string): string {
+  switch (state) {
+    case "awaiting-device": return `Open Settings, tap Profile Downloaded, then Install. This page updates by itself once your ${device} has reported in.`;
+    case "pending-approval": return `Your ${device} is registered with this page. The developer approves it next; this page updates by itself when they do, so you can close it and come back to the same link.`;
+    case "registering": return `Registering your ${device} with Apple.`;
+    case "building": return `A fresh build that includes your ${device} is on its way. This usually takes 10 to 20 minutes. You can close this page and come back to the same link.`;
+    case "ready": return `Tap Install, then tap Install again when your ${device} asks. The icon appears on your home screen.`;
+    case "rejected": return `The developer did not approve this ${device}. Get in touch with them if you think that is a mistake.`;
+    case "failed": return "Something went wrong on the developer's side and they have been told. Try again later or get in touch with them.";
+    default: return state;
+  }
+}
 
 export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: string): Promise<void> {
   setTheme("store", "Almost there");
+  const device = detect().device;
   let since: string | undefined;
   let stopped = false;
   const render = (state: string, manifestUrl?: string, message?: string) => {
@@ -491,13 +497,14 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
         html`
           <div class="card pad-l" style="max-width:560px;margin:24px auto">
             <h1 style="font-size:24px">${done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : "Almost there"}</h1>
-            <p class="muted">${WAIT_COPY[state] ?? state}</p>
+            <p class="muted">${waitCopy(state, device)}</p>
             ${message && state === "failed" ? html`<p class="small faint">${message}</p>` : ""}
             <ol class="timeline">
               ${STEPS.map((s, i) => {
                 const cls = failed && i === Math.max(idx, 1) ? "bad" : done || i < idx ? "done" : i === idx ? "now" : "muted-step";
                 const mark = cls === "done" ? icon("check", "icon-16") : cls === "now" ? html`<span class="spinner"></span>` : cls === "bad" ? "!" : String(i + 1);
-                return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${s.title}</h3><p>${cls === "now" ? "In progress" : cls === "bad" ? "Stopped here" : stepHint(s.key)}</p></div></li>`;
+                const title = s.key === "register" ? `Register this ${device}` : s.title;
+                return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${title}</h3><p>${cls === "now" ? "In progress" : cls === "bad" ? "Stopped here" : stepHint(s.key)}</p></div></li>`;
               })}
             </ol>
             ${done && manifestUrl ? html`<a class="btn block lg" href="${itmsLink(manifestUrl)}">Install</a><p class="tiny faint center mt-s">The install link is good for an hour; reload this page for a fresh one.</p>` : ""}

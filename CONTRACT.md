@@ -122,6 +122,13 @@ approved after the workflow fetched the profile are not in the build; the store 
 more `my-store-rebuild` for them automatically. Response:
 `{ "ready": [ids], "waiting": [ids], "redispatched": true|false }`.
 
+## iPad
+
+A universal app needs nothing extra: build one `.ipa` with `TARGETED_DEVICE_FAMILY` set to
+`1,2`. iPads enrol and install exactly like iPhones, appear in the same Ad Hoc profile, and use
+Apple's separate allowance of 100 iPads per membership year. An iPhone-only build also installs
+on iPads (in a phone-sized window) and uses an iPad slot there.
+
 ## Secrets the app repository needs
 
 | secret               | from                                                    |

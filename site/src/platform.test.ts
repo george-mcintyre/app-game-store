@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectInAppBrowser, detectPlatform, itmsLink } from "./platform.js";
+import { appleDeviceName, detectInAppBrowser, detectPlatform, itmsLink } from "./platform.js";
 
 const SAFARI_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
 const CHROME_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0 Mobile/15E148 Safari/604.1";
@@ -42,6 +42,15 @@ describe("detectInAppBrowser", () => {
   it("flags anonymous web views", () => {
     expect(detectInAppBrowser(WKWEBVIEW, "ios")).toEqual({ name: "this app", installWorks: false });
     expect(detectInAppBrowser(WEBVIEW_ANDROID, "android")).toEqual({ name: "this app", installWorks: false });
+  });
+});
+
+describe("appleDeviceName", () => {
+  it("tells iPads from iPhones, including iPadOS posing as a Mac", () => {
+    expect(appleDeviceName(SAFARI_IOS)).toBe("iPhone");
+    expect(appleDeviceName("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)")).toBe("iPad");
+    expect(appleDeviceName(MAC, "MacIntel", 5)).toBe("iPad");
+    expect(appleDeviceName(MAC, "MacIntel", 0)).toBe("iPhone");
   });
 });
 

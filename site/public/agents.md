@@ -232,6 +232,6 @@ Get an iPhone installed:
 
 Two prompts the developer can paste into a coding agent are shown on `/dev/agents`, pre-filled for their app: one for an agent inside the app repository (sets up releases to the contract), one for an agent that drives this API (register, check, share, approve).
 
-Source code and issues: https://github.com/george-mcintyre/ourapps
+Source code and issues: https://github.com/george-mcintyre/ourapps (public for reading, all rights reserved; outside pull requests are not accepted). Security problems: report privately at https://github.com/george-mcintyre/ourapps/security/advisories/new, never in a public issue.
 
 Copyright Level N Ltd 2026.

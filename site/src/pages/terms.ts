@@ -56,7 +56,7 @@ export function termsBody(): Raw {
       <p>ourapps is provided free and as is. We aim to keep it running and to give notice before any withdrawal, but we make no promise of availability and accept no liability for loss arising from its use, to the extent the law allows. We may change these terms; when we do, you are asked to accept the new version at your next sign-in, and the version you accepted is shown in your profile.</p>
 
       <h2>9. Contact</h2>
-      <p>Level N Ltd. Questions about these terms or about your data: use the contact details on <a href="https://www.level-n.com" target="_blank" rel="noopener">level-n.com</a>, or open an issue on the <a href="https://github.com/george-mcintyre/ourapps/issues" target="_blank" rel="noopener">source repository</a>.</p>
+      <p>Level N Ltd. Questions about these terms or about your data: use the contact details on <a href="https://www.level-n.com" target="_blank" rel="noopener">level-n.com</a>. Security problems: report them privately at <a href="https://github.com/george-mcintyre/ourapps/security/advisories/new" target="_blank" rel="noopener">github.com/george-mcintyre/ourapps/security</a>. Please do not post personal details or security problems in public issues.</p>
     </article>
   `;
 }

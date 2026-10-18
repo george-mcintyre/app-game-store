@@ -143,6 +143,8 @@ npm run build -w site && npx wrangler deploy
 `PUBLIC_ORIGIN` in `wrangler.jsonc` must match the deployed host; change it when the
 custom domain is attached.
 
-Source: https://github.com/george-mcintyre/ourapps
+Source: https://github.com/george-mcintyre/ourapps. The source is public for reading and
+review; it is not open source. All rights reserved, see `LICENSE`. Outside contributions are not
+accepted (`CONTRIBUTING.md`); report security problems privately (`SECURITY.md`).
 
 Copyright Level N Ltd 2026.

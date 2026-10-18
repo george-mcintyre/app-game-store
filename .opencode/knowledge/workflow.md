@@ -13,6 +13,18 @@ Never derive the repo from the folder name.
 - Open PRs with `gh pr create --repo george-mcintyre/ourapps --base main`.
 - Merge with `gh pr merge --merge` (keep the small commits).
 
+## Public repository rules
+
+- The repository is public for reading; all rights reserved (`LICENSE`). Never merge a PR whose
+  author is not `george-mcintyre`, except Dependabot's dependency updates; close outside PRs
+  with a pointer to `CONTRIBUTING.md`.
+- Commits here use the GitHub noreply address (repo-local `git config user.email`); never commit
+  with a personal address.
+- Security reports arrive through private vulnerability reporting (Security tab), not issues.
+  Secret scanning, push protection, Dependabot and CodeQL default setup are on; check the
+  Security tab after merges.
+- Bumping `TERMS_VERSION` (`shared/src/terms.ts`) is required for any change to the terms text.
+
 ## Before a PR
 
 - `npm run typecheck` and `npm test` green at the root.

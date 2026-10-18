@@ -126,6 +126,9 @@ needs an OAuth App whose callback is `<PUBLIC_ORIGIN>/api/auth/callback`.
 
 ## Deploy
 
+The Cloudflare Worker and D1 database are named `app-game-store` (the repository's former name)
+and must keep that name: the Worker's secrets cannot be copied to a new one.
+
 ```
 cd worker
 npx wrangler d1 create app-game-store          # paste the id into wrangler.jsonc
@@ -139,5 +142,7 @@ npm run build -w site && npx wrangler deploy
 
 `PUBLIC_ORIGIN` in `wrangler.jsonc` must match the deployed host; change it when the
 custom domain is attached.
+
+Source: https://github.com/george-mcintyre/ourapps
 
 Copyright Level N Ltd 2026.

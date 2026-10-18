@@ -46,3 +46,9 @@
   pages cannot toss cookies to the console; plain names only on http://localhost.
 - Cache API keys use `${PUBLIC_ORIGIN}/__cache/...`; arbitrary hostnames are not documented to
   cache.
+- Never rename the Cloudflare Worker (`"name": "app-game-store"` in `worker/wrangler.jsonc`):
+  a new name deploys a new Worker without the secrets, and `MASTER_KEY` cannot be read back, so
+  every stored credential would become undecryptable. The D1 database name stays too. Users only
+  ever see `ourapps.app`.
+- Never create a new GitHub repository named `app-game-store` under the account; it would break
+  GitHub's forwarding from the old name.

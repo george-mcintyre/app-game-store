@@ -1,6 +1,8 @@
-# app-game-store (product name ourapps) - private link-only installer
+# ourapps - private link-only installer
 
-Repo: github.com/george-mcintyre/app-game-store (confirm with `git remote -v`). Public repo;
+Repo: github.com/george-mcintyre/ourapps (folder `ourapps/`; renamed from `app-game-store` on
+2026-10-18, GitHub forwards the old URL). Confirm with `git remote -v`. Cloudflare resources keep
+the name `app-game-store` (Worker, D1 database); see `gotchas.md`. Public repo;
 privacy comes from unlisted share links, not from the code being hidden. Product definition:
 `../../.opencode/knowledge/ourapps.md`.
 

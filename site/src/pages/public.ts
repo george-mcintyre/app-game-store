@@ -10,6 +10,7 @@ import { appIcon, avatar, callout, copyRow, fmtDate, icon, toast, wireCopy, wire
 
 // Shared frame for every store-themed page.
 export const COPYRIGHT = "Copyright Level N Ltd 2026";
+export const SOURCE_URL = "https://github.com/george-mcintyre/ourapps";
 
 export function storeFrame(body: Raw, opts: { me?: Me | null; nav?: boolean; footnote?: string } = {}): Raw {
   const right = opts.me

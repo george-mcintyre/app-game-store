@@ -19,6 +19,7 @@ describe("matchRoute", () => {
     expect(matchRoute("/dev/agents")).toEqual({ page: "agents" });
     expect(matchRoute("/example")).toEqual({ page: "example" });
     expect(matchRoute("/terms")).toEqual({ page: "terms" });
+    expect(matchRoute("/reference")).toEqual({ page: "reference" });
     expect(matchRoute("/example/poker-night")).toEqual({ page: "example-app" });
   });
 

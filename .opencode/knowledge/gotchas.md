@@ -38,5 +38,11 @@
   they never see the session cookie logic, and `/api/*` and `/dl/*` are 404 there on purpose.
   Local `wrangler dev` cannot exercise wildcard hosts; tests cover it with synthetic Requests.
 - Never inflate a web.zip per request: the free plan's 10 ms CPU budget fails on bundles of a
-  few MB (Cloudflare error 1102). `webapp.ts` unpacks once per release tag into the
-  `WEBAPP_FILES` KV namespace and serves single keys; the current tag is cached 60 s.
+  few MB (Cloudflare error 1102). `webapp.ts` unpacks once per release tag into ~2 MB packs in
+  the `WEBAPP_FILES` KV namespace (a handful of writes; the free plan allows 1,000 writes a day
+  for the whole account) and caches single files at the edge; the current tag is cached 60 s.
+  Deflated content is capped at 8 MB for the same CPU reason; bundles should use `zip -0`.
+- Session and OAuth state cookies are `__Host-` prefixed on https so `<link>.ourapps.app`
+  pages cannot toss cookies to the console; plain names only on http://localhost.
+- Cache API keys use `${PUBLIC_ORIGIN}/__cache/...`; arbitrary hostnames are not documented to
+  cache.

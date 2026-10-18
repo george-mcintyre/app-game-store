@@ -9,9 +9,10 @@ import { loadSecrets } from "./secrets.js";
 import { fetchUpstream, resolveRelease } from "./upstream.js";
 
 export const WEB_ZIP_ASSET = /^web\.zip$/i;
-const MAX_ZIP_BYTES = 25 * 1024 * 1024;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const BUNDLE_CACHE_SECONDS = 60 * 60;
+const MiB = 1024 * 1024;
+// Published limits for web.zip; see /reference. Sized for the free plan's memory and CPU.
+export const WEB_LIMITS = { zipBytes: 25 * MiB, unpackedBytes: 32 * MiB, fileBytes: 24 * MiB, files: 2000, deflatedBytes: 8 * MiB };
+const PACK_BYTES = 2 * MiB;
 const FILE_CACHE_SECONDS = 60 * 60 * 24;
 export const BANNER_PATH = "/__ourapps/install.js";
 export const DEFAULT_MANIFEST_PATH = "/__ourapps/manifest.webmanifest";
@@ -50,6 +51,56 @@ const TYPES: Record<string, string> = {
 export function contentType(path: string): string {
   const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
   return TYPES[ext] ?? "application/octet-stream";
+}
+
+// Pre-compressed build output (Unity, Godot, Vite plugins): "x.wasm.br" is wasm sent with Content-Encoding br.
+export function encodedFile(name: string): { type: string; encoding: "br" | "gzip" } | null {
+  const m = /^(.*\.(wasm|js|mjs|data|json|css|html|svg|txt|symbols\.json))\.(br|gz)$/i.exec(name);
+  if (!m) return null;
+  const inner = m[1];
+  const encoding = m[3].toLowerCase() === "br" ? "br" : "gzip";
+  // Unity's own server samples label gzip data as application/gzip to work around a Safari bug.
+  if (/\.data$/i.test(inner)) return { type: encoding === "gzip" ? "application/gzip" : "application/octet-stream", encoding };
+  return { type: contentType(inner), encoding };
+}
+
+export interface HeaderRule {
+  pattern: string;
+  headers: [string, string][];
+}
+
+// Headers a bundle may set through a "_headers" file, in the format Cloudflare Pages and Netlify use.
+const ALLOWED_BUNDLE_HEADERS = new Set(["cross-origin-opener-policy", "cross-origin-embedder-policy", "cross-origin-resource-policy", "permissions-policy", "content-security-policy", "cache-control"]);
+
+export function parseHeadersFile(text: string): HeaderRule[] {
+  const rules: HeaderRule[] = [];
+  let current: HeaderRule | null = null;
+  for (const raw of text.replace(/\r\n/g, "\n").split("\n")) {
+    const trimmed = raw.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    if (!/^\s/.test(raw)) {
+      current = { pattern: trimmed, headers: [] };
+      rules.push(current);
+      continue;
+    }
+    if (!current) continue;
+    const i = trimmed.indexOf(":");
+    if (i <= 0) continue;
+    const name = trimmed.slice(0, i).trim();
+    const value = trimmed.slice(i + 1).trim();
+    if (ALLOWED_BUNDLE_HEADERS.has(name.toLowerCase()) && value !== "" && !/[\r\n]/.test(value)) current.headers.push([name, value]);
+  }
+  return rules.filter((r) => r.headers.length > 0).slice(0, 50);
+}
+
+export function headersFor(rules: HeaderRule[], pathname: string): [string, string][] {
+  const out: [string, string][] = [];
+  for (const r of rules) {
+    const p = r.pattern;
+    const match = p === "/*" || p === "*" || (p.endsWith("*") ? pathname.startsWith(p.slice(0, -1)) : pathname === p);
+    if (match) out.push(...r.headers);
+  }
+  return out;
 }
 
 // Is this request for a per-link app host rather than the console host?
@@ -137,18 +188,45 @@ export function defaultManifest(appName: string, iconUrl: string | null, themeCo
   return JSON.stringify({ name: appName, short_name: appName.slice(0, 12), start_url: "./", scope: "./", display: "standalone", background_color: "#ffffff", theme_color: themeColor, icons });
 }
 
-// Unzips a bundle; strips one leading folder when every entry sits under it.
+const IGNORED = (name: string) => name.endsWith("/") || name.startsWith("__MACOSX/") || /(^|\/)\.DS_Store$/.test(name);
+
+// Unzips a bundle within the published limits; strips one leading folder when every entry sits under it.
 export function extractBundle(zip: Uint8Array): Record<string, Uint8Array> {
-  if (zip.byteLength > MAX_ZIP_BYTES) throw new HttpError(502, "web.zip is larger than 25 MB");
-  const raw = unzipSync(zip, { filter: (f) => f.originalSize <= MAX_FILE_BYTES && !f.name.endsWith("/") && !f.name.startsWith("__MACOSX/") && !/(^|\/)\.DS_Store$/.test(f.name) });
+  if (zip.byteLength > WEB_LIMITS.zipBytes) throw new HttpError(502, `web.zip is ${mb(zip.byteLength)}; the limit is ${mb(WEB_LIMITS.zipBytes)}`);
+  // First pass reads the directory only, so nothing is inflated before the limits are checked.
+  let total = 0;
+  let deflated = 0;
+  let count = 0;
+  const tooBig: string[] = [];
+  unzipSync(zip, {
+    filter: (f) => {
+      if (IGNORED(f.name)) return false;
+      count++;
+      total += f.originalSize;
+      if (f.compression !== 0) deflated += f.originalSize;
+      if (f.originalSize > WEB_LIMITS.fileBytes) tooBig.push(f.name);
+      return false;
+    },
+  });
+  if (count === 0) throw new HttpError(502, "web.zip is empty");
+  if (count > WEB_LIMITS.files) throw new HttpError(502, `web.zip has ${count} files; the limit is ${WEB_LIMITS.files}`);
+  if (tooBig.length > 0) throw new HttpError(502, `web.zip has files over ${mb(WEB_LIMITS.fileBytes)}: ${tooBig.slice(0, 3).join(", ")}`);
+  if (total > WEB_LIMITS.unpackedBytes) throw new HttpError(502, `web.zip unpacks to ${mb(total)}; the limit is ${mb(WEB_LIMITS.unpackedBytes)}`);
+  if (deflated > WEB_LIMITS.deflatedBytes) {
+    throw new HttpError(502, `web.zip compresses ${mb(deflated)} of files; build it without compression (zip -0 -r web.zip .) so the store can unpack it within its limits`);
+  }
+  const raw = unzipSync(zip, { filter: (f) => !IGNORED(f.name) });
   const names = Object.keys(raw);
-  if (names.length === 0) throw new HttpError(502, "web.zip is empty");
   const first = names[0].split("/")[0];
   const prefixed = names.every((n) => n.startsWith(`${first}/`));
   const out: Record<string, Uint8Array> = {};
   for (const n of names) out[prefixed ? n.slice(first.length + 1) : n] = raw[n];
   if (!out["index.html"]) throw new HttpError(502, "web.zip has no index.html at its root");
   return out;
+}
+
+function mb(bytes: number): string {
+  return `${(bytes / MiB).toFixed(1)} MB`;
 }
 
 interface Located {
@@ -170,19 +248,41 @@ async function locate(env: Env, deps: Deps, linkId: string): Promise<Located> {
 
 const FILES_TTL_SECONDS = 60 * 60 * 24 * 30;
 const INDEX_KEY = (appId: string) => `webapp:${appId}:index`;
-const FILE_KEY = (appId: string, tag: string, name: string) => `webapp:${appId}:${tag}:${name}`;
+const PACK_KEY = (appId: string, tag: string, n: number) => `webapp:${appId}:${tag}:pack:${n}`;
 
-interface BundleIndex {
+interface FileEntry {
+  p: number;
+  o: number;
+  l: number;
+}
+
+export interface BundleIndex {
+  v: 2;
   tag: string;
-  files: string[];
+  packs: number;
+  files: Record<string, FileEntry>;
   iconHref: string | null;
+  headers: HeaderRule[];
   unpackedAt: string;
+}
+
+function cacheKey(env: Env, path: string): Request {
+  // Keys use the store's own hostname; arbitrary hostnames are not guaranteed to cache.
+  return new Request(`${env.PUBLIC_ORIGIN}/__cache/${path}`);
+}
+
+function edgeCache(): Cache | null {
+  try {
+    return (globalThis as { caches?: { default?: Cache } }).caches?.default ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // Which release is current, checked at most once a minute per app so GitHub is not asked on every hit.
 async function currentTag(env: Env, deps: Deps, app: AppRow, token: string | undefined): Promise<{ tag: string; assets: string[] }> {
-  const cache = (globalThis as { caches?: { default?: Cache } }).caches?.default;
-  const key = new Request(`https://webapp.ourapps.internal/${app.id}/release`);
+  const cache = edgeCache();
+  const key = cacheKey(env, `webapp/${app.id}/release`);
   if (cache) {
     const hit = await cache.match(key).catch(() => undefined);
     if (hit) return (await hit.json()) as { tag: string; assets: string[] };
@@ -193,20 +293,76 @@ async function currentTag(env: Env, deps: Deps, app: AppRow, token: string | und
   return out;
 }
 
-// Unpacks the release's web.zip once into KV, one key per file; later requests read single files.
-async function ensureUnpacked(env: Env, deps: Deps, app: AppRow, token: string | undefined, current: { tag: string; assets: string[] }): Promise<BundleIndex> {
+// Groups files into packs of about 2 MB; a file larger than that is a pack of its own.
+export function buildPacks(files: Record<string, Uint8Array>): { packs: Uint8Array[]; index: Record<string, FileEntry> } {
+  const packs: Uint8Array[] = [];
+  const index: Record<string, FileEntry> = {};
+  let pending: { name: string; body: Uint8Array }[] = [];
+  let pendingBytes = 0;
+  const flush = () => {
+    if (pending.length === 0) return;
+    const buf = new Uint8Array(pendingBytes);
+    let o = 0;
+    for (const f of pending) {
+      buf.set(f.body, o);
+      index[f.name] = { p: packs.length, o, l: f.body.byteLength };
+      o += f.body.byteLength;
+    }
+    packs.push(buf);
+    pending = [];
+    pendingBytes = 0;
+  };
+  for (const name of Object.keys(files).sort()) {
+    const body = files[name];
+    if (body.byteLength > PACK_BYTES) {
+      flush();
+      index[name] = { p: packs.length, o: 0, l: body.byteLength };
+      packs.push(body);
+      continue;
+    }
+    if (pendingBytes + body.byteLength > PACK_BYTES) flush();
+    pending.push({ name, body });
+    pendingBytes += body.byteLength;
+  }
+  flush();
+  return { packs, index };
+}
+
+// Unpacks the release's web.zip once into KV as a few packs; later requests read one pack, or the edge cache.
+async function ensureUnpacked(env: Env, deps: Deps, app: AppRow, token: string | undefined, current: { tag: string; assets: string[] }, force = false): Promise<BundleIndex> {
   const existing = await env.WEBAPP_FILES.get<BundleIndex>(INDEX_KEY(app.id), "json");
-  if (existing && existing.tag === current.tag) return existing;
+  if (!force && existing && existing.v === 2 && existing.tag === current.tag) return existing;
   const asset = await findWebZip(env, deps, app, token, { manifestUrl: "", assets: current.assets });
   const res = await fetchUpstream(env, deps, asset, token);
   if (!res.ok) throw new HttpError(502, `web.zip could not be fetched (${res.status})`);
-  const zip = new Uint8Array(await res.arrayBuffer());
-  const files = extractBundle(zip);
-  const names = Object.keys(files);
-  await Promise.all(names.map((n) => env.WEBAPP_FILES.put(FILE_KEY(app.id, current.tag, n), files[n], { expirationTtl: FILES_TTL_SECONDS })));
-  const index: BundleIndex = { tag: current.tag, files: names, iconHref: inspectHead(decoder.decode(files["index.html"])).iconHref, unpackedAt: deps.now().toISOString() };
-  await env.WEBAPP_FILES.put(INDEX_KEY(app.id), JSON.stringify(index), { expirationTtl: FILES_TTL_SECONDS });
-  return index;
+  const files = extractBundle(new Uint8Array(await res.arrayBuffer()));
+  const headersText = files["_headers"] ? decoder.decode(files["_headers"]) : "";
+  delete files["_headers"];
+  const iconHref = inspectHead(decoder.decode(files["index.html"])).iconHref;
+  const { packs, index } = buildPacks(files);
+  await Promise.all(packs.map((p, n) => env.WEBAPP_FILES.put(PACK_KEY(app.id, current.tag, n), p, { expirationTtl: FILES_TTL_SECONDS })));
+  const next: BundleIndex = { v: 2, tag: current.tag, packs: packs.length, files: index, iconHref, headers: parseHeadersFile(headersText), unpackedAt: deps.now().toISOString() };
+  await env.WEBAPP_FILES.put(INDEX_KEY(app.id), JSON.stringify(next), { expirationTtl: FILES_TTL_SECONDS });
+  if (existing && existing.v === 2 && existing.tag !== current.tag) {
+    await Promise.all(Array.from({ length: existing.packs }, (_, n) => env.WEBAPP_FILES.delete(PACK_KEY(app.id, existing.tag, n)).catch(() => undefined)));
+  }
+  return next;
+}
+
+// Bytes of one file: edge cache first, then its pack in KV; null when the pack has gone missing.
+async function readFile(env: Env, app: AppRow, index: BundleIndex, name: string): Promise<Uint8Array | null> {
+  const entry = index.files[name];
+  const cache = edgeCache();
+  const key = cacheKey(env, `webapp/${app.id}/${encodeURIComponent(index.tag)}/${encodeURIComponent(name)}`);
+  if (cache) {
+    const hit = await cache.match(key).catch(() => undefined);
+    if (hit) return new Uint8Array(await hit.arrayBuffer());
+  }
+  const pack = await env.WEBAPP_FILES.get(PACK_KEY(app.id, index.tag, entry.p), "arrayBuffer");
+  if (!pack) return null;
+  const bytes = new Uint8Array(pack, entry.o, entry.l);
+  if (cache) await cache.put(key, new Response(bytes.slice(), { headers: { "Cache-Control": `max-age=${FILE_CACHE_SECONDS}` } })).catch(() => undefined);
+  return bytes;
 }
 
 // Resolves the file name to serve from the index alone; no bytes are read yet.
@@ -248,52 +404,53 @@ export async function serveWebApp(request: Request, env: Env, deps: Deps, linkId
   }
   const url = new URL(request.url);
   // Console paths never exist on an app host, so nothing can mistake one for the other.
-  if (/^\/(api|dl)(\/|$)/.test(url.pathname)) return plainPage(404, "Not found", "That file is not in the app.");
+  if (/^\/(api|dl|__cache)(\/|$)/.test(url.pathname)) return plainPage(404, "Not found", "That file is not in the app.");
   const appName = located.app.name || "App";
   if (url.pathname === BANNER_PATH) {
     return new Response(installBanner, { status: 200, headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": `public, max-age=${FILE_CACHE_SECONDS}` } });
   }
   const secrets = await loadSecrets(env, located.dev.id, ["githubToken"]);
   let index: BundleIndex;
+  let current: { tag: string; assets: string[] };
   try {
-    const current = await currentTag(env, deps, located.app, secrets.githubToken);
+    current = await currentTag(env, deps, located.app, secrets.githubToken);
     index = await ensureUnpacked(env, deps, located.app, secrets.githubToken, current);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return plainPage(err instanceof HttpError && err.status === 404 ? 404 : 502, "The web app is not available", message);
   }
-  const names = new Set(index.files);
-  const iconUrl = index.iconHref ?? (names.has("icon.png") ? "./icon.png" : names.has("icon.svg") ? "./icon.svg" : null);
+  const names = Object.keys(index.files);
+  const iconUrl = index.iconHref ?? (index.files["icon.png"] ? "./icon.png" : index.files["icon.svg"] ? "./icon.svg" : null);
   if (url.pathname === DEFAULT_MANIFEST_PATH) {
     return new Response(defaultManifest(appName, iconUrl), { status: 200, headers: { "Content-Type": "application/manifest+json", "Cache-Control": "no-cache" } });
   }
-  const name = pickName(index.files, url.pathname);
+  const name = pickName(names, url.pathname);
   if (!name) return plainPage(404, "Not found", "That file is not in the app.");
   const etag = `"${index.tag}:${name}"`;
-  if (request.headers.get("If-None-Match") === etag) return new Response(null, { status: 304, headers: { ETag: etag } });
+  const encoded = encodedFile(name);
   const isHtml = name.endsWith(".html");
-  let body: BodyInit | null = null;
+  const headers: Record<string, string> = {
+    "Content-Type": encoded ? encoded.type : contentType(name),
+    ETag: etag,
+    "Cache-Control": isHtml ? "no-cache" : `public, max-age=${FILE_CACHE_SECONDS}`,
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "X-Robots-Tag": "noindex",
+    ...(encoded ? { "Content-Encoding": encoded.encoding, Vary: "Accept-Encoding" } : {}),
+    ...(isHtml ? { "Content-Security-Policy": "frame-ancestors 'none'", "Cross-Origin-Opener-Policy": "same-origin" } : {}),
+  };
+  for (const [k, v] of headersFor(index.headers, url.pathname)) headers[k] = v;
+  if (request.headers.get("If-None-Match") === etag) return new Response(null, { status: 304, headers: { ETag: etag } });
+  let body: Uint8Array | string | null = null;
   if (request.method === "GET") {
-    if (isHtml) {
-      const text = await env.WEBAPP_FILES.get(FILE_KEY(located.app.id, index.tag, name), "text");
-      if (text === null) return plainPage(502, "The web app is not available", "A file went missing from the cache; reload in a moment.");
-      body = decorateHtml(text, appName, iconUrl);
-    } else {
-      const stream = await env.WEBAPP_FILES.get(FILE_KEY(located.app.id, index.tag, name), "stream");
-      if (stream === null) return plainPage(502, "The web app is not available", "A file went missing from the cache; reload in a moment.");
-      body = stream;
+    let bytes = await readFile(env, located.app, index, name);
+    if (!bytes) {
+      // The pack expired or was removed: unpack again once, then retry.
+      index = await ensureUnpacked(env, deps, located.app, secrets.githubToken, current, true).catch(() => index);
+      bytes = index.files[name] ? await readFile(env, located.app, index, name) : null;
+      if (!bytes) return plainPage(502, "The web app is not available", "A file went missing from the cache; reload in a moment.");
     }
+    body = isHtml && !encoded ? decorateHtml(decoder.decode(bytes), appName, iconUrl) : bytes;
   }
-  return new Response(body, {
-    status: 200,
-    headers: {
-      "Content-Type": contentType(name),
-      ETag: etag,
-      "Cache-Control": isHtml ? "no-cache" : `public, max-age=${FILE_CACHE_SECONDS}`,
-      "X-Content-Type-Options": "nosniff",
-      "Referrer-Policy": "strict-origin-when-cross-origin",
-      "X-Robots-Tag": "noindex",
-      ...(isHtml ? { "Content-Security-Policy": "frame-ancestors 'none'", "Cross-Origin-Opener-Policy": "same-origin" } : {}),
-    },
-  });
+  return new Response(body, { status: 200, headers, ...(encoded ? { encodeBody: "manual" as const } : {}) });
 }

@@ -3,4 +3,5 @@ Allow: /$
 Allow: /example
 Allow: /example/
 Allow: /terms
+Allow: /reference
 Disallow: /

@@ -16,6 +16,7 @@ export type Route =
   | { page: "guide" }
   | { page: "agents" }
   | { page: "terms" }
+  | { page: "reference" }
   | { page: "example" }
   | { page: "example-app" }
   | { page: "not-found" };
@@ -44,6 +45,7 @@ export function matchRoute(pathname: string): Route {
     return { page: "not-found" };
   }
   if (parts.length === 1 && parts[0] === "terms") return { page: "terms" };
+  if (parts.length === 1 && parts[0] === "reference") return { page: "reference" };
   if (parts[0] === "example") {
     if (parts.length === 1) return { page: "example" };
     if (parts.length === 2 && parts[1] === "poker-night") return { page: "example-app" };

@@ -3,5 +3,6 @@
 > Private installer for apps people build for friends and family. Developers sign in with GitHub, register apps, create share links; friends install from the links on iPhone (Apple Ad Hoc) or Android (APK) without any store.
 
 - [API reference for agents](https://ourapps.app/agents.md): every endpoint, auth with `Authorization: Bearer oa_...`, workflows.
+- [Technical reference](https://ourapps.app/reference): supported app types, where every part runs, web bundle limits, engines and frameworks.
 - [Repository contract](https://ourapps.app/contract.md): what an app's GitHub repository must publish and the two calls its workflow makes.
 - Console: https://ourapps.app/dev (sign in with GitHub). API keys and agent prompts: https://ourapps.app/dev/agents.

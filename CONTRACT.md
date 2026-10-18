@@ -137,20 +137,26 @@ more `my-store-rebuild` for them automatically. Response:
 `install.pwa` is an https URL. Two meanings:
 
 - A release-asset URL whose asset is named exactly `web.zip`: a bundle of the built site that
-  the store serves at `https://<linkId>.ourapps.app/` (one origin per share link, nothing from
-  the console shared with it). Build with a relative base (`./`), `index.html` at the zip
-  root (or inside a single top-level folder), `manifest.webmanifest` with `"start_url": "./"`
-  and `"scope": "./"`, service worker registered with a relative path. Stored or deflate
-  entries only; zip at most 25 MB, any file at most 10 MB. Unknown paths get `index.html`;
-  `/api/*` and `/dl/*` are reserved. HTML is served with `no-cache`, other files cached for a
-  day with an ETag per release, so a new release shows at once. The bundle is read from the
-  latest release and cached for an hour per release tag. The store injects a script at
-  `/__ourapps/install.js` into every HTML file (an "add to home screen" banner: Chrome's native
-  prompt, Safari steps, in-app browser hint) and, only when the page lacks them, a manifest
-  link (`/__ourapps/manifest.webmanifest`, standalone display), the Apple home screen meta
-  tags, an `apple-touch-icon` and a theme colour. Ship your own to override; the `/__ourapps/`
-  path prefix is reserved. Camera and microphone grants persist for the installed app because
-  it shares the origin; ask for them from a tap handler, never on load.
+  the store copies and serves at `https://<linkId>.ourapps.app/`, one origin per share link,
+  nothing from the console shared with it. On the first request after a release the store
+  fetches the zip, unpacks it once into its storage and serves single files from there; the
+  release is re-checked at most once a minute.
+  - Limits: zip at most 25 MB, at most 32 MB unpacked, any file at most 24 MB, at most 2,000
+    files, at most 8 MB of compressed (deflated) content. Build it uncompressed:
+    `zip -0 -r web.zip .` (text is brotli-compressed on the way to the browser anyway).
+  - Layout: `index.html` at the zip root or inside one top-level folder. Relative (`./`) or
+    root (`/`) paths both work because the app is served at the root of its own origin.
+    `manifest.webmanifest` with `start_url` and `scope` of `./`; service worker registered
+    with a relative path. Unknown paths without an extension get `index.html`.
+  - Pre-compressed files (`.wasm.br`, `.js.gz`, `.data.br` and similar) are sent with
+    `Content-Encoding` and the inner content type, as Unity and Godot expect.
+  - An optional `_headers` file (Cloudflare Pages format) may set
+    `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`,
+    `Cross-Origin-Resource-Policy`, `Permissions-Policy`, `Content-Security-Policy` and
+    `Cache-Control`; anything else is ignored. Needed for threaded Unity and Godot builds.
+  - Storage, service workers and permissions belong to each link's origin. Allow the link
+    origins (`^https://[0-9a-f]{16,64}\.ourapps\.app$`) in your API's CORS and use token
+    authentication, not cookies.
 - Any other https URL, including a release asset with another name: opened as is.
 
 ## Optional: in-app updates

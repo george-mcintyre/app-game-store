@@ -40,7 +40,8 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 - Security model and rotation: `SECURITY.md`. Crypto primitives: `worker/src/crypto.ts`; credential envelopes: `worker/src/secrets.ts`; audit log: `worker/src/audit.ts`.
 - API keys and bearer auth: `worker/src/auth.ts`, `worker/src/routes/dev.ts` (`listKeys`, `createKey`, `revokeKey`, `releaseStatus`, `previewApp`).
 - Revision history (releases, tags, commit fallback, 2 minute cache): `worker/src/history.ts`; rendering: `historyBlock` in `site/src/pages/public.ts`, notes to HTML in `site/src/notes.ts`.
-- Web app hosting on `https://<linkId>.ourapps.app/`: `worker/src/webapp.ts` (host detection, zip extract with fflate, SPA fallback, caching); route `*.ourapps.app/*` in `worker/wrangler.jsonc` needs the wildcard proxied AAAA record on the zone.
+- Web app hosting on `https://<linkId>.ourapps.app/`: `worker/src/webapp.ts` (host detection, limits `WEB_LIMITS`, unpack once per release into ~2 MB packs in KV `WEBAPP_FILES`, edge cache per file, `.br`/`.gz` encodings, `_headers` allowlist, SPA fallback); route `*.ourapps.app/*` in `worker/wrangler.jsonc` needs the wildcard proxied AAAA record on the zone.
+- Technical reference page (public, `/reference`): `site/src/pages/reference.ts`; inline SVG architecture diagram; generated diagrams go in `site/public/reference/` (prompts in `docs/diagram-prompts.md`). Keep its limits in step with `WEB_LIMITS`.
 - Agent documents: `site/public/agents.md`, `site/public/llms.txt`; `CONTRACT.md` is copied to `site/public/contract.md` by the site `prebuild` script.
 - Platform and in-app browser detection: `site/src/platform.ts`. Paths: `site/src/router.ts`.
 

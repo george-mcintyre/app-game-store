@@ -2,7 +2,7 @@ import { zipSync, strToU8 } from "fflate";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { handle } from "../src/index.js";
-import { contentType, decorateHtml, extractBundle, inspectHead, isBundleUrl, pickName, webAppLinkId } from "../src/webapp.js";
+import { buildPacks, contentType, decorateHtml, encodedFile, extractBundle, headersFor, inspectHead, isBundleUrl, parseHeadersFile, pickName, webAppLinkId } from "../src/webapp.js";
 import { BASE, api, clearDb, createSkull, fakeFetch, githubRoutes, jsonRes, manifest, saveAppleSecrets, signIn, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const HOST = new URL(BASE).host;
@@ -101,7 +101,9 @@ describe("serving", () => {
     expect((await handle(new Request(`${origin}/`), env, d)).status).toBe(200);
     const zipFetches = () => stub.calls.filter((c) => c.url.endsWith("/assets/9")).length;
     expect(zipFetches()).toBe(1);
-    expect(await env.WEBAPP_FILES.get(`webapp:${appId}:index`, "json")).toMatchObject({ tag: "v0.1.0", files: expect.arrayContaining(["index.html", "assets/app.js"]) });
+    expect(await env.WEBAPP_FILES.get(`webapp:${appId}:index`, "json")).toMatchObject({ v: 2, tag: "v0.1.0", packs: 1, files: expect.objectContaining({ "index.html": expect.anything(), "assets/app.js": expect.anything() }) });
+    const keys = (await env.WEBAPP_FILES.list({ prefix: `webapp:${appId}:` })).keys.map((k) => k.name).sort();
+    expect(keys).toEqual([`webapp:${appId}:index`, `webapp:${appId}:v0.1.0:pack:0`]);
     expect((await handle(new Request(`${origin}/assets/app.js`), env, d)).status).toBe(200);
     expect((await handle(new Request(`${origin}/table/9`), env, d)).status).toBe(200);
     expect(zipFetches()).toBe(1);
@@ -111,10 +113,12 @@ describe("serving", () => {
     routes["GET api.github.com/repos/o/skull/releases/latest"] = () =>
       jsonRes({ tag_name: "v0.2.0", assets: [{ name: "my-app.json", url: "https://api.github.com/repos/o/skull/releases/assets/1" }, { name: "web.zip", url: "https://api.github.com/repos/o/skull/releases/assets/9" }] });
     const stub2 = fakeFetch(routes);
-    await (globalThis as { caches?: { default?: Cache } }).caches?.default?.delete(new Request(`https://webapp.ourapps.internal/${appId}/release`));
+    await (globalThis as { caches?: { default?: Cache } }).caches?.default?.delete(new Request(`${BASE}/__cache/webapp/${appId}/release`));
     expect((await handle(new Request(`${origin}/`), env, { ...deps, fetch: stub2.fetch })).status).toBe(200);
     expect(stub2.calls.filter((c) => c.url.endsWith("/assets/9")).length).toBe(1);
     expect((await env.WEBAPP_FILES.get<{ tag: string }>(`webapp:${appId}:index`, "json"))!.tag).toBe("v0.2.0");
+    const after = (await env.WEBAPP_FILES.list({ prefix: `webapp:${appId}:` })).keys.map((k) => k.name).sort();
+    expect(after).toEqual([`webapp:${appId}:index`, `webapp:${appId}:v0.2.0:pack:0`]);
   });
 
   it("refuses unknown, revoked and bundle-less links with a plain page", async () => {
@@ -197,5 +201,76 @@ describe("home screen install", () => {
     const out = decorateHtml("<p>bare</p>", "X", null);
     expect(out.startsWith('<meta name="viewport"')).toBe(true);
     expect(out).toContain("<p>bare</p>");
+  });
+});
+
+describe("bundle limits, packing, encodings and headers", () => {
+  it("rejects bundles over the limits with a reason, and asks for zip -0 when too much is compressed", () => {
+    const big = new Uint8Array(9 * 1024 * 1024).fill(97);
+    expect(() => extractBundle(zipSync({ "index.html": strToU8("x"), "big.txt": big }))).toThrow(/zip -0/);
+    expect(() => extractBundle(zipSync({ "index.html": strToU8("x"), "big.txt": [big, { level: 0 }] }))).not.toThrow();
+    const many: Record<string, Uint8Array> = { "index.html": strToU8("x") };
+    for (let i = 0; i < 2001; i++) many[`f${i}.txt`] = strToU8("y");
+    expect(() => extractBundle(zipSync(many, { level: 0 }))).toThrow(/2002 files/);
+  });
+
+  it("packs small files together and gives big files their own pack", () => {
+    const files: Record<string, Uint8Array> = {
+      "a.txt": new Uint8Array(1_000_000).fill(1),
+      "b.txt": new Uint8Array(1_000_000).fill(2),
+      "c.wasm.br": new Uint8Array(3_000_000).fill(3),
+      "d.txt": new Uint8Array(10).fill(4),
+    };
+    const { packs, index } = buildPacks(files);
+    expect(packs.length).toBe(3);
+    for (const [name, body] of Object.entries(files)) {
+      const e = index[name];
+      const slice = packs[e.p].subarray(e.o, e.o + e.l);
+      expect(slice.byteLength).toBe(body.byteLength);
+      expect([slice[0], slice[slice.length - 1]]).toEqual([body[0], body[body.length - 1]]);
+    }
+    expect(index["c.wasm.br"]).toEqual({ p: 1, o: 0, l: 3_000_000 });
+  });
+
+  it("knows pre-compressed engine output", () => {
+    expect(encodedFile("Build/game.wasm.br")).toEqual({ type: "application/wasm", encoding: "br" });
+    expect(encodedFile("Build/game.framework.js.gz")).toEqual({ type: "text/javascript; charset=utf-8", encoding: "gzip" });
+    expect(encodedFile("Build/game.data.gz")).toEqual({ type: "application/gzip", encoding: "gzip" });
+    expect(encodedFile("Build/game.data.br")).toEqual({ type: "application/octet-stream", encoding: "br" });
+    expect(encodedFile("backup.tar.gz")).toBeNull();
+  });
+
+  it("reads an allowlisted _headers file", () => {
+    const rules = parseHeadersFile("# comment\n/*\n  Cross-Origin-Embedder-Policy: require-corp\n  Set-Cookie: evil=1\n  X-Anything: no\n/Build/*\n  Cache-Control: public, max-age=31536000, immutable\n");
+    expect(headersFor(rules, "/")).toEqual([["Cross-Origin-Embedder-Policy", "require-corp"]]);
+    expect(headersFor(rules, "/Build/game.wasm.br")).toEqual([["Cross-Origin-Embedder-Policy", "require-corp"], ["Cache-Control", "public, max-age=31536000, immutable"]]);
+  });
+
+  it("serves a Unity style build with encodings and the bundle's isolation headers", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const unity = zipSync(
+      {
+        "index.html": strToU8("<!doctype html><html><head><title>Game</title></head><body></body></html>"),
+        "Build/game.wasm.br": new Uint8Array([1, 2, 3]),
+        "Build/game.data.gz": new Uint8Array([4, 5]),
+        _headers: strToU8("/*\n  Cross-Origin-Opener-Policy: same-origin\n  Cross-Origin-Embedder-Policy: require-corp\n  Cross-Origin-Resource-Policy: cross-origin\n  Set-Cookie: nope=1\n"),
+      },
+      { level: 0 },
+    );
+    const d = { ...deps, fetch: fakeFetch(webRoutes(unity)).fetch };
+    const origin = `https://${linkId}.${HOST}`;
+    const wasm = await handle(new Request(`${origin}/Build/game.wasm.br`), env, d);
+    expect(wasm.status).toBe(200);
+    expect(wasm.headers.get("Content-Type")).toBe("application/wasm");
+    expect(wasm.headers.get("Content-Encoding")).toBe("br");
+    expect(wasm.headers.get("Cross-Origin-Embedder-Policy")).toBe("require-corp");
+    expect(wasm.headers.get("Set-Cookie")).toBeNull();
+    const data = await handle(new Request(`${origin}/Build/game.data.gz`), env, d);
+    expect(data.headers.get("Content-Encoding")).toBe("gzip");
+    const page = await handle(new Request(`${origin}/`), env, d);
+    expect(page.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
+    expect(page.headers.get("Cross-Origin-Resource-Policy")).toBe("cross-origin");
+    expect((await handle(new Request(`${origin}/_headers`), env, d)).headers.get("Content-Type")).toBe("text/html; charset=utf-8");
   });
 });

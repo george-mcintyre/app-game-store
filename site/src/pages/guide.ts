@@ -43,6 +43,7 @@ function sections(origin: string, slug: string): Section[] {
           <li>Creating, labelling, revoking share links; listing waiting devices; approving the ones you name (prompt 2).</li>
         </ul>
         <p class="small muted">Rule of thumb: if it needs a password, a payment, a certificate, or a decision about a person, it is yours. If it is typing, reading a file, or calling this API, it is the agent's.</p>
+        <p class="small muted">Wondering whether your kind of app fits (Unity, Flutter, server-rendered sites, games with a server)? The <a href="/reference">technical reference</a> lists the supported types, where every part runs and the exact limits.</p>
       `,
     },
     {

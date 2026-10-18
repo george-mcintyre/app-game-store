@@ -109,6 +109,20 @@ describe("share links and public pages", () => {
     expect(body.history[1]).toMatchObject({ version: "0.0.9", title: "First table night", notes: "Deal cards in seat order\n\nLonger explanation.", sha: "def4567890123" });
   });
 
+  it("orders history by publish date, not by GitHub's list order", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases"] = () =>
+      jsonRes([
+        { tag_name: "v0.9.0", name: "Skull 0.9.0", body: "older", draft: false, prerelease: false, published_at: "2026-10-18T07:15:33Z", html_url: "x" },
+        { tag_name: "v0.11.3", name: "Skull 0.11.3", body: "newest", draft: false, prerelease: false, published_at: "2026-10-18T15:49:08Z", html_url: "x" },
+        { tag_name: "v0.10.0", name: "Skull 0.10.0", body: "middle", draft: false, prerelease: false, published_at: "2026-10-18T09:50:58Z", html_url: "x" },
+      ]);
+    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { history: { version: string }[] };
+    expect(body.history.map((h) => h.version)).toEqual(["0.11.3", "0.10.0", "0.9.0"]);
+  });
+
   it("falls back to the release body when a version is missing from the changelog", async () => {
     await saveAppleSecrets(env, deps, cookie);
     const { linkId } = await createSkull(env, deps, cookie);

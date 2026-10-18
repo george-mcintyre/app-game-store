@@ -158,7 +158,10 @@ async function fetchHistory(env: Env, deps: Deps, app: AppRow, token: string | u
   if (!releases) return [];
   const isPublic = repo ? !repo.private : false;
   const shaByTag = new Map((tags ?? []).map((t) => [t.name, t.commit.sha]));
-  const published = releases.filter((r) => !r.draft && !r.prerelease);
+  // GitHub's list order is not guaranteed to be by date (re-tagged or edited releases move), so sort here.
+  const published = releases
+    .filter((r) => !r.draft && !r.prerelease)
+    .sort((a, b) => Date.parse(b.published_at ?? "") - Date.parse(a.published_at ?? "") || 0);
   const changelog = await loadChangelog(env, deps, published[0], token);
   const out: HistoryEntry[] = [];
   let lookups = 0;

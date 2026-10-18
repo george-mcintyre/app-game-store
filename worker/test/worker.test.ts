@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { handle } from "../src/index.js";
-import { BASE, GH_TOKEN, api, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
+import { BASE, GH_TOKEN, api, jsonRes, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const UDID_1 = "00008030-000A1B2C3D4E5F67";
 const UDID_2 = "00008030-000F0E0D0C0B0A09";
@@ -107,6 +107,20 @@ describe("share links and public pages", () => {
       commitUrl: "https://github.com/o/skull/commit/abc1234567890",
     });
     expect(body.history[1]).toMatchObject({ version: "0.0.9", title: "First table night", notes: "Deal cards in seat order\n\nLonger explanation.", sha: "def4567890123" });
+  });
+
+  it("orders history by publish date, not by GitHub's list order", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases"] = () =>
+      jsonRes([
+        { tag_name: "v0.9.0", name: "Skull 0.9.0", body: "older", draft: false, prerelease: false, published_at: "2026-10-18T07:15:33Z", html_url: "x" },
+        { tag_name: "v0.11.3", name: "Skull 0.11.3", body: "newest", draft: false, prerelease: false, published_at: "2026-10-18T15:49:08Z", html_url: "x" },
+        { tag_name: "v0.10.0", name: "Skull 0.10.0", body: "middle", draft: false, prerelease: false, published_at: "2026-10-18T09:50:58Z", html_url: "x" },
+      ]);
+    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { history: { version: string }[] };
+    expect(body.history.map((h) => h.version)).toEqual(["0.11.3", "0.10.0", "0.9.0"]);
   });
 
   it("falls back to the release body when a version is missing from the changelog", async () => {

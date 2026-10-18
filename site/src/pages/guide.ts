@@ -54,7 +54,7 @@ function sections(origin: string, slug: string): Section[] {
         <p>ourapps puts apps you build onto the phones of people you know, without the App Store or Google Play. You add an app in this console, create a share link, and send it. Your friend taps the link and gets an install page that looks like the store they already use.</p>
         <div class="grid-2">
           <div class="card flat"><h3>${icon("android", "icon-20")} Android</h3><p>The page offers a direct download of your signed APK and walks the friend through the one-time "allow from this source" prompt. Nothing else is needed.</p></div>
-          <div class="card flat"><h3>${icon("phone", "icon-20")} iPhone</h3><p>Apple only runs an app on iPhones whose device number is in the app's signing profile. The page registers the friend's iPhone, you approve it, the console registers it with Apple and asks your repository to rebuild, and the page turns into an Install button. This is Apple's Ad Hoc distribution; no review, no TestFlight, 100 iPhones per year.</p></div>
+          <div class="card flat"><h3>${icon("phone", "icon-20")} iPhone</h3><p>Apple only runs an app on iPhones whose device number is in the app's signing profile. The page registers the friend's iPhone, you approve it, the console registers it with Apple and asks your repository to rebuild, and the page turns into an Install button. This is Apple's Ad Hoc distribution; no review, no TestFlight, 100 iPhones and 100 iPads per year. iPads work the same way.</p></div>
           <div class="card flat"><h3>${icon("globe", "icon-20")} Web apps</h3><p>Ship your built site as <code>web.zip</code> and ourapps serves it at its own address per share link, with a one-tap offer to add it to the home screen. A site you host yourself is linked instead. Details in the <a href="/reference#web">reference</a>.</p></div>
           <div class="card flat"><h3>${icon("lock", "icon-20")} Private by design</h3><p>No search, no listing, no index. Install pages live at random addresses, the app files are served through links that expire after an hour, and a share link can be revoked at any time.</p></div>
         </div>
@@ -285,7 +285,7 @@ startButton.onclick = async () => {
           <li>Sends <code>my-store-rebuild</code> to the repository with the profile id and the new device. The workflow downloads the profile from the console with its build token.</li>
           <li>When the workflow publishes and calls <code>/api/build-ready</code>, the console marks ready every waiting device whose number is inside that profile. A device approved after the workflow had already fetched the profile is not in that build, so the console sends one more rebuild for it automatically.</li>
         </ol>
-        ${callout("warn", html`<p><b>100 iPhones per membership year, across all your apps.</b> Apple counts devices on your account, not per app, and counts registrations rather than current devices: removing a device does not give the slot back until your membership renews. Approve people, not experiments, and register your own test phones once.</p>`)}
+        ${callout("warn", html`<p><b>100 iPhones and, separately, 100 iPads per membership year, across all your apps.</b> Apple counts devices on your account, not per app, and counts registrations rather than current devices: removing a device does not give the slot back until your membership renews. Approve people, not experiments, and register your own test phones once.</p>`)}
         <p><b>Approve your own iPhone first.</b> Open your share link on your phone like a friend would; you will see every screen they see and catch problems before anyone else does.</p>
       `,
     },
@@ -472,7 +472,7 @@ suspend fun checkForUpdate(context: Context) {
       title: "11. Limits and costs",
       body: html`
         <ul class="bullets">
-          <li><b>Apple Developer Program:</b> 99 US dollars a year. <b>100 iPhones per membership year across all your apps</b>, counted per device: eight friends on three apps use eight slots. Slots do not come back when a device is removed. Ad Hoc profiles last one year. Past 100 people, TestFlight takes 10,000 testers with 90-day builds, and the App Store has no limit.</li>
+          <li><b>Apple Developer Program:</b> 99 US dollars a year. <b>100 iPhones and, separately, 100 iPads per membership year across all your apps</b>, counted per device: eight friends on three apps use eight slots. Slots do not come back when a device is removed. Ad Hoc profiles last one year. Past 100 people, TestFlight takes 10,000 testers with 90-day builds, and the App Store has no limit.</li>
           <li><b>Android and web:</b> no device limit and no account. Google is phasing in developer verification for installs on certified phones from 2026, with a free small-distribution tier planned.</li>
           <li><b>Share links:</b> unlimited, and they only expire when you set a date.</li>
           <li><b>GitHub:</b> free. Releases are free storage; private repositories get 2,000 Actions minutes a month, and macOS minutes count ten times. A lean iOS job takes 8 to 15 minutes, so budget roughly 15 iPhone builds a month on the free tier, or run iOS builds on your own Mac.</li>

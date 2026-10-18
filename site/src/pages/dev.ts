@@ -58,11 +58,11 @@ export async function dashboard(root: HTMLElement): Promise<void> {
         <div class="stats">
           <div class="stat"><b>${apps.length}</b><span>app${apps.length === 1 ? "" : "s"}</span></div>
           <div class="stat"><b>${activeLinks}</b><span>active share link${activeLinks === 1 ? "" : "s"}</span></div>
-          <div class="stat"><b>${pending.length}</b><span>iPhone${pending.length === 1 ? "" : "s"} waiting for approval</span>${pending.length > 0 ? html`<div class="delta">needs you</div>` : ""}</div>
+          <div class="stat"><b>${pending.length}</b><span>device${pending.length === 1 ? "" : "s"} waiting for approval</span>${pending.length > 0 ? html`<div class="delta">needs you</div>` : ""}</div>
           <div class="stat"><b>${ready}</b><span>device${ready === 1 ? "" : "s"} ready to install</span></div>
         </div>
 
-        ${pending.length > 0 ? html`<div class="card mt" style="border-color:var(--warn)"><div class="row wrap"><div class="grow"><h2>${pending.length === 1 ? "An iPhone is waiting" : `${pending.length} iPhones are waiting`}</h2><p class="muted small">${pending.map((p) => p.name).join(", ")} registered and ${pending.length === 1 ? "needs" : "need"} your approval before Apple will allow the app on ${pending.length === 1 ? "their phone" : "their phones"}.</p></div><a class="btn" href="/dev/devices">Review devices ${icon("arrow")}</a></div></div>` : ""}
+        ${pending.length > 0 ? html`<div class="card mt" style="border-color:var(--warn)"><div class="row wrap"><div class="grow"><h2>${pending.length === 1 ? "A device is waiting" : `${pending.length} devices are waiting`}</h2><p class="muted small">${pending.map((p) => p.name).join(", ")} registered and ${pending.length === 1 ? "needs" : "need"} your approval before Apple will allow the app on ${pending.length === 1 ? "their device" : "their devices"}.</p></div><a class="btn" href="/dev/devices">Review devices ${icon("arrow")}</a></div></div>` : ""}
 
         <div class="grid-2 mt">
           <div class="card">
@@ -464,7 +464,7 @@ export async function appLinks(root: HTMLElement, appId: string): Promise<void> 
 
 const STATE_HELP: Record<string, string> = {
   "awaiting-device": "The friend tapped Register but has not installed the profile yet. Nothing to do; it will move on by itself or you can remove it.",
-  "pending-approval": "The iPhone reported its device number. Approve to register it with Apple and start a build, or reject.",
+  "pending-approval": "The device reported its device number. Approve to register it with Apple and start a build, or reject.",
   registering: "Talking to Apple.",
   building: "Apple accepted the device. The repository was asked to rebuild; the friend's page flips to Install when the workflow calls build-ready.",
   ready: "Installed or ready to install. The friend's page shows the Install button.",
@@ -488,9 +488,9 @@ export async function devices(root: HTMLElement): Promise<void> {
       me,
       "Devices",
       html`
-        ${callout("info", html`<p><b>How approval works.</b> Approving sends the iPhone to Apple, recreates the Ad Hoc profile with every registered device, and asks the app's repository to rebuild. Apple allows 100 iPhones per membership year and does not give a slot back when you remove a device, so approve people, not tests.</p>`)}
+        ${callout("info", html`<p><b>How approval works.</b> Approving sends the device to Apple, recreates the Ad Hoc profile with every registered device, and asks the app's repository to rebuild. Apple allows 100 iPhones and, separately, 100 iPads per membership year, and does not give a slot back when you remove a device, so approve people, not tests.</p>`)}
         ${!me.secrets.apple ? callout("warn", html`<p>No App Store Connect key is saved, so approvals will fail. <a href="/dev/settings#credentials">Add it in Settings</a>.</p>`) : ""}
-        ${enrolments.length === 0 ? html`<div class="card mt">${emptyState("devices", "No devices yet", "When a friend taps Register on an install page, their iPhone appears here.")}</div>` : ""}
+        ${enrolments.length === 0 ? html`<div class="card mt">${emptyState("devices", "No devices yet", "When a friend taps Register on an install page, their iPhone or iPad appears here.")}</div>` : ""}
         ${groups.filter(([, , list]) => list.length > 0).map(([title, , list]) => html`
           <div class="section-title"><h2>${title}</h2><span class="muted small">${list.length}</span></div>
           <div class="stack">${list.map((e) => html`
@@ -507,7 +507,7 @@ export async function devices(root: HTMLElement): Promise<void> {
         `)}
         <div id="error" class="mt"></div>
       `,
-      { sub: "Every iPhone that registered through one of your links." },
+      { sub: "Every iPhone and iPad that registered through one of your links." },
     );
     const act = async (b: HTMLButtonElement, fn: () => Promise<unknown>, busy: string) => {
       b.disabled = true;
@@ -747,7 +747,7 @@ export async function agents(root: HTMLElement): Promise<void> {
             <tr><td><code>GET /api/dev/apps/:id/release</code></td><td>what the latest release looks like and why it fails</td></tr>
             <tr><td><code>POST /api/dev/apps/:id/links</code></td><td>new share link</td></tr>
             <tr><td><code>GET /api/public/links/:id/qr.svg</code></td><td>QR for a link</td></tr>
-            <tr><td><code>GET /api/dev/devices</code></td><td>iPhones and their states</td></tr>
+            <tr><td><code>GET /api/dev/devices</code></td><td>iPhones and iPads and their states</td></tr>
             <tr><td><code>POST /api/dev/devices/:id/approve</code></td><td>register with Apple and rebuild</td></tr>
           </table>
           <pre class="mt-s"><code>curl -H "Authorization: Bearer $OURAPPS_API_KEY" \\

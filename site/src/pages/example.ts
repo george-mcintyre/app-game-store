@@ -99,7 +99,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <p class="small muted">The audience is private and non-commercial, which lowers the stakes to those of a private joke, but it is still your responsibility: use photos you took or were given, and keep anything you borrowed inside the circle. The moment the app is for strangers, swap in art you own.</p>
 
           <h2>Test a real app with real people</h2>
-          <p>The same mechanism carries serious projects. Before an app ever meets an app store review you can put it on up to 100 iPhones a year and as many Android phones as you like: real phones, real friends, real feedback, no 90-day TestFlight expiry dance. Family beta, club pilot, the first ten customers who happen to be mates.</p>
+          <p>The same mechanism carries serious projects. Before an app ever meets an app store review you can put it on up to 100 iPhones and 100 iPads a year and as many Android phones as you like: real phones, real friends, real feedback, no 90-day TestFlight expiry dance. Family beta, club pilot, the first ten customers who happen to be mates.</p>
 
           <h2>How it got built: an agent and an evening</h2>
           <p>Describe the table to a coding agent (Claude Code, Codex, Cursor, opencode): who sits where, the three blind structures, the four rules, the slang. It writes the app. Paste the ourapps prompt from the console and it writes the release workflow too, including the hook that rebuilds for each new iPhone. You spend the evening on the house rules and the help text, which is the part only you can do.</p>
@@ -117,7 +117,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
             <div class="card">
               <h3>${icon("phone", "icon-20")} iPhone</h3>
               <ul>
-                <li><b>100 iPhones per year, across all your apps.</b> Apple counts devices on your developer account, not per app. Eight friends on three apps use eight slots, not twenty four.</li>
+                <li><b>100 iPhones and 100 iPads per year, across all your apps.</b> Apple counts devices on your developer account, not per app. Eight friends on three apps use eight slots, not twenty four.</li>
                 <li>Removing a device does not free its slot until the membership year renews, so approve people, not experiments.</li>
                 <li>Each build stops opening a year after its signing profile was made. Ship a build before then; friends tap Update.</li>
                 <li>Past 100 people: TestFlight (10,000 testers, builds expire after 90 days) or the App Store.</li>

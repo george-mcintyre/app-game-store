@@ -71,9 +71,17 @@ export class AppleClient {
     return res.data.id;
   }
 
+  // Every enabled iOS-platform device (iPhone, iPad, iPod touch), following Apple's pages of 200.
   async listEnabledIosDevices(): Promise<Resource<{ udid: string }>[]> {
-    const res = await this.call<{ data: Resource<{ udid: string }>[] }>("GET", "/v1/devices?filter[platform]=IOS&filter[status]=ENABLED&limit=200");
-    return res.data;
+    const out: Resource<{ udid: string }>[] = [];
+    let path: string | null = "/v1/devices?filter[platform]=IOS&filter[status]=ENABLED&limit=200";
+    for (let page = 0; path !== null && page < 10; page++) {
+      const res: { data: Resource<{ udid: string }>[]; links?: { next?: string } } = await this.call("GET", path);
+      out.push(...res.data);
+      const next = res.links?.next;
+      path = next && next.startsWith(this.env.APPLE_API_BASE) ? next.slice(this.env.APPLE_API_BASE.length) : null;
+    }
+    return out;
   }
 
   async findProfileByName(name: string): Promise<Resource<{ name: string; uuid: string; profileContent: string; expirationDate: string }> | null> {

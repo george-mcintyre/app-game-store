@@ -31,7 +31,7 @@ export function enrolmentProfile(opts: { callbackUrl: string; appName: string; o
   <key>PayloadIdentifier</key>
   <string>app.ourapps.enrol</string>
   <key>PayloadDescription</key>
-  <string>${escapeXml(`Tells ${opts.organisation} which phone to build ${opts.appName} for. It is removed automatically after install.`)}</string>
+  <string>${escapeXml(`Tells ${opts.organisation} which device to build ${opts.appName} for. It is removed automatically after install.`)}</string>
   <key>PayloadType</key>
   <string>Profile Service</string>
 </dict>

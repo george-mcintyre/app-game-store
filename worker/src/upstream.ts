@@ -28,7 +28,12 @@ export async function resolveRelease(env: Env, deps: Deps, app: AppRow, githubTo
   if (!app.repo) throw new Error("the app has no repository set");
   const res = await fetchUpstream(env, deps, `${env.GITHUB_API_BASE}/repos/${app.repo}/releases/latest`, githubToken, "application/vnd.github+json");
   if (res.status === 404) {
-    throw new Error(githubToken ? `no published release found on ${app.repo} (drafts and pre-releases do not count)` : `no release visible on ${app.repo}; a private repository needs a GitHub token in Settings`);
+    // GitHub answers 404, not 403, when a token cannot see a private repository.
+    throw new Error(
+      githubToken
+        ? `no published release visible on ${app.repo}: either none is published (drafts and pre-releases do not count) or the GitHub token in Settings does not include this repository`
+        : `no release visible on ${app.repo}; a private repository needs a GitHub token in Settings`,
+    );
   }
   if (!res.ok) throw new Error(`latest release for ${app.repo}: ${res.status}`);
   const release = (await res.json()) as { tag_name?: string; published_at?: string; assets?: { name: string; url: string }[] };

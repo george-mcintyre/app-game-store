@@ -194,6 +194,7 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
   };
   applyInput(app, body);
   await Db.from(env).insertApp(app);
+  await audit(request, env, deps, dev.id, "app-created", app.name);
   return json({ app: publicApp(app), buildToken }, 201);
 }
 

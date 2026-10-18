@@ -4,7 +4,7 @@ import { html, mount, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { setTheme } from "../theme.js";
 import { avatar, icon, wireCopy, wireImages } from "../ui.js";
-import { COPYRIGHT, storeFrame } from "./public.js";
+import { COPYRIGHT, SOURCE_URL, storeFrame } from "./public.js";
 import { termsPending } from "./terms.js";
 
 const NAV: { href: string; label: string; icon: string; match: (p: string) => boolean }[] = [
@@ -67,7 +67,7 @@ export function shell(me: Me, title: string, body: Raw, opts: { sub?: string; ac
           ${opts.crumbs ? html`<div class="crumbs">${opts.crumbs}</div>` : ""}
           <div class="page-head"><div><h1>${title}</h1>${opts.sub ? html`<p>${opts.sub}</p>` : ""}</div>${opts.actions ?? ""}</div>
           ${body}
-          <footer class="console-footer">${COPYRIGHT} · <a href="/terms">Terms and data statement</a> · <a href="/dev/guide#security">Security</a></footer>
+          <footer class="console-footer">${COPYRIGHT} · <a href="/terms">Terms and data statement</a> · <a href="/dev/guide#security">Security</a> · <a href="${SOURCE_URL}" target="_blank" rel="noopener">Source</a></footer>
         </main>
       </div>
     </div>

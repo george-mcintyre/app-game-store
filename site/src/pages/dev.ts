@@ -4,6 +4,7 @@ import { navigate } from "../nav.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
 import { appIcon, callout, copyRow, copyText, emptyState, errorBox, fmtDate, icon, pill, statePill, toast, wireCopy, wireImages } from "../ui.js";
 import { AGENT_REPO_PROMPT, AGENT_STORE_PROMPT } from "./prompts.js";
+import { SOURCE_URL } from "./public.js";
 import { failed, mountShell, requireMe } from "./shell.js";
 
 type Ctx = { root: HTMLElement; me: Me };
@@ -751,6 +752,7 @@ export async function agents(root: HTMLElement): Promise<void> {
           </table>
           <pre class="mt-s"><code>curl -H "Authorization: Bearer $OURAPPS_API_KEY" \\
   ${location.origin}/api/dev/apps</code></pre>
+          <p class="small muted mt-s">Source code and issues: <a href="${SOURCE_URL}" target="_blank" rel="noopener">github.com/george-mcintyre/ourapps</a>.</p>
         </div>
       </div>
 

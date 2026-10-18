@@ -2,7 +2,7 @@
 
 ## Repo identity
 
-`git -C app-game-store remote -v` must show `github.com/george-mcintyre/app-game-store`.
+`git -C ourapps remote -v` must show `github.com/george-mcintyre/ourapps`.
 Never derive the repo from the folder name.
 
 ## Branch model
@@ -10,7 +10,7 @@ Never derive the repo from the folder name.
 - `main` is deployable. Deploy is manual: `wrangler deploy` from a clean `main`.
 - Work on `feat/<topic>`, `fix/<topic>`, `chore/<topic>` branches. One feature per PR.
 - Commit small and often, imperative subject, one line. No em dashes anywhere.
-- Open PRs with `gh pr create --repo george-mcintyre/app-game-store --base main`.
+- Open PRs with `gh pr create --repo george-mcintyre/ourapps --base main`.
 - Merge with `gh pr merge --merge` (keep the small commits).
 
 ## Before a PR
@@ -26,7 +26,8 @@ Never derive the repo from the folder name.
 1. `npm run build -w site`.
 2. `cd worker`; first time: `npx wrangler kv namespace create WEBAPP_FILES` and paste the id
    into `wrangler.jsonc`; `npx wrangler d1 create app-game-store` and paste the id into
-   `wrangler.jsonc`; then `npx wrangler d1 migrations apply app-game-store --remote`.
+   `wrangler.jsonc`; then `npx wrangler d1 migrations apply app-game-store --remote`. The D1
+   database and the Worker keep the name `app-game-store` after the repository rename.
 3. `npx wrangler deploy`.
 4. `PUBLIC_ORIGIN` in `wrangler.jsonc` must equal the live origin; the GitHub OAuth App
    callback must be `<PUBLIC_ORIGIN>/api/auth/callback`.

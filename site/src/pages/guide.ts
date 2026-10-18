@@ -443,7 +443,7 @@ suspend fun checkForUpdate(context: Context) {
           <li>Approve iPhones you recognise by name. Each approval registers a device on your Apple account for the membership year.</li>
           <li>Check Settings, Security now and then. Anything you do not recognise: sign out everywhere, revoke keys, and replace the GitHub token and Apple key at their sources.</li>
         </ul>
-        <p class="small muted">Full technical statement, including the rotation procedure and what is not covered: SECURITY.md in the source repository.</p>
+        <p class="small muted">Full technical statement, including the rotation procedure and what is not covered: <a href="https://github.com/george-mcintyre/ourapps/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a> in the source repository.</p>
       `,
     },
     {
@@ -500,7 +500,7 @@ export async function guide(root: HTMLElement): Promise<void> {
         </nav>
         <article>
           ${list.map((s) => html`<section id="${s.id}"><h2>${s.title}</h2>${s.body}</section>`)}
-          <p class="small faint">Something missing or wrong? The console is open source; the repository link is on the agents page.</p>
+          <p class="small faint">Something missing or wrong? The console is open source: <a href="https://github.com/george-mcintyre/ourapps/issues" target="_blank" rel="noopener">open an issue on github.com/george-mcintyre/ourapps</a>.</p>
         </article>
       </div>
     `,

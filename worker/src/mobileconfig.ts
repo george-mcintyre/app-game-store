@@ -29,7 +29,7 @@ export function enrolmentProfile(opts: { callbackUrl: string; appName: string; o
   <key>PayloadUUID</key>
   <string>${escapeXml(opts.uuid)}</string>
   <key>PayloadIdentifier</key>
-  <string>com.georgemcintyre.app-game-store.enrol</string>
+  <string>app.ourapps.enrol</string>
   <key>PayloadDescription</key>
   <string>${escapeXml(`Tells ${opts.organisation} which phone to build ${opts.appName} for. It is removed automatically after install.`)}</string>
   <key>PayloadType</key>

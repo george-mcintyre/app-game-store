@@ -431,6 +431,10 @@ describe("API keys and agent endpoints", () => {
     expect(offline.ok).toBe(false);
     expect(offline.errors[0]).toMatch(/599/);
 
+    const hidden = { ...githubRoutes(), "GET api.github.com/repos/o/skull/releases/latest": () => new Response("{}", { status: 404 }) };
+    const withToken = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/release`), env, { ...deps, fetch: fakeFetch(hidden).fetch })).json()) as { errors: string[] };
+    expect(withToken.errors[0]).toMatch(/does not include this repository/);
+
     const noToken = await signIn(env, deps, { id: 11, login: "tom", name: "Tom" });
     const { app } = (await (await handle(api(noToken, "POST", "/api/dev/apps", { name: "Private", repo: "o/private" }), env, deps)).json()) as { app: { id: string } };
     const routes = { "GET api.github.com/repos/o/private/releases/latest": () => new Response("{}", { status: 404 }) };

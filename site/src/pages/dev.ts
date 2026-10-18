@@ -328,7 +328,7 @@ async function loadReleaseCard(root: HTMLElement, appId: string, app: DevApp): P
           <div class="mt small muted">
             Fix in this order:
             <ol class="bullets">
-              ${!r.githubToken ? html`<li>Save a GitHub token in <a href="/dev/settings#credentials">Settings</a> (private repositories are invisible without one).</li>` : ""}
+              ${!r.githubToken ? html`<li>Save a GitHub token in <a href="/dev/settings#credentials">Settings</a> (private repositories are invisible without one).</li>` : html`<li>Check that the GitHub token saved in <a href="/dev/settings#credentials">Settings</a> includes ${app.repo}: on GitHub, edit the token and add the repository under Repository access. GitHub reports a repository it will not show the token as missing.</li>`}
               <li>Publish a GitHub Release (not a draft, not a pre-release) with an asset named <code>my-app.json</code>.</li>
               <li>Make sure my-app.json follows schema 1; the error above names the field when it does not.</li>
               <li>Let a coding agent do it: copy the prompt from <a href="/dev/agents">Agents and API</a>.</li>
@@ -558,6 +558,7 @@ const EVENT_LABELS: Record<string, string> = {
   "build-token-rotated": "Build token rotated",
   "device-approved": "Device approved",
   "device-rejected": "Device rejected",
+  "app-created": "App created",
   "app-deleted": "App deleted",
 };
 

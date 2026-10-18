@@ -14,6 +14,7 @@ export type AuditEvent =
   | "build-token-rotated"
   | "device-approved"
   | "device-rejected"
+  | "app-created"
   | "app-deleted"
   | "terms-accepted";
 

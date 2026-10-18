@@ -5,9 +5,18 @@ import { Db, type Developer, type KeyScope } from "./db.js";
 import type { Deps, Env } from "./env.js";
 import { HttpError, bearer } from "./http.js";
 
-export const SESSION_COOKIE = "oa_session";
 export const API_KEY_PREFIX = "oa_";
-const STATE_COOKIE = "oa_state";
+
+// "__Host-" cookies cannot be set by a subdomain or with a Domain attribute, so a web app served
+// on <linkId>.ourapps.app cannot plant a session or sign-in state cookie for the console.
+// Plain names only for http://localhost development, where Safari refuses Secure cookies.
+export function sessionCookieName(env: Env): string {
+  return isSecure(env) ? "__Host-oa_session" : "oa_session";
+}
+
+function stateCookieName(env: Env): string {
+  return isSecure(env) ? "__Host-oa_state" : "oa_state";
+}
 const SESSION_DAYS = 30;
 
 // Paths a developer slug may not take.
@@ -55,7 +64,7 @@ export function startLogin(env: Env): Response {
   });
   return new Response(null, {
     status: 302,
-    headers: { Location: `${env.GITHUB_OAUTH_BASE}/login/oauth/authorize?${params}`, "Set-Cookie": cookie(STATE_COOKIE, state, 600, isSecure(env)) },
+    headers: { Location: `${env.GITHUB_OAUTH_BASE}/login/oauth/authorize?${params}`, "Set-Cookie": cookie(stateCookieName(env), state, 600, isSecure(env)) },
   });
 }
 
@@ -65,7 +74,7 @@ export async function finishLogin(request: Request, env: Env, deps: Deps): Promi
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  if (!code || !state || parseCookies(request)[STATE_COOKIE] !== state) throw new HttpError(400, "sign-in state mismatch; try again");
+  if (!code || !state || parseCookies(request)[stateCookieName(env)] !== state) throw new HttpError(400, "sign-in state mismatch; try again");
 
   const tokenRes = await deps.fetch(`${env.GITHUB_OAUTH_BASE}/login/oauth/access_token`, {
     method: "POST",
@@ -95,19 +104,19 @@ export async function finishLogin(request: Request, env: Env, deps: Deps): Promi
     status: 302,
     headers: {
       Location: `${env.PUBLIC_ORIGIN}/dev`,
-      "Set-Cookie": cookie(SESSION_COOKIE, sessionId, SESSION_DAYS * 86_400, isSecure(env)),
+      "Set-Cookie": cookie(sessionCookieName(env), sessionId, SESSION_DAYS * 86_400, isSecure(env)),
     },
   });
 }
 
 export async function logout(request: Request, env: Env, deps: Deps): Promise<Response> {
-  const id = parseCookies(request)[SESSION_COOKIE];
+  const id = parseCookies(request)[sessionCookieName(env)];
   if (id) {
     const dev = await lookupSession(env, id, deps.now().toISOString());
     await Db.from(env).deleteSession(await sessionHash(env, id));
     if (dev) await audit(request, env, deps, dev.id, "sign-out");
   }
-  return new Response(null, { status: 302, headers: { Location: `${env.PUBLIC_ORIGIN}/`, "Set-Cookie": cookie(SESSION_COOKIE, "", 0, isSecure(env)) } });
+  return new Response(null, { status: 302, headers: { Location: `${env.PUBLIC_ORIGIN}/`, "Set-Cookie": cookie(sessionCookieName(env), "", 0, isSecure(env)) } });
 }
 
 // Ends every session of the developer, including this one.
@@ -117,7 +126,7 @@ export async function logoutEverywhere(request: Request, env: Env, deps: Deps, d
   await audit(request, env, deps, dev.id, "sign-out-everywhere", `${count} session${count === 1 ? "" : "s"}`);
   return new Response(JSON.stringify({ ok: true, sessions: count }), {
     status: 200,
-    headers: { "Content-Type": "application/json", "Set-Cookie": cookie(SESSION_COOKIE, "", 0, isSecure(env)) },
+    headers: { "Content-Type": "application/json", "Set-Cookie": cookie(sessionCookieName(env), "", 0, isSecure(env)) },
   });
 }
 
@@ -168,7 +177,7 @@ export async function currentDeveloper(request: Request, env: Env, deps: Deps): 
     if (!key.lastUsedAt || now.getTime() - Date.parse(key.lastUsedAt) > 10 * 60_000) await db.touchApiKey(key.id, now.toISOString());
     return { ...dev, authVia: "key", scope: key.scope, keyId: key.id };
   }
-  const id = parseCookies(request)[SESSION_COOKIE];
+  const id = parseCookies(request)[sessionCookieName(env)];
   if (!id) return null;
   const dev = await lookupSession(env, id, now.toISOString());
   return dev ? { ...dev, authVia: "session", scope: "manage" } : null;
@@ -206,4 +215,8 @@ async function freeSlug(db: Db, login: string): Promise<string> {
   let slug = base;
   for (let n = 2; RESERVED_SLUGS.has(slug) || (await db.developerBySlug(slug)); n++) slug = `${base}-${n}`;
   return slug;
+}
+
+export function clearSessionCookie(env: Env): string {
+  return cookie(sessionCookieName(env), "", 0, isSecure(env));
 }

@@ -1,7 +1,7 @@
 // Developer dashboard routes, all behind the session cookie.
 import { TERMS_VERSION } from "@my/store-shared";
 import { audit } from "../audit.js";
-import { RESERVED_SLUGS, apiKeyHash, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
+import { RESERVED_SLUGS, apiKeyHash, clearSessionCookie, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
 import { randomId, tokenHash, validateAppleKey } from "../crypto.js";
 import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
@@ -93,7 +93,7 @@ export async function deleteAccount(request: Request, env: Env, dev: AuthedDevel
   await Db.from(env).deleteDeveloper(dev.id);
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
-    headers: { "Content-Type": "application/json", "Set-Cookie": `oa_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${env.PUBLIC_ORIGIN.startsWith("https://") ? "; Secure" : ""}` },
+    headers: { "Content-Type": "application/json", "Set-Cookie": clearSessionCookie(env) },
   });
 }
 

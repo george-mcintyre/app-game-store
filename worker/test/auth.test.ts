@@ -19,13 +19,13 @@ describe("GitHub sign-in", () => {
     expect(loc.origin + loc.pathname).toBe("https://github.com/login/oauth/authorize");
     expect(loc.searchParams.get("client_id")).toBe("test-client-id");
     expect(loc.searchParams.get("redirect_uri")).toBe(`${BASE}/api/auth/callback`);
-    expect(res.headers.get("Set-Cookie")).toMatch(/^oa_state=[0-9a-f]{32}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=600; Secure$/);
+    expect(res.headers.get("Set-Cookie")).toMatch(/^__Host-oa_state=[0-9a-f]{32}; Path=\/; HttpOnly; SameSite=Lax; Max-Age=600; Secure$/);
   });
 
   it("creates the developer on first sign-in and reuses it after", async () => {
     const deps = testDeps();
     const cookie = await signIn(env, deps);
-    expect(cookie).toMatch(/^oa_session=[0-9a-f]{48}$/);
+    expect(cookie).toMatch(/^__Host-oa_session=[0-9a-f]{48}$/);
     const me = await handle(api(cookie, "GET", "/api/dev/me"), env, deps);
     expect(me.status).toBe(200);
     const body = (await me.json()) as { developer: { slug: string; displayName: string; githubLogin: string }; secrets: { apple: boolean; github: boolean } };
@@ -48,7 +48,7 @@ describe("GitHub sign-in", () => {
   });
 
   it("rejects a callback with a wrong state", async () => {
-    const res = await handle(new Request(`${BASE}/api/auth/callback?code=abc&state=zzz`, { headers: { Cookie: "oa_state=other" } }), env, testDeps(fakeFetch(oauthRoutes()).fetch));
+    const res = await handle(new Request(`${BASE}/api/auth/callback?code=abc&state=zzz`, { headers: { Cookie: "__Host-oa_state=other" } }), env, testDeps(fakeFetch(oauthRoutes()).fetch));
     expect(res.status).toBe(400);
   });
 
@@ -215,10 +215,22 @@ describe("account settings", () => {
     expect(rows.results[0].id.startsWith("h2:")).toBe(true);
 
     await env.DB.prepare("INSERT INTO sessions (id, developer_id, expires_at) VALUES (?, (SELECT id FROM developers LIMIT 1), ?)").bind("legacyraw", "2030-01-01T00:00:00Z").run();
-    expect((await handle(api("oa_session=legacyraw", "GET", "/api/dev/me"), env, deps)).status).toBe(200);
+    expect((await handle(api("__Host-oa_session=legacyraw", "GET", "/api/dev/me"), env, deps)).status).toBe(200);
     const upgraded = await env.DB.prepare("SELECT id FROM sessions WHERE id = ?").bind("legacyraw").first();
     expect(upgraded).toBeNull();
-    expect((await handle(api("oa_session=legacyraw", "GET", "/api/dev/me"), env, deps)).status).toBe(200);
+    expect((await handle(api("__Host-oa_session=legacyraw", "GET", "/api/dev/me"), env, deps)).status).toBe(200);
+  });
+
+  it("ignores session and state cookies without the __Host- prefix", async () => {
+    const deps = testDeps();
+    const cookie = await signIn(env, deps);
+    const id = cookie.split("=")[1];
+    // A subdomain can toss "oa_session=..." with Domain=ourapps.app; it must not authenticate.
+    expect((await handle(api(`oa_session=${id}`, "GET", "/api/dev/me"), env, deps)).status).toBe(401);
+    const start = await handle(new Request(`${BASE}/api/auth/github`), env, deps);
+    const state = new URL(start.headers.get("Location")!).searchParams.get("state")!;
+    const tossed = await handle(new Request(`${BASE}/api/auth/callback?code=abc&state=${state}`, { headers: { Cookie: `oa_state=${state}` } }), env, testDeps(fakeFetch(oauthRoutes()).fetch));
+    expect(tossed.status).toBe(400);
   });
 
   it("signs out everywhere and records security events", async () => {

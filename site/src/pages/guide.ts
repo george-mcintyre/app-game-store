@@ -1,6 +1,7 @@
 // The developer guide: everything from first sign-in to the first friend installing.
 import { html, type Raw } from "../html.js";
 import { callout, icon } from "../ui.js";
+import { diagram, wireFigures } from "./reference.js";
 import { mountShell, requireMe } from "./shell.js";
 
 interface Section { id: string; title: string; body: Raw; sub?: { id: string; title: string }[] }
@@ -54,10 +55,12 @@ function sections(origin: string, slug: string): Section[] {
         <div class="grid-2">
           <div class="card flat"><h3>${icon("android", "icon-20")} Android</h3><p>The page offers a direct download of your signed APK and walks the friend through the one-time "allow from this source" prompt. Nothing else is needed.</p></div>
           <div class="card flat"><h3>${icon("phone", "icon-20")} iPhone</h3><p>Apple only runs an app on iPhones whose device number is in the app's signing profile. The page registers the friend's iPhone, you approve it, the console registers it with Apple and asks your repository to rebuild, and the page turns into an Install button. This is Apple's Ad Hoc distribution; no review, no TestFlight, 100 iPhones per year.</p></div>
-          <div class="card flat"><h3>${icon("globe", "icon-20")} Web apps</h3><p>If your my-app.json lists a web address, the page shows "Open the web app" and how to add it to the home screen.</p></div>
+          <div class="card flat"><h3>${icon("globe", "icon-20")} Web apps</h3><p>Ship your built site as <code>web.zip</code> and ourapps serves it at its own address per share link, with a one-tap offer to add it to the home screen. A site you host yourself is linked instead. Details in the <a href="/reference#web">reference</a>.</p></div>
           <div class="card flat"><h3>${icon("lock", "icon-20")} Private by design</h3><p>No search, no listing, no index. Install pages live at random addresses, the app files are served through links that expire after an hour, and a share link can be revoked at any time.</p></div>
         </div>
         <p>The whole thing runs on free tiers. The only paid item is Apple's developer membership, which you need for iPhone apps anyway.</p>
+        ${diagram("architecture.png", "How a typical app is hosted and installed through ourapps")}
+        <p class="small muted">ourapps distributes; your repository builds; your backend, if you have one, serves the app directly. Every app type with its own diagram and the exact limits: <a href="/reference">technical reference</a>.</p>
       `,
     },
     {
@@ -514,4 +517,5 @@ export async function guide(root: HTMLElement): Promise<void> {
     { rootMargin: "-10% 0px -80% 0px" },
   );
   root.querySelectorAll("article section").forEach((s) => observer.observe(s));
+  wireFigures(root);
 }

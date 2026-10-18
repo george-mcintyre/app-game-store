@@ -82,9 +82,14 @@ function architectureSvg(): Raw {
   </svg>`);
 }
 
-// A generated illustration, shown only when the file exists in site/public/reference/.
+// A generated illustration (WebP, PNG fallback) that opens full size; removed when the file is missing.
+export function diagram(file: string, alt: string): Raw {
+  const base = file.replace(/\.png$/, "");
+  return html`<a class="figure-link" href="/reference/${base}.png" target="_blank" rel="noopener" title="Open full size"><picture><source srcset="/reference/${base}.webp" type="image/webp" /><img class="ref-figure" src="/reference/${base}.png" alt="${alt}" width="1672" height="941" data-optional loading="lazy" /></picture><span class="figure-hint">Open full size</span></a>`;
+}
+
 function optionalFigure(file: string, alt: string): Raw {
-  return html`<img class="ref-figure" src="/reference/${file}" alt="${alt}" data-optional loading="lazy" />`;
+  return diagram(file, alt);
 }
 
 interface Topology {
@@ -226,7 +231,7 @@ function body(): Raw {
 
         <section id="where">
           <h2>Where everything runs</h2>
-          <figure class="ref-diagram">${optionalFigure("architecture.png", "How a typical app is hosted and installed through ourapps")}<div class="svg-fallback">${architectureSvg()}</div></figure>
+          <figure class="ref-diagram">${optionalFigure("architecture.png", "How a typical app is hosted and installed through ourapps")}<div class="svg-fallback hidden">${architectureSvg()}</div></figure>
           <p>Three parties, three jobs. <b>Your repository</b> builds and holds the release files. <b>ourapps</b> turns a share link into an install: it reads the release, signs short-lived download links, registers iPhones with Apple, and hosts web bundles. <b>Your backend</b>, if the app has one, is wherever you put it; the installed apps talk to it directly, so ourapps never sees app traffic and its limits never apply to your API.</p>
           <table class="table">
             <tr><th>Thing</th><th>Lives in</th><th>Reaches the phone by</th></tr>
@@ -342,7 +347,8 @@ unzip app.apks universal.apk</code></pre></li>
 
         <section id="topologies">
           <h2>Diagrams by app type</h2>
-          <div class="grid-2">
+          <p class="muted">Each diagram opens full size in a new tab.</p>
+          <div class="stack">
             ${TOPOLOGIES.map((t) => html`
               <div class="card topo" id="${t.id}">
                 ${optionalFigure(t.file, t.title)}
@@ -357,15 +363,16 @@ unzip app.apks universal.apk</code></pre></li>
   `;
 }
 
-function wireFigures(root: HTMLElement): void {
+// Images show by default; a missing one is removed and, for the architecture figure, the drawn diagram takes its place.
+export function wireFigures(root: HTMLElement): void {
   root.querySelectorAll<HTMLImageElement>("img[data-optional]").forEach((img) => {
-    const show = () => {
-      img.classList.add("loaded");
-      img.closest("figure")?.querySelector(".svg-fallback")?.classList.add("hidden");
+    const link = img.closest<HTMLElement>(".figure-link");
+    const fail = () => {
+      img.closest("figure")?.querySelector(".svg-fallback")?.classList.remove("hidden");
+      (link ?? img).remove();
     };
-    if (img.complete && img.naturalWidth > 0) show();
-    img.addEventListener("load", show, { once: true });
-    img.addEventListener("error", () => img.remove(), { once: true });
+    if (img.complete && img.naturalWidth === 0 && img.currentSrc) fail();
+    else img.addEventListener("error", fail, { once: true });
   });
 }
 

@@ -4,6 +4,7 @@
 
 - [API reference for agents](https://ourapps.app/agents.md): every endpoint, auth with `Authorization: Bearer oa_...`, workflows.
 - [Technical reference](https://ourapps.app/reference): supported app types, where every part runs, web bundle limits, engines and frameworks.
+- [Free services for small-audience apps](https://ourapps.app/free-tiers.md): video, realtime, databases, AI and more on free plans, with agent setup steps.
 - [Repository contract](https://ourapps.app/contract.md): what an app's GitHub repository must publish and the two calls its workflow makes.
 - Console: https://ourapps.app/dev (sign in with GitHub). API keys and agent prompts: https://ourapps.app/dev/agents.
 - Source: https://github.com/george-mcintyre/ourapps

@@ -49,6 +49,7 @@ steps: `SECURITY.md`.
 | `site/`    | Vite + TypeScript site served by the worker                      |
 | `shared/`  | my-app.json validation and the enrolment state machine           |
 | `site/public/agents.md` | API reference for agents, served at /agents.md            |
+| `site/src/freeTiers.ts` | Free-service catalogue: guide section, /small, /free-tiers.md |
 | `CONTRACT.md` | what an app repository must implement                         |
 
 ## What kinds of app

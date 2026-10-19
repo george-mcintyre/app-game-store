@@ -34,6 +34,10 @@ Full detail: https://ourapps.app/reference.
 - Web apps needing a server: host them yourself and put their URL in `install.pwa`; ourapps links to them, never proxies.
 - Backends, APIs and databases are never hosted by ourapps; apps call them directly. Web bundles must allow the link origins in CORS and authenticate with tokens, not cookies.
 
+## Free services for the app's backend
+
+https://ourapps.app/free-tiers.md lists services whose free plans fit apps with a few dozen users (realtime servers, video calls, databases, sign-in, AI, notifications, email, maps, analytics, builds, hosting), each with limits, catches, setup steps and secret names. Re-check the linked source before relying on a number. A developer's personal AI subscription (Claude, ChatGPT, Gemini, Copilot) must never be used to serve the app's users.
+
 ## What the developer must do themselves
 
 Tell the developer plainly when a task is theirs; do not try to work around it:

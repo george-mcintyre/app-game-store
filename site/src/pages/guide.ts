@@ -1,6 +1,7 @@
 // The developer guide: everything from first sign-in to the first friend installing.
-import { html, type Raw } from "../html.js";
-import { callout, icon } from "../ui.js";
+import { CATEGORIES, CHECKED, PRINCIPLES, servicePrompt, type Service } from "../freeTiers.js";
+import { escapeHtml, html, raw, type Raw } from "../html.js";
+import { callout, icon, wireCopy } from "../ui.js";
 import { diagram, wireFigures } from "./reference.js";
 import { mountShell, requireMe } from "./shell.js";
 
@@ -382,6 +383,12 @@ suspend fun checkForUpdate(context: Context) {
       `,
     },
     {
+      id: "free-tiers",
+      title: "Free services: why small apps cost nothing to run",
+      sub: CATEGORIES.map((c) => ({ id: c.id, title: c.title })),
+      body: freeTiersBody(),
+    },
+    {
       id: "security",
       title: "Security: how your secrets, your account and your friends' iPhones are protected",
       sub: [
@@ -484,6 +491,58 @@ suspend fun checkForUpdate(context: Context) {
   ];
 }
 
+// Escapes text and turns `code` spans into <code>.
+function inline(text: string): Raw {
+  return raw(escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>"));
+}
+
+// Host plus the last path segment, so several links to one site stay distinct.
+function sourceLabel(u: string): string {
+  const url = new URL(u);
+  const last = url.pathname.split("/").filter(Boolean).pop();
+  return last ? `${url.host.replace(/^www\./, "")}/${last}` : url.host.replace(/^www\./, "");
+}
+
+function serviceCard(s: Service): Raw {
+  const badge = s.verdict === "pick" ? html`<span class="pill ok">recommended</span>` : s.verdict === "avoid" ? html`<span class="pill bad">avoid</span>` : "";
+  return html`
+    <details class="service" id="svc-${s.id}">
+      <summary><b>${s.name}</b> ${badge} <span class="faint small">${s.plan}</span><span class="service-fits small muted">${s.fits}</span></summary>
+      <div class="service-body">
+        <div class="grid-2">
+          <div><h4>Free allowance</h4><ul class="bullets small">${s.free.map((f) => html`<li>${inline(f)}</li>`)}</ul></div>
+          <div><h4>Watch out</h4><ul class="bullets small">${s.catches.map((f) => html`<li>${inline(f)}</li>`)}</ul></div>
+        </div>
+        <h4>Agent setup</h4>
+        <ol class="bullets small">${s.setup.map((f) => html`<li>${inline(f)}</li>`)}</ol>
+        ${s.env?.length ? html`<p class="small">Secrets: ${raw(s.env.map((e) => `<code>${escapeHtml(e)}</code>`).join(", "))}</p>` : ""}
+        <p class="tiny faint">Sources: ${raw(s.sources.map((u) => `<a href="${escapeHtml(u)}" target="_blank" rel="noopener">${escapeHtml(sourceLabel(u))}</a>`).join(" · "))}</p>
+        ${s.verdict !== "avoid" ? html`<button type="button" class="btn sm secondary" data-copy="${servicePrompt(s)}">${icon("copy")} Copy agent prompt</button>` : ""}
+      </div>
+    </details>`;
+}
+
+function freeTiersBody(): Raw {
+  return html`
+    <p>AI coding agents make it practical to build an app for eight people. That has a second effect that is easy to miss: <b>at eight people, the expensive parts of an app become free.</b> Video calls, realtime multiplayer servers, databases and AI all have free plans sized for hobby use, and a group of friends sits comfortably inside them. A public app with the same features would pay for every one.</p>
+    <div class="grid-2">
+      <div class="card flat"><h3>${icon("devices", "icon-20")} Video calls</h3><p class="small">LiveKit's free plan gives 5,000 participant minutes a month: about twenty one-hour calls with four people. Skull and McInPoker put every player's face at the table on it.</p></div>
+      <div class="card flat"><h3>${icon("apps", "icon-20")} Multiplayer</h3><p class="small">Skull's own cost model (<code>skull/server</code>, <code>npm run costs</code>) shows a four-player table on hibernating WebSockets fits about 80 hours of play a day in Cloudflare's free plan, against about 23 hours when the same game polls.</p></div>
+      <div class="card flat"><h3>${icon("lock", "icon-20")} Data</h3><p class="small">Free databases hold hundreds of megabytes; a game history or a shared list for a family is kilobytes.</p></div>
+      <div class="card flat"><h3>${icon("bot", "icon-20")} AI</h3><p class="small">On-device models (Apple, Android, Chrome) cost nothing per use, and free tiers cover a few hundred requests a day. Your personal AI subscription builds the app but must not power it for others; see the AI section.</p></div>
+    </div>
+    <h3>Rules that apply to every service</h3>
+    <ul class="bullets">${PRINCIPLES.map((p) => html`<li>${inline(p)}</li>`)}</ul>
+    ${callout("info", html`<p><b>For agents:</b> everything below, with full setup steps, is at <a href="/free-tiers.md">ourapps.app/free-tiers.md</a>. Each service has a <b>Copy agent prompt</b> button that tells your agent to read its section, check the current limits and wire it in. Numbers were checked on the providers' pages on ${CHECKED}; free tiers change, so the prompt asks the agent to re-check.</p>`)}
+    ${CATEGORIES.map((c) => html`
+      <h3 id="${c.id}" class="ft-category">${c.title}</h3>
+      <p>${inline(c.why)}</p>
+      ${c.practices?.length ? html`<details class="practices"><summary><b>Best practices for ${c.title.toLowerCase()}</b></summary><ul class="bullets small">${c.practices.map((p) => html`<li>${inline(p)}</li>`)}</ul></details>` : ""}
+      <div class="services">${c.services.map(serviceCard)}</div>
+    `)}
+  `;
+}
+
 export async function guide(root: HTMLElement): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
@@ -518,4 +577,5 @@ export async function guide(root: HTMLElement): Promise<void> {
   );
   root.querySelectorAll("article section").forEach((s) => observer.observe(s));
   wireFigures(root);
+  wireCopy(root);
 }

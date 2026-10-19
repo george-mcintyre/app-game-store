@@ -20,7 +20,7 @@ function stateCookieName(env: Env): string {
 const SESSION_DAYS = 30;
 
 // Paths a developer slug may not take.
-export const RESERVED_SLUGS = new Set(["api", "dl", "dev", "l", "example", "terms", "reference", "assets", "robots.txt", "favicon.ico", "favicon.svg", "index.html", "agents.md", "contract.md", "llms.txt"]);
+export const RESERVED_SLUGS = new Set(["api", "dl", "dev", "l", "example", "terms", "reference", "small", "free-tiers.md", "assets", "robots.txt", "favicon.ico", "favicon.svg", "index.html", "agents.md", "contract.md", "llms.txt"]);
 
 export function parseCookies(request: Request): Record<string, string> {
   const out: Record<string, string> = {};

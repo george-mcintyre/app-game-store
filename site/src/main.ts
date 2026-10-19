@@ -2,6 +2,7 @@ import { agents, appForm, appLinks, appsPage, dashboard, devices, settings } fro
 import { exampleApp, examplePage } from "./pages/example.js";
 import { guide } from "./pages/guide.js";
 import { referencePage } from "./pages/reference.js";
+import { smallPage } from "./pages/small.js";
 import { termsPage } from "./pages/terms.js";
 import { devPage, installPage, landing, notFound, previewPage, waitPage } from "./pages/public.js";
 import { navigate } from "./nav.js";
@@ -29,6 +30,7 @@ async function render(): Promise<void> {
     case "agents": await agents(root); break;
     case "terms": await termsPage(root); break;
     case "reference": await referencePage(root); break;
+    case "small": await smallPage(root); break;
     case "example": await examplePage(root); break;
     case "example-app": await exampleApp(root); break;
     default: notFound(root);

@@ -66,6 +66,17 @@ export async function landing(root: HTMLElement): Promise<void> {
           </div>
         </section>
 
+        <section class="card pad-l" style="margin-top:14px">
+          <div class="row wrap top" style="gap:20px">
+            <div style="flex:1 1 300px">
+              <span class="pill accent">Why small is powerful</span>
+              <h2 style="margin-top:8px">At eight people, the expensive parts are free</h2>
+              <p class="muted">Video calls, live multiplayer, databases and AI cost a public app money every month. For a family or a group of friends they fit inside free plans: LiveKit's 5,000 free video minutes a month is about twenty one-hour calls for four, and Cloudflare's free plan runs about 80 hours of Skull a day.</p>
+            </div>
+            <div class="stack" style="flex:0 0 auto"><a class="btn" href="/small">How it works ${icon("arrow")}</a><a class="btn secondary" href="/free-tiers.md">The list of free services</a></div>
+          </div>
+        </section>
+
         <section class="how" id="how">
           <div class="section-title"><h2>For your friends</h2></div>
           <div class="grid-3">

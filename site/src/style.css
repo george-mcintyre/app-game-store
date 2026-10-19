@@ -465,7 +465,8 @@ a.phone:hover { transform: translateY(-3px); }
 .app-card .name { font-weight: 700; font-size: 16px; }
 .app-card .meta { font-size: 13px; color: var(--text-2); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 2px; }
 .app-card .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 14px; }
+/* Two cards per row, each half the width; one per row when half would be under 380px (Edit, Share links and Preview need a 358px card to stay on one line). */
+.app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, max(380px, calc((100% - 14px) / 2))), 1fr)); gap: 14px; }
 .app-grid > * { min-width: 0; }
 .form-section { display: grid; grid-template-columns: 260px 1fr; gap: 24px; padding: 22px 0; border-top: 1px solid var(--line); }
 .form-section:first-of-type { border-top: 0; padding-top: 0; }

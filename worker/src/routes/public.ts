@@ -1,4 +1,5 @@
 // Routes a friend or a visitor hits without signing in.
+import { SCREENSHOT_PLATFORMS, type ScreenshotSets } from "@my/store-shared";
 import { renderSVG } from "uqr";
 import { Db, type AppRow, type Developer, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
@@ -23,6 +24,7 @@ export function appDetails(app: AppRow) {
     privacySummary: app.privacySummary,
     iconUrl: app.iconUrl,
     screenshots: app.screenshots,
+    screenshotsByPlatform: app.screenshotsByPlatform,
     updatedAt: app.updatedAt,
   };
 }
@@ -46,24 +48,33 @@ export async function devPage(env: Env, slug: string): Promise<Response> {
 export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Developer, linkId: string | null) {
   const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
   const historyPromise = loadHistory(env, deps, app, secrets.githubToken);
+  // Private release assets need the token; the browser gets signed links instead.
+  const sign = async (u: string) => (u && new URL(u).host === "api.github.com" ? dlUrl(env, deps, { url: u, kind: "icon", dev: dev.id }) : u);
+  const signAll = (list: string[]) => Promise.all(list.map(sign));
   let manifest = null;
   let manifestError: string | null = null;
   try {
     const release = await resolveRelease(env, deps, app, secrets.githubToken);
     manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
     if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = linkId ? webAppUrl(env, linkId) : null;
-    // Private release assets need the token; the browser gets signed links instead.
-    if (new URL(manifest.icon).host === "api.github.com") manifest.icon = await dlUrl(env, deps, { url: manifest.icon, kind: "icon", dev: dev.id });
-    manifest.screenshots = await Promise.all(
-      (manifest.screenshots ?? []).map((u) => (new URL(u).host === "api.github.com" ? dlUrl(env, deps, { url: u, kind: "icon", dev: dev.id }) : Promise.resolve(u))),
-    );
+    manifest.icon = await sign(manifest.icon);
+    manifest.screenshots = await signAll(manifest.screenshots ?? []);
   } catch (err) {
     manifestError = err instanceof Error ? err.message : String(err);
+  }
+  // Dashboard lists win over my-app.json lists; the page picks per platform (see pickScreenshots).
+  const screenshots: ScreenshotSets = { all: app.screenshots.length > 0 ? await signAll(app.screenshots) : (manifest?.screenshots ?? []) };
+  for (const p of SCREENSHOT_PLATFORMS) {
+    const fromDashboard = app.screenshotsByPlatform[p] ?? [];
+    const fromRelease = manifest?.screenshotsByPlatform?.[p] ?? [];
+    if (fromDashboard.length > 0) screenshots[p] = await signAll(fromDashboard);
+    else if (fromRelease.length > 0) screenshots[p] = await signAll(fromRelease);
   }
   return {
     linkId,
     developer: { id: dev.id, slug: dev.slug, displayName: dev.displayName },
-    app: appDetails(app),
+    app: { ...appDetails(app), iconUrl: await sign(app.iconUrl) },
+    screenshots,
     release: manifest
       ? {
           version: manifest.version,

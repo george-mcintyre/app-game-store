@@ -1,5 +1,5 @@
 // Typed D1 access. Rows are snake_case in SQL and camelCase in code.
-import type { EnrolmentState } from "@my/store-shared";
+import type { EnrolmentState, ScreenshotPlatform } from "@my/store-shared";
 import type { Env } from "./env.js";
 
 export interface Developer {
@@ -36,6 +36,7 @@ export interface AppRow {
   privacySummary: string;
   iconUrl: string;
   screenshots: string[];
+  screenshotsByPlatform: Partial<Record<ScreenshotPlatform, string[]>>;
   repo: string;
   manifestUrl: string;
   profileName: string;
@@ -120,7 +121,12 @@ function row<T>(raw: Raw | null, convert: (r: Raw) => Raw = (r) => r): T | null 
   return convert(out) as T;
 }
 
-const appConvert = (r: Raw): Raw => ({ ...r, screenshots: JSON.parse(r.screenshots as string), showOnPage: r.showOnPage === 1 });
+const appConvert = (r: Raw): Raw => ({
+  ...r,
+  screenshots: JSON.parse(r.screenshots as string),
+  screenshotsByPlatform: JSON.parse((r.screenshotsByPlatform as string | undefined) ?? "{}"),
+  showOnPage: r.showOnPage === 1,
+});
 const profileConvert = (r: Raw): Raw => ({ ...r, udids: JSON.parse(r.udids as string) });
 
 export class Db {
@@ -225,12 +231,12 @@ export class Db {
   async insertApp(app: AppRow): Promise<void> {
     await this.d1
       .prepare(
-        `INSERT INTO apps (id, developer_id, name, tagline, description, whats_new, size, min_os, age_note, privacy_summary, icon_url, screenshots, repo, manifest_url, profile_name, show_on_page, build_token_hash, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO apps (id, developer_id, name, tagline, description, whats_new, size, min_os, age_note, privacy_summary, icon_url, screenshots, screenshots_by_platform, repo, manifest_url, profile_name, show_on_page, build_token_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         app.id, app.developerId, app.name, app.tagline, app.description, app.whatsNew, app.size, app.minOs, app.ageNote, app.privacySummary,
-        app.iconUrl, JSON.stringify(app.screenshots), app.repo, app.manifestUrl, app.profileName, app.showOnPage ? 1 : 0, app.buildTokenHash, app.createdAt, app.updatedAt,
+        app.iconUrl, JSON.stringify(app.screenshots), JSON.stringify(app.screenshotsByPlatform), app.repo, app.manifestUrl, app.profileName, app.showOnPage ? 1 : 0, app.buildTokenHash, app.createdAt, app.updatedAt,
       )
       .run();
   }
@@ -238,11 +244,11 @@ export class Db {
   async updateApp(app: AppRow): Promise<void> {
     await this.d1
       .prepare(
-        `UPDATE apps SET name = ?, tagline = ?, description = ?, whats_new = ?, size = ?, min_os = ?, age_note = ?, privacy_summary = ?, icon_url = ?, screenshots = ?, repo = ?, manifest_url = ?, profile_name = ?, show_on_page = ?, build_token_hash = ?, updated_at = ?
+        `UPDATE apps SET name = ?, tagline = ?, description = ?, whats_new = ?, size = ?, min_os = ?, age_note = ?, privacy_summary = ?, icon_url = ?, screenshots = ?, screenshots_by_platform = ?, repo = ?, manifest_url = ?, profile_name = ?, show_on_page = ?, build_token_hash = ?, updated_at = ?
          WHERE id = ?`,
       )
       .bind(
-        app.name, app.tagline, app.description, app.whatsNew, app.size, app.minOs, app.ageNote, app.privacySummary, app.iconUrl, JSON.stringify(app.screenshots),
+        app.name, app.tagline, app.description, app.whatsNew, app.size, app.minOs, app.ageNote, app.privacySummary, app.iconUrl, JSON.stringify(app.screenshots), JSON.stringify(app.screenshotsByPlatform),
         app.repo, app.manifestUrl, app.profileName, app.showOnPage ? 1 : 0, app.buildTokenHash, app.updatedAt, app.id,
       )
       .run();

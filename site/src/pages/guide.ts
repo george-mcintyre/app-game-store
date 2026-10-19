@@ -139,7 +139,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
           <tr><td>What's new</td><td>Its own section, with the version</td><td>Update when you publish.</td></tr>
           <tr><td>Privacy summary</td><td>App privacy card</td><td>Plain words: what is stored, where it goes, who can see it.</td></tr>
           <tr><td>Size, compatibility, age</td><td>Facts strip and Information</td><td>Compatibility is free text, for example "iOS 17 or later".</td></tr>
-          <tr><td>Screenshots</td><td>Preview carousel</td><td>Phone-shaped images, one URL per line. Blank uses the list in my-app.json, then generated previews.</td></tr>
+          <tr><td>Screenshots</td><td>Preview carousel, per version</td><td>A general list plus optional lists for iPhone, iPad, Android and Web, one URL per line, in their own proportions. A version without its own list shows the general one; a single list is shown for every version. Blank lists fall back to my-app.json (<code>screenshots</code> and <code>screenshotsByPlatform</code>), then to generated previews. On a phone or tablet the page shows the matching version; on a computer, a tab per version.</td></tr>
           <tr><td>Repository</td><td>Not shown</td><td><code>owner/name</code>. The console reads the latest release here.</td></tr>
           <tr><td>Ad Hoc profile name</td><td>Not shown</td><td>Must match the profile created in step 2 exactly.</td></tr>
           <tr><td>Show on my public page</td><td>Your /${slug} page</td><td>Details only, never install links. Off by default.</td></tr>

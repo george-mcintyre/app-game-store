@@ -1,5 +1,5 @@
 // Developer dashboard routes, all behind the session cookie.
-import { TERMS_VERSION } from "@my/store-shared";
+import { SCREENSHOT_PLATFORMS, TERMS_VERSION, type ScreenshotPlatform } from "@my/store-shared";
 import { audit } from "../audit.js";
 import { RESERVED_SLUGS, apiKeyHash, clearSessionCookie, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
 import { randomId, tokenHash, validateAppleKey } from "../crypto.js";
@@ -14,6 +14,7 @@ import { buildLinkPage } from "./public.js";
 
 type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName", string>> & {
   screenshots?: unknown;
+  screenshotsByPlatform?: unknown;
   showOnPage?: unknown;
 };
 
@@ -45,6 +46,18 @@ function applyInput(app: AppRow, body: AppInput): void {
   if (body.screenshots !== undefined) {
     if (!Array.isArray(body.screenshots) || body.screenshots.length > 10) throw new HttpError(400, "screenshots must be a list of at most 10 https URLs");
     app.screenshots = body.screenshots.map((s) => httpsUrlOrEmpty(s)).filter((s) => s !== "");
+  }
+  if (body.screenshotsByPlatform !== undefined) {
+    const sp = body.screenshotsByPlatform;
+    if (typeof sp !== "object" || sp === null || Array.isArray(sp)) throw new HttpError(400, "screenshotsByPlatform must be an object with keys iphone, ipad, android and web");
+    const next: Partial<Record<ScreenshotPlatform, string[]>> = {};
+    for (const [key, list] of Object.entries(sp)) {
+      if (!(SCREENSHOT_PLATFORMS as readonly string[]).includes(key)) throw new HttpError(400, "screenshotsByPlatform keys must be iphone, ipad, android or web");
+      if (!Array.isArray(list) || list.length > 10) throw new HttpError(400, `screenshotsByPlatform.${key} must be a list of at most 10 https URLs`);
+      const urls = list.map((u) => httpsUrlOrEmpty(u)).filter((u) => u !== "");
+      if (urls.length > 0) next[key as ScreenshotPlatform] = urls;
+    }
+    app.screenshotsByPlatform = next;
   }
 }
 
@@ -184,6 +197,7 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
     privacySummary: "",
     iconUrl: "",
     screenshots: [],
+    screenshotsByPlatform: {},
     repo: "",
     manifestUrl: "",
     profileName: "",

@@ -309,8 +309,31 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 
 .shots { display: flex; gap: 12px; overflow-x: auto; padding: 6px 0 14px; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .shots::-webkit-scrollbar { display: none; }
-.shots img, .shots svg { height: 420px; width: auto; aspect-ratio: 9 / 19.5; border-radius: 22px; scroll-snap-align: start; flex: none; border: 1px solid var(--line); object-fit: cover; background: var(--pill); }
-@media (max-width: 600px) { .shots img, .shots svg { height: 360px; } }
+/* Real screenshots keep their own proportions (portrait phone, 4:3 tablet, landscape web); placeholders take the version's shape. */
+.shots img, .shots svg { scroll-snap-align: start; flex: none; border: 1px solid var(--line); background: var(--pill); border-radius: 22px; }
+.shots img { width: auto; height: auto; max-height: 420px; max-width: 86vw; }
+.shots.shape-tablet img { border-radius: 18px; }
+.shots.shape-desktop img { max-height: 380px; max-width: min(680px, 86vw); border-radius: 12px; }
+.shots svg.ph-phone { height: 420px; width: auto; aspect-ratio: 390 / 844; }
+.shots svg.ph-tablet { height: 420px; width: auto; aspect-ratio: 834 / 1112; border-radius: 18px; }
+.shots svg.ph-desktop { height: 380px; width: auto; aspect-ratio: 1280 / 800; border-radius: 12px; }
+@media (max-width: 600px) {
+  .shots img { max-height: 360px; }
+  .shots.shape-tablet img { max-height: 300px; }
+  .shots.shape-desktop img { max-height: 210px; }
+  .shots svg.ph-phone { height: 360px; }
+  .shots svg.ph-tablet { height: 300px; }
+  .shots svg.ph-desktop { height: 210px; }
+}
+/* Version tabs, shown when the device cannot be told from the browser. */
+.platform-tabs { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; margin: 4px 0 14px; background: var(--pill); border-radius: 999px; }
+.platform-tabs button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 14px; font-weight: 600; padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+.platform-tabs button svg { width: 16px; height: 16px; }
+.platform-tabs button:hover { color: var(--text); }
+.platform-tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-s); }
+.platform-tabs button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); outline-offset: 1px; }
+.remote-card { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.remote-card .qr svg { width: 132px; height: 132px; }
 
 .store-section { padding: 18px 0; border-top: 1px solid var(--line); }
 .store-section h2 { font-size: 21px; margin-bottom: 8px; }

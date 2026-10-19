@@ -1,4 +1,5 @@
 // Validation for /my-app.json, schema 1. Contract owner: @my:orchestrator.
+import { SCREENSHOT_PLATFORMS, type ScreenshotPlatform } from "./screenshots.js";
 
 export const SUPPORTED_SCHEMA = 1;
 
@@ -12,6 +13,8 @@ export interface AppManifest {
   minPlayers: number;
   maxPlayers: number;
   screenshots?: string[];
+  // Per-platform lists; an empty list counts as not provided.
+  screenshotsByPlatform?: Partial<Record<ScreenshotPlatform, string[]>>;
   install: {
     pwa: string | null;
     android: { apk: string } | null;
@@ -60,6 +63,16 @@ export function validateManifest(input: unknown): ManifestResult {
 
   if (input.screenshots !== undefined) {
     if (!Array.isArray(input.screenshots) || !input.screenshots.every(isHttpsUrl)) errors.push("screenshots must be a list of https URLs");
+  }
+
+  if (input.screenshotsByPlatform !== undefined) {
+    const sp = input.screenshotsByPlatform;
+    if (!isRecord(sp)) errors.push("screenshotsByPlatform must be an object");
+    else
+      for (const [key, list] of Object.entries(sp)) {
+        if (!(SCREENSHOT_PLATFORMS as readonly string[]).includes(key)) errors.push(`screenshotsByPlatform keys must be iphone, ipad, android or web (found "${key.slice(0, 20)}")`);
+        else if (!Array.isArray(list) || !list.every(isHttpsUrl)) errors.push(`screenshotsByPlatform.${key} must be a list of https URLs`);
+      }
   }
 
   const install = input.install;

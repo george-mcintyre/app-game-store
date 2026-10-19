@@ -1,3 +1,5 @@
+import type { ScreenshotPlatform, ScreenshotSets } from "@my/store-shared";
+
 // Calls to the worker on the same origin.
 
 export class ApiError extends Error {
@@ -30,6 +32,7 @@ export interface AppDetails {
   privacySummary: string;
   iconUrl: string;
   screenshots: string[];
+  screenshotsByPlatform?: Partial<Record<ScreenshotPlatform, string[]>>;
   updatedAt: string;
 }
 
@@ -78,6 +81,8 @@ export interface LinkPage {
   release: Release | null;
   releaseError: string | null;
   history: HistoryEntry[];
+  // The general list and the per-platform lists; the page picks one per version.
+  screenshots?: ScreenshotSets;
 }
 
 export interface ShareLink {

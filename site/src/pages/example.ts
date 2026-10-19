@@ -29,7 +29,7 @@ export const POKER_NIGHT: LinkPage = {
     minPlayers: 2,
     maxPlayers: 9,
     install: {
-      pwa: null,
+      pwa: "https://example.invalid/poker-night/",
       android: { apk: "https://example.invalid/poker-night.apk" },
       ios: { bundleId: "com.example.pokernight", adhoc: "https://example.invalid/manifest.plist", testflight: null, devices: ["iphone", "ipad"] },
     },
@@ -39,6 +39,7 @@ export const POKER_NIGHT: LinkPage = {
     fallbackScreenshots: [],
   },
   releaseError: null,
+  screenshots: { all: [] },
   history: [
     { version: "1.3.0", tag: "v1.3.0", title: "", notes: "- Sam's rule is in: dealer's choice on the hour\n- Rematch no longer resets the pizza tab\n- Bigger chip numbers for the far end of the table\n- Help text for the new blinds structure, in Dana's words", date: "2026-10-09T19:30:00.000Z", sha: "a3f9c12e8b7d4f0a", releaseUrl: null, commitUrl: null },
     { version: "1.2.1", tag: "v1.2.1", title: "", notes: "- Pizza tab rounds to the nearest 50p like the table does\n- Seat map remembers who sat where last week", date: "2026-09-18T20:05:00.000Z", sha: "7b21d9ac4e5f0b13", releaseUrl: null, commitUrl: null },

@@ -159,6 +159,32 @@ describe("share links and public pages", () => {
     expect(none.release).not.toBeNull();
   });
 
+  it("serves screenshot sets per platform: dashboard first, then my-app.json, all signed when private", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { appId, linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () =>
+      jsonRes({ ...manifest, screenshotsByPlatform: { ipad: ["https://api.github.com/repos/o/skull/releases/assets/8"], web: ["https://cdn.example.com/web.png"], android: [] } });
+    const d = { ...deps, fetch: fakeFetch(routes).fetch };
+    // Dashboard: an iPhone list and a web list; the web list must win over the release's.
+    const put = await handle(api(cookie, "PUT", `/api/dev/apps/${appId}`, { screenshotsByPlatform: { iphone: ["https://cdn.example.com/i1.png", ""], web: ["https://cdn.example.com/dash-web.png"] } }), env, d);
+    expect(((await put.json()) as { app: { screenshotsByPlatform: unknown } }).app.screenshotsByPlatform).toEqual({ iphone: ["https://cdn.example.com/i1.png"], web: ["https://cdn.example.com/dash-web.png"] });
+    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d)).json()) as { screenshots: Record<string, string[]> };
+    expect(body.screenshots.iphone).toEqual(["https://cdn.example.com/i1.png"]);
+    expect(body.screenshots.web).toEqual(["https://cdn.example.com/dash-web.png"]);
+    expect(body.screenshots.ipad[0]).toMatch(new RegExp(`^${BASE}/dl/`));
+    expect(body.screenshots.android).toBeUndefined();
+    expect(body.screenshots.all[0]).toMatch(new RegExp(`^${BASE}/dl/`));
+    expect(body.screenshots.all[1]).toBe("https://cdn.example.com/2.png");
+  });
+
+  it("rejects bad screenshotsByPlatform input", async () => {
+    const { appId } = await createSkull(env, deps, cookie);
+    for (const bad of [["x"], { iPhone: ["https://x/1.png"] }, { ipad: "https://x/1.png" }, { web: Array(11).fill("https://x/1.png") }, { android: ["http://x/1.png"] }]) {
+      expect((await handle(api(cookie, "PUT", `/api/dev/apps/${appId}`, { screenshotsByPlatform: bad }), env, deps)).status).toBe(400);
+    }
+  });
+
   it("still serves details when the release cannot be loaded", async () => {
     const { linkId } = await createSkull(env, deps, cookie);
     const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, testDeps());

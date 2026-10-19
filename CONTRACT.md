@@ -13,7 +13,7 @@ Every build publishes a GitHub Release (not a pre-release, not a draft) with the
 | asset            | required for | content                                                     |
 |------------------|--------------|-------------------------------------------------------------|
 | `my-app.json`    | always       | schema 1 manifest (shape and rules in agents.md)             |
-| `icon.png`, `screenshot-*.png` | recommended | referenced from my-app.json `icon` and `screenshots` |
+| `icon.png`, `screenshot-*.png` | recommended | referenced from my-app.json `icon`, `screenshots` and `screenshotsByPlatform` |
 | `CHANGELOG.md`   | recommended  | Keep a Changelog file; the version's section is the release notes |
 | `manifest.plist` | iOS          | Apple over-the-air manifest pointing at the `.ipa` asset    |
 | `<app>.ipa`      | iOS          | Ad Hoc signed build                                         |
@@ -53,6 +53,24 @@ public. A release named like "Skull 0.7.2 (build 53)" shows only the version; na
 more ("First table night") show as a title. The "What's new" section shows the latest
 release's notes and the "Updated" date is the release date; the dashboard's What's new field
 and listing edit date are used only when no release notes exist.
+
+### Screenshots per version
+
+`screenshots` is the general list. The optional `screenshotsByPlatform` object gives a version
+its own list, with keys `iphone`, `ipad`, `android` and `web` (each a list of https URLs; an
+empty list counts as not provided; unknown keys fail validation). Screenshots keep their own
+proportions on the page: portrait for phones, usually 3:4 for iPad, landscape for web.
+
+```json
+"screenshots": ["https://api.github.com/repos/you/app/releases/assets/11"],
+"screenshotsByPlatform": {
+  "ipad": ["https://api.github.com/repos/you/app/releases/assets/12"],
+  "web": ["https://api.github.com/repos/you/app/releases/assets/13"]
+}
+```
+
+For each version (iPhone, iPad, Android, Web) the install page shows the first list that exists: that version's list in the dashboard, that version's list in my-app.json, the general list in the dashboard, the general list in my-app.json, then the closest other version's list (so a single set covers every version), and generated previews in the version's shape only when no screenshots exist at all.
+On a phone or tablet the page shows the matching version; on a computer it shows a tab per version.
 
 ## 2. Listen for rebuild requests
 

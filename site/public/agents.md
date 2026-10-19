@@ -61,7 +61,8 @@ GET  /api/dev/apps
 POST /api/dev/apps
 body: { "name": "Skull", "repo": "owner/name", "profileName": "Skull Ad Hoc",
         "tagline": "", "description": "", "whatsNew": "", "privacySummary": "",
-        "size": "", "minOs": "", "ageNote": "", "iconUrl": "", "screenshots": [], "manifestUrl": "", "showOnPage": false }
+        "size": "", "minOs": "", "ageNote": "", "iconUrl": "", "screenshots": [],
+        "screenshotsByPlatform": { "iphone": [], "ipad": [], "android": [], "web": [] }, "manifestUrl": "", "showOnPage": false }
 -> 201 { "app": App, "buildToken": "48 hex chars, shown once" }
 
 GET  /api/dev/apps/:id
@@ -72,9 +73,9 @@ DELETE /api/dev/apps/:id      -> { "ok": true }   (also deletes its links, devic
 POST /api/dev/apps/:id/build-token  -> { "buildToken": "new token, shown once" }  (old token stops working)
 ```
 
-Field rules: `name` required; `repo` must be `owner/name`; `iconUrl`, `manifestUrl` and every screenshot must be https URLs; at most 10 screenshots; `showOnPage` lists the app, details only, on the developer's public page.
+Field rules: `name` required; `repo` must be `owner/name`; `iconUrl`, `manifestUrl` and every screenshot must be https URLs; at most 10 screenshots per list; `screenshotsByPlatform` keys are `iphone`, `ipad`, `android`, `web` (empty lists are dropped); `showOnPage` lists the app, details only, on the developer's public page.
 
-App object: `{ id, developerId, name, tagline, description, whatsNew, size, minOs, ageNote, privacySummary, iconUrl, screenshots, repo, manifestUrl, profileName, showOnPage, createdAt, updatedAt }`.
+App object: `{ id, developerId, name, tagline, description, whatsNew, size, minOs, ageNote, privacySummary, iconUrl, screenshots, screenshotsByPlatform, repo, manifestUrl, profileName, showOnPage, createdAt, updatedAt }`.
 
 After creating an app, store the token and id in the repository at once:
 
@@ -113,7 +114,7 @@ GET /api/dev/apps/:id/preview
      "releaseError": null | "message" }
 ```
 
-The same data the install page renders, so you can confirm icon, screenshots and text are in place. Both this and the public link endpoint include `history`: one entry per published release (`version`, `tag`, `title`, `notes`, `date`, `sha`, `releaseUrl`, `commitUrl`), built from the repository's releases and tags. Notes come from the `CHANGELOG.md` release asset (Keep a Changelog sections matched by version), then the release body, then the commit message. GitHub links are present only for public repositories.
+The same data the install page renders, so you can confirm icon, screenshots and text are in place. Both this and the public link endpoint include `screenshots`: `{ "all": [...], "iphone"?: [...], "ipad"?: [...], "android"?: [...], "web"?: [...] }`, the general list and each version's own list, private release assets already on signed links. For each version (iPhone, iPad, Android, Web) the install page shows the first list that exists: that version's list in the dashboard, that version's list in my-app.json, the general list in the dashboard, the general list in my-app.json, then the closest other version's list (so a single set covers every version), and generated previews in the version's shape only when no screenshots exist at all. Both also include `history`: one entry per published release (`version`, `tag`, `title`, `notes`, `date`, `sha`, `releaseUrl`, `commitUrl`), built from the repository's releases and tags. Notes come from the `CHANGELOG.md` release asset (Keep a Changelog sections matched by version), then the release body, then the commit message. GitHub links are present only for public repositories.
 
 ## Release notes
 
@@ -206,7 +207,7 @@ Published as a release asset named `my-app.json`:
 
 `install.pwa`: a release-asset URL whose asset is named exactly `web.zip` is a bundle of the built site that the store serves at `https://<linkId>.ourapps.app/` (see contract.md for the build rules: relative base, index.html at the zip root, relative manifest and service worker paths); any other https URL is opened as is. The install page, `/api/public/links/:id` and `/latest` report the served address, never the GitHub one; the dashboard preview reports null because no link exists yet. Served HTML gets an injected "add to home screen" banner (`/__ourapps/install.js`) and, when missing, a standalone manifest, Apple home screen tags and an icon link, so the app installs to the home screen with one tap and keeps its camera and microphone grants. When writing a web app for this, request `getUserMedia` from a tap handler and reuse the stream.
 
-Rules: `schema` must be 1; `id` lowercase slug; `name`, `version`, `description` non-empty; `icon` https; `minPlayers` and `maxPlayers` integers of at least 1 with min <= max; `screenshots` optional list of https URLs; `install` must name all three keys, at least one not null; `ios` needs `adhoc` or `testflight`; optional `ios.devices` lists `"iphone"` and/or `"ipad"` (display only: the page says which devices the build is for and warns on the other, never blocks). Release-asset API URLs are fetched with the developer's GitHub token and re-served to phones through signed links; any other https URL is used as is.
+Rules: `schema` must be 1; `id` lowercase slug; `name`, `version`, `description` non-empty; `icon` https; `minPlayers` and `maxPlayers` integers of at least 1 with min <= max; `screenshots` optional list of https URLs; optional `screenshotsByPlatform` object with keys `iphone`, `ipad`, `android`, `web`, each a list of https URLs (empty lists allowed, unknown keys rejected); `install` must name all three keys, at least one not null; `ios` needs `adhoc` or `testflight`; optional `ios.devices` lists `"iphone"` and/or `"ipad"` (display only: the page says which devices the build is for and warns on the other, never blocks). Release-asset API URLs are fetched with the developer's GitHub token and re-served to phones through signed links; any other https URL is used as is.
 
 ## Workflows
 

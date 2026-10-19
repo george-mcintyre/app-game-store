@@ -239,7 +239,7 @@ function body(): Raw {
             <tr><td>.apk</td><td>your GitHub release</td><td>streamed through ourapps on a signed link; not stored</td></tr>
             <tr><td>web.zip</td><td>your GitHub release</td><td><b>copied</b>: unpacked once per release into ourapps storage, served from <code>https://&lt;link&gt;.ourapps.app/</code></td></tr>
             <tr><td>Any other web address in <code>install.pwa</code></td><td>your host</td><td><b>linked</b>, not proxied: the install page opens it</td></tr>
-            <tr><td>my-app.json, CHANGELOG.md, icon, screenshots</td><td>your GitHub release</td><td>read by ourapps for the install page; images on signed links</td></tr>
+            <tr><td>my-app.json, CHANGELOG.md, icon, screenshots (general and per version)</td><td>your GitHub release</td><td>read by ourapps for the install page; images on signed links</td></tr>
             <tr><td>API, database, WebSockets, files your app uses</td><td>your host</td><td>called by the app directly</td></tr>
           </table>
         </section>

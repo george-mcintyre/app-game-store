@@ -1,10 +1,12 @@
-import { ApiError, api, whoAmI, type AppDetails, type HistoryEntry, type LinkPage, type Me } from "../api.js";
+import { pickScreenshots, type ScreenshotSets } from "@my/store-shared";
+import { ApiError, api, whoAmI, type AppDetails, type HistoryEntry, type Install, type LinkPage, type Me } from "../api.js";
 import { html, mount, paragraphs, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { notesHtml } from "../notes.js";
 import { screenshotSvg } from "../placeholders.js";
 import { appleDeviceName, detectInAppBrowser, detectPlatform, itmsLink, type InAppBrowser, type Platform } from "../platform.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
+import { VIEW_ICON, VIEW_LABEL, availableViews, chooseView, shapeFor, showTabs, type ViewKind } from "../views.js";
 import { setTheme } from "../theme.js";
 import { appIcon, avatar, callout, copyRow, fmtDate, icon, toast, wireCopy, wireImages } from "../ui.js";
 
@@ -180,7 +182,14 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   const name = app.name || data.release?.fallbackName || "App";
   const icon0 = app.iconUrl || data.release?.fallbackIcon || null;
   const description = app.description || data.release?.fallbackDescription || "";
-  const shots = app.screenshots.length > 0 ? app.screenshots : (data.release?.fallbackScreenshots ?? []);
+  // Older responses have no per-platform sets; the general list then covers everything.
+  const sets: ScreenshotSets = data.screenshots ?? { all: app.screenshots.length > 0 ? app.screenshots : (data.release?.fallbackScreenshots ?? []) };
+  const views = availableViews(data.release?.install, (v) => Boolean(sets[v]?.length));
+  const current = chooseView(views, d.platform, d.device);
+  const tabbed = showTabs(d.platform, views);
+  // On a computer every version gets a panel; on a phone or tablet only the matching one.
+  const shown: (ViewKind | null)[] = d.platform === "other" && views.length > 0 ? views : [current];
+  const blocked = Boolean(d.inApp && !d.inApp.installWorks) || !data.release;
   const history = data.history ?? [];
   // The latest release's notes are the truth; the dashboard field only fills in when there are none.
   const latest = history.find((h) => h.version === data.release?.version) ?? history[0];
@@ -223,12 +232,18 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
           </div>
         </header>
         <div class="facts-strip">${facts}</div>
-        <div id="install-area">${installArea(data, d, name, opts.preview === true)}</div>
+        ${tabbed
+          ? html`<div class="platform-tabs" role="tablist" aria-label="Versions of ${name}">${views.map((v) => html`<button type="button" role="tab" id="tab-${v}" aria-controls="panel-${v}" aria-selected="${v === current ? "true" : "false"}" tabindex="${v === current ? "0" : "-1"}" data-view="${v}">${icon(VIEW_ICON[v])} ${VIEW_LABEL[v]}</button>`)}</div>`
+          : ""}
+        <div id="install-area">${
+          blocked
+            ? installArea(data, d, name, opts.preview === true)
+            : shown.map((v) => html`<div ${tabbed ? html`role="tabpanel" id="panel-${v}" aria-labelledby="tab-${v}"` : ""} data-panel="${v ?? "none"}" ${tabbed && v !== current ? raw("hidden") : ""}>${installPanel(v, data, d, name, opts.pageUrl)}</div>`)
+        }</div>
 
         <section class="store-section">
           <h2>Preview</h2>
-          <div class="shots">${shots.length > 0 ? shots.map((s) => html`<img src="${s}" alt="Screenshot of ${name}" loading="lazy" />`) : [0, 1, 2].map((i) => screenshotSvg(name, app.tagline, i))}</div>
-          ${shots.length === 0 ? html`<p class="sub">Screenshots coming soon.</p>` : ""}
+          ${shown.map((v) => html`<div data-shots="${v ?? "none"}" ${tabbed && v !== current ? raw("hidden") : ""}>${shotsBlock(v, sets, name, app.tagline)}</div>`)}
         </section>
 
         <section class="store-section">
@@ -300,6 +315,24 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
       moreBtn.textContent = open ? "less" : "more...";
     };
   }
+
+  const tabs = [...root.querySelectorAll<HTMLButtonElement>(".platform-tabs [data-view]")];
+  const select = (view: string, focus = false) => {
+    for (const t of tabs) {
+      const on = t.dataset.view === view;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+      if (on && focus) t.focus();
+    }
+    root.querySelectorAll<HTMLElement>("[data-panel], [data-shots]").forEach((el) => (el.hidden = (el.dataset.panel ?? el.dataset.shots) !== view));
+  };
+  tabs.forEach((t, i) => {
+    t.onclick = () => select(t.dataset.view!);
+    t.onkeydown = (e) => {
+      const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (step) select(tabs[(i + step + tabs.length) % tabs.length].dataset.view!, true);
+    };
+  });
 
   root.querySelector<HTMLButtonElement>("#share")!.onclick = async () => {
     const result = await shareOrCopy(opts.pageUrl, name);
@@ -380,9 +413,10 @@ function ctaArea(data: LinkPage, d: Detected, name: string): Raw {
     if (install.pwa) return html`<a class="btn get" href="${install.pwa}">Open</a><span class="small muted">web app</span>`;
     return html`<span class="pill">Not for Android yet</span>`;
   }
-  return html`<button class="btn get" data-get>Get</button><span class="small muted">Open on your phone</span>`;
+  return html`<button class="btn get" data-get>Get</button><span class="small muted">See the versions below</span>`;
 }
 
+// Shown instead of any version when nothing can be installed from this browser or release.
 function installArea(data: LinkPage, d: Detected, name: string, preview: boolean): Raw {
   if (d.inApp && !d.inApp.installWorks) {
     const browser = d.platform === "ios" ? "Safari" : "Chrome";
@@ -391,28 +425,61 @@ function installArea(data: LinkPage, d: Detected, name: string, preview: boolean
       <p>${d.inApp.name === "this app" ? "This app's built-in browser" : d.inApp.name} cannot install apps. Tap the menu (three dots or the share icon) and choose <b>Open in ${browser}</b>, or copy the link below and paste it into ${browser}.</p>
     `);
   }
-  if (!data.release) {
-    return callout("info", html`<b>${name} has no published build yet.</b><p>${data.releaseError && preview ? html`<span class="small">${data.releaseError}</span>` : "Check back soon, or ask the developer."}</p>`);
-  }
-  const install = data.release.install;
-  if (d.platform === "ios") {
-    if (install.ios?.adhoc) return iosEnrol(name, d.device, install.ios.devices);
-    if (install.ios?.testflight) return html`<div class="install-card"><h3>Install through TestFlight</h3><p class="muted small">Apple's TestFlight app opens; tap Install there.</p><a class="btn block" href="${install.ios.testflight}">Open in TestFlight</a></div>`;
-    if (install.pwa) return pwaSteps(install.pwa, "ios");
-    return html`<div class="install-card"><h3>Not on ${d.device} yet</h3><p class="muted">There is no ${d.device} version of ${name} at the moment.</p></div>`;
-  }
-  if (d.platform === "android") {
-    if (install.android) return androidSteps(install.android.apk, name);
-    if (install.pwa) return pwaSteps(install.pwa, "android");
-    return html`<div class="install-card"><h3>Not on Android yet</h3><p class="muted">There is no Android version of ${name} at the moment.</p></div>`;
-  }
+  return callout("info", html`<b>${name} has no published build yet.</b><p>${data.releaseError && preview ? html`<span class="small">${data.releaseError}</span>` : "Check back soon, or ask the developer."}</p>`);
+}
+
+// One version's install steps: on the matching device they install, on a computer they point to the device.
+function installPanel(view: ViewKind | null, data: LinkPage, d: Detected, name: string, pageUrl: string): Raw {
+  const install = data.release!.install;
+  const deviceWord = d.platform === "android" ? "Android" : d.device;
+  if (view === null) return html`<div class="install-card"><h3>Not on ${deviceWord} yet</h3><p class="muted">There is no ${deviceWord} version of ${name} at the moment.</p></div>`;
+  const remote = d.platform === "other";
+  if (view === "web") return remote ? webOnComputer(install.pwa!, name) : pwaSteps(install.pwa!, d.platform);
+  if (remote) return remoteCard(view, install, pageUrl);
+  if (view === "android") return androidSteps(install.android!.apk, name);
+  if (install.ios?.adhoc) return iosEnrol(name, d.device, install.ios.devices);
+  return html`<div class="install-card"><h3>Install through TestFlight</h3><p class="muted small">Apple's TestFlight app opens; tap Install there.</p><a class="btn block" href="${install.ios!.testflight!}">Open in TestFlight</a></div>`;
+}
+
+function remoteCard(view: "iphone" | "ipad" | "android", install: Install, pageUrl: string): Raw {
+  const device = view === "android" ? "Android phone" : VIEW_LABEL[view];
+  const steps =
+    view === "android"
+      ? html`<li>Tap <b>Get</b>; the app downloads.</li><li>The first time, allow installs from the browser when Android asks.</li><li>Tap <b>Install</b>.</li>`
+      : install.ios?.adhoc
+        ? html`<li>Tap <b>Get</b> and type your name.</li><li>Install the small profile from <b>Settings</b>.</li><li>Once the developer has approved your ${device}, tap <b>Install</b>.</li>`
+        : html`<li>Tap <b>Get</b>; Apple's TestFlight app opens.</li><li>Tap <b>Install</b> there.</li>`;
+  return html`
+    <div class="install-card remote-card">
+      <div class="qr">${qrSvg(pageUrl)}</div>
+      <div class="grow">
+        <h3>${icon(VIEW_ICON[view], "icon-20")} Install on your ${device}</h3>
+        <p class="muted small">Point the ${device}'s camera at the code, or send yourself this link, then:</p>
+        <ol class="steps small">${steps}</ol>
+      </div>
+    </div>`;
+}
+
+function webOnComputer(url: string, name: string): Raw {
   return html`
     <div class="install-card">
-      <h3>Open this page on your phone</h3>
-      <p class="muted">Point your phone's camera at the code in the Share section below, or send yourself the link. The install happens on the phone.</p>
-      ${install.pwa ? html`<p>On a computer you can use the web version: <a href="${install.pwa}">${install.pwa}</a></p>` : ""}
-    </div>
-  `;
+      <h3>${icon("globe", "icon-20")} Web version</h3>
+      <p class="muted small">Runs in this browser; nothing to install.</p>
+      <a class="btn lg" href="${url}" rel="noopener">Open ${name}</a>
+      <p class="small muted mt">On a phone or tablet, open this page there and add the web version to the home screen.</p>
+    </div>`;
+}
+
+// The version's own screenshots, else the general list, else the closest other platform's, else generated previews.
+function shotsBlock(view: ViewKind | null, sets: ScreenshotSets, name: string, tagline: string): Raw {
+  const picked = pickScreenshots(view, sets);
+  if (picked.urls.length === 0) {
+    const shape = shapeFor(view);
+    return html`<div class="shots shape-${shape}">${[0, 1, 2].map((i) => screenshotSvg(name, tagline, i, shape))}</div><p class="sub">Screenshots coming soon.</p>`;
+  }
+  const source = picked.source === "all" ? null : (picked.source as ViewKind);
+  const shape = shapeFor(source ?? view);
+  return html`${source ? html`<p class="sub">${VIEW_LABEL[source]} screenshots</p>` : ""}<div class="shots shape-${shape}">${picked.urls.map((u) => html`<img src="${u}" alt="Screenshot of ${name}" loading="lazy" />`)}</div>`;
 }
 
 function iosEnrol(name: string, device: "iPhone" | "iPad", devices?: ("iphone" | "ipad")[]): Raw {

@@ -101,6 +101,18 @@ describe("validateManifest", () => {
     }
   });
 
+  it("accepts screenshotsByPlatform, including empty lists, and rejects unknown keys and non-https URLs", () => {
+    expect(validateManifest(withPatch({ screenshotsByPlatform: { iphone: ["https://x/1.png"], ipad: [], web: ["https://x/w.png"] } })).ok).toBe(true);
+    expect(validateManifest(withPatch({ screenshotsByPlatform: {} })).ok).toBe(true);
+    const badKey = validateManifest(withPatch({ screenshotsByPlatform: { iPhone: ["https://x/1.png"] } }));
+    expect(badKey.ok).toBe(false);
+    if (!badKey.ok) expect(badKey.errors[0]).toMatch(/keys must be iphone, ipad, android or web \(found "iPhone"\)/);
+    const badUrl = validateManifest(withPatch({ screenshotsByPlatform: { android: ["http://x/1.png"] } }));
+    expect(badUrl.ok).toBe(false);
+    if (!badUrl.ok) expect(badUrl.errors).toContain("screenshotsByPlatform.android must be a list of https URLs");
+    expect(validateManifest(withPatch({ screenshotsByPlatform: ["https://x"] })).ok).toBe(false);
+  });
+
   it("collects several errors at once", () => {
     const result = validateManifest(withPatch({ name: "", version: "", icon: "nope" }));
     expect(result.ok).toBe(false);

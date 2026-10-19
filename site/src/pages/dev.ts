@@ -1,3 +1,4 @@
+import { SCREENSHOT_PLATFORMS, type ScreenshotPlatform } from "@my/store-shared";
 import { ApiError, api, type ApiKey, type AuditEvent, type DevApp, type Enrolment, type Me, type ReleaseStatus, type ShareLink } from "../api.js";
 import { html, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
@@ -179,6 +180,14 @@ const SECTIONS: { title: string; about: string; fields: Field[] }[] = [
   },
 ];
 
+const SHOT_FIELDS: { key: "all" | ScreenshotPlatform; label: string; hint: string }[] = [
+  { key: "all", label: "All versions", hint: "Used for any version without its own list." },
+  { key: "iphone", label: "iPhone", hint: "Portrait phone screenshots." },
+  { key: "ipad", label: "iPad", hint: "Tablet screenshots, usually 3:4. An iPad tab appears once these exist, even without ios.devices." },
+  { key: "android", label: "Android", hint: "Portrait phone screenshots from Android." },
+  { key: "web", label: "Web", hint: "Browser window screenshots, usually landscape." },
+];
+
 export async function appForm(root: HTMLElement, appId: string | null): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
@@ -213,10 +222,12 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
       <form id="app-form" class="card mt">
         ${SECTIONS.map((s) => html`<div class="form-section"><div class="about"><h3>${s.title}</h3><p>${s.about}</p></div><div>${s.fields.map(field)}</div></div>`)}
         <div class="form-section">
-          <div class="about"><h3>Screenshots</h3><p>Up to 10 image URLs, one per line. Leave blank to use the list from my-app.json or generated previews.</p></div>
+          <div class="about"><h3>Screenshots</h3><p>Up to 10 image URLs per list, one per line, in any proportions. Each version of the install page shows its own list; a version without one shows the general list, and if only one list exists anywhere, every version shows it. Blank lists fall back to my-app.json, then to generated previews. Release-asset links from a private repository work on the install page.</p></div>
           <div>
-            <div class="field"><textarea name="screenshots" placeholder="https://...">${(app.screenshots ?? []).join("\n")}</textarea></div>
-            <div class="shot-previews" id="shot-previews">${(app.screenshots ?? []).map((s) => html`<img src="${s}" alt="" />`)}</div>
+            ${SHOT_FIELDS.map((f) => {
+              const list = f.key === "all" ? (app.screenshots ?? []) : (app.screenshotsByPlatform?.[f.key] ?? []);
+              return html`<div class="field"><label for="shots-${f.key}">${f.label} <span class="faint tiny">optional</span></label><textarea id="shots-${f.key}" name="shots-${f.key}" data-shot-list="${f.key}" placeholder="https://..." rows="3">${list.join("\n")}</textarea><div class="hint">${f.hint}</div><div class="shot-previews" data-shot-previews="${f.key}">${list.map((u) => html`<img src="${u}" alt="" />`)}</div></div>`;
+            })}
           </div>
         </div>
         <div class="form-section">
@@ -238,10 +249,16 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
   );
 
   const form = root.querySelector<HTMLFormElement>("#app-form")!;
-  const shotsInput = form.elements.namedItem("screenshots") as HTMLTextAreaElement;
-  shotsInput.addEventListener("input", () => {
-    const urls = shotsInput.value.split("\n").map((s) => s.trim()).filter((s) => /^https:\/\//.test(s));
-    root.querySelector("#shot-previews")!.innerHTML = urls.map((u) => `<img src="${u.replace(/"/g, "")}" alt="" />`).join("");
+  // Live previews; private release-asset links cannot load here (they need the token) and are dropped quietly.
+  const wirePreviews = (box: HTMLElement) => box.querySelectorAll("img").forEach((img) => img.addEventListener("error", () => img.remove(), { once: true }));
+  root.querySelectorAll<HTMLTextAreaElement>("[data-shot-list]").forEach((ta) => {
+    const box = root.querySelector<HTMLElement>(`[data-shot-previews="${ta.dataset.shotList}"]`)!;
+    wirePreviews(box);
+    ta.addEventListener("input", () => {
+      const urls = ta.value.split("\n").map((u) => u.trim()).filter((u) => /^https:\/\//.test(u));
+      box.innerHTML = urls.map((u) => `<img src="${u.replace(/"/g, "")}" alt="" />`).join("");
+      wirePreviews(box);
+    });
   });
 
   form.onsubmit = async (e) => {
@@ -249,7 +266,9 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
     const fd = new FormData(form);
     const body: Record<string, unknown> = {};
     for (const s of SECTIONS) for (const f of s.fields) body[f.key] = String(fd.get(f.key) ?? "");
-    body.screenshots = String(fd.get("screenshots") ?? "").split("\n").map((s) => s.trim()).filter(Boolean);
+    const lines = (key: string) => String(fd.get(`shots-${key}`) ?? "").split("\n").map((u) => u.trim()).filter(Boolean);
+    body.screenshots = lines("all");
+    body.screenshotsByPlatform = Object.fromEntries(SCREENSHOT_PLATFORMS.map((p) => [p, lines(p)]));
     body.showOnPage = fd.get("showOnPage") === "on";
     try {
       if (appId) {

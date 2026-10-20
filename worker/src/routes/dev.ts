@@ -3,7 +3,7 @@ import { SCREENSHOT_PLATFORMS, TERMS_VERSION, type ScreenshotPlatform } from "@m
 import { audit } from "../audit.js";
 import { RESERVED_SLUGS, apiKeyHash, clearSessionCookie, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
 import { randomId, tokenHash, validateAppleKey, validateSigningKey } from "../crypto.js";
-import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow, type SigningCertificateRow } from "../db.js";
+import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow, type ProfileRow, type SigningCertificateRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
 import { appleClient, approveEnrolment, dlUrl, refreshProfile, transition } from "../flow.js";
 import { HttpError, httpsUrlOrEmpty, json, readJson, text } from "../http.js";
@@ -70,6 +70,8 @@ async function ownedApp(db: Db, dev: Developer, id: string): Promise<AppRow> {
   if (!app || app.developerId !== dev.id) throw new HttpError(404, "unknown app");
   return app;
 }
+
+const profileSummary = (p: ProfileRow) => ({ name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length, createdAt: p.createdAt });
 
 // The certificate counts only while its private key is stored too.
 function signingStatus(s: DeveloperSecrets, c: SigningCertificateRow | null) {
@@ -206,12 +208,12 @@ export async function setUpSigning(request: Request, env: Env, deps: Deps, dev: 
   const apps = [];
   for (const app of await db.appsByDeveloper(dev.id)) {
     if (!app.bundleId) {
-      apps.push({ id: app.id, name: app.name, profile: null, error: "no iPhone bundle ID on this app yet" });
+      apps.push({ id: app.id, name: app.name, profile: null, error: "skipped: no iPhone bundle ID" });
       continue;
     }
     try {
       const p = await refreshProfile(env, deps, app, apple);
-      apps.push({ id: app.id, name: app.name, profile: { name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length }, error: null });
+      apps.push({ id: app.id, name: app.name, profile: profileSummary(p), error: null });
     } catch (err) {
       apps.push({ id: app.id, name: app.name, profile: null, error: err instanceof Error ? err.message : String(err) });
     }
@@ -225,8 +227,7 @@ export async function refreshAppProfile(env: Env, deps: Deps, dev: Developer, id
   const app = await ownedApp(db, dev, id);
   const apple = appleClient(env, deps, await loadSecrets(env, dev.id, ["appleIssuerId", "appleKeyId", "applePrivateKey"]));
   try {
-    const p = await refreshProfile(env, deps, app, apple);
-    return json({ profile: { name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length } });
+    return json({ profile: profileSummary(await refreshProfile(env, deps, app, apple)) });
   } catch (err) {
     throw new HttpError(502, err instanceof Error ? err.message : String(err));
   }
@@ -291,7 +292,7 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
 export async function getApp(env: Env, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
-  return json({ app: publicApp(app), links: await db.linksByApp(app.id), profile: await db.latestProfile(app.id).then((p) => (p ? { name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length, createdAt: p.createdAt } : null)) });
+  return json({ app: publicApp(app), links: await db.linksByApp(app.id), profile: await db.latestProfile(app.id).then((p) => (p ? profileSummary(p) : null)) });
 }
 
 // PUT /api/dev/apps/:id

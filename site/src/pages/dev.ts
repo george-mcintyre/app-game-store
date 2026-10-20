@@ -1,8 +1,9 @@
 import { SCREENSHOT_PLATFORMS, type ScreenshotPlatform } from "@my/store-shared";
-import { ApiError, api, type ApiKey, type AuditEvent, type DevApp, type Enrolment, type Me, type ReleaseStatus, type ShareLink } from "../api.js";
+import { ApiError, api, type ApiKey, type AuditEvent, type DevApp, type Enrolment, type Me, type ProfileSummary, type ReleaseStatus, type SecretStatus, type ShareLink, type SigningSetUp } from "../api.js";
 import { html, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
+import { signingRequest } from "../signing.js";
 import { appIcon, callout, copyRow, copyText, emptyState, errorBox, fmtDate, icon, pill, statePill, toast, wireCopy, wireImages } from "../ui.js";
 import { AGENT_REPO_PROMPT, AGENT_STORE_PROMPT } from "./prompts.js";
 import { SOURCE_URL } from "./public.js";
@@ -36,12 +37,13 @@ export async function dashboard(root: HTMLElement): Promise<void> {
     const pending = enrolments.filter((e) => e.state === "pending-approval");
     const ready = enrolments.filter((e) => e.state === "ready").length;
     const anyRelease = releases.some((r) => r?.ok);
-    const needsIos = releases.some((r) => r?.install?.ios) || apps.some((a) => a.profileName);
+    const needsIos = releases.some((r) => r?.install?.ios) || apps.some((a) => a.profileName || a.bundleId);
 
     const steps: { done: boolean; title: string; why: string; href: string; cta: string; optional?: boolean }[] = [
       { done: true, title: "Sign in with GitHub", why: "Done. Your page is /" + me.developer.slug + ".", href: "/dev/settings", cta: "Profile" },
       { done: me.secrets.github, title: "Save a GitHub token", why: "Lets the console read releases from private repositories and ask them to rebuild.", href: "/dev/settings#credentials", cta: "Settings" },
       { done: me.secrets.apple, title: "Save your App Store Connect key", why: needsIos ? "Needed to register friends' iPhones with Apple." : "Only needed for iPhone apps.", href: "/dev/settings#credentials", cta: "Settings", optional: !needsIos },
+      { done: Boolean(me.secrets.signing), title: "Set up iPhone signing", why: needsIos ? "One click: ourapps creates the certificate and each app's Ad Hoc profile; your repositories need no Apple secrets." : "Only needed for iPhone apps.", href: "/dev/settings#signing", cta: "Settings", optional: !needsIos },
       { done: apps.length > 0, title: "Add your first app", why: "Name, icon, a few lines, and the repository that publishes it.", href: "/dev/apps/new", cta: "Add app" },
       { done: anyRelease, title: "Publish a release the console can read", why: "A GitHub Release with my-app.json and the app files. The guide and the agent prompt show exactly how.", href: apps[0] ? `/dev/apps/${apps[0].id}` : "/dev/guide#release", cta: apps[0] ? "Check release" : "Guide" },
       { done: activeLinks > 0, title: "Create a share link", why: "Each link is private, has a QR code and can be revoked.", href: apps[0] ? `/dev/apps/${apps[0].id}/links` : "/dev/apps", cta: "Links" },
@@ -138,7 +140,7 @@ export async function appsPage(root: HTMLElement): Promise<void> {
 /* App form                                                            */
 /* ------------------------------------------------------------------ */
 
-type FieldKey = "name" | "tagline" | "iconUrl" | "description" | "whatsNew" | "privacySummary" | "size" | "minOs" | "ageNote" | "repo" | "profileName" | "manifestUrl";
+type FieldKey = "name" | "tagline" | "iconUrl" | "description" | "whatsNew" | "privacySummary" | "size" | "minOs" | "ageNote" | "repo" | "bundleId" | "profileName" | "manifestUrl";
 interface Field { key: FieldKey; label: string; type: "text" | "url" | "textarea"; hint?: string; placeholder?: string; required?: boolean }
 
 const SECTIONS: { title: string; about: string; fields: Field[] }[] = [
@@ -174,7 +176,8 @@ const SECTIONS: { title: string; about: string; fields: Field[] }[] = [
     about: "Where the console reads releases from and how it asks for iPhone rebuilds. The repository must follow the contract; the agent prompt sets it up for you.",
     fields: [
       { key: "repo", label: "GitHub repository", type: "text", required: true, placeholder: "owner/name", hint: "The latest release on this repository must carry an asset named my-app.json." },
-      { key: "profileName", label: "Ad Hoc provisioning profile name", type: "text", placeholder: "Skull Ad Hoc", hint: "iPhone only. Create the profile once in the Apple developer portal; the console recreates it with every new device." },
+      { key: "bundleId", label: "iPhone bundle ID", type: "text", placeholder: "com.yourname.skull", hint: "iPhone only. The bundle identifier in your Xcode project. ourapps creates the App ID on your Apple account when it does not exist." },
+      { key: "profileName", label: "Ad Hoc provisioning profile name", type: "text", placeholder: "Skull Ad Hoc", hint: "iPhone only. Leave blank and ourapps names it after the app. It makes the profile and makes it again with every new device." },
       { key: "manifestUrl", label: "my-app.json URL", type: "url", hint: "Only when the file is hosted somewhere other than the repository's releases." },
     ],
   },
@@ -193,12 +196,14 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
   if (!me) return;
   let app: Partial<DevApp> = { screenshots: [], showOnPage: false };
   let links: ShareLink[] = [];
+  let profile: ProfileSummary | null = null;
   let release: ReleaseStatus | null = null;
   if (appId) {
     try {
-      const detail = await api<{ app: DevApp; links: ShareLink[] }>("GET", `/api/dev/apps/${appId}`);
+      const detail = await api<{ app: DevApp; links: ShareLink[]; profile: ProfileSummary | null }>("GET", `/api/dev/apps/${appId}`);
       app = detail.app;
       links = detail.links;
+      profile = detail.profile;
     } catch (err) {
       return failed(root, me, err);
     }
@@ -218,7 +223,7 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
     me,
     isNew ? "New app" : app.name ?? "App",
     html`
-      ${!isNew ? html`<div id="release-card">${releaseCardSkeleton()}</div>` : ""}
+      ${!isNew ? html`<div id="release-card">${releaseCardSkeleton()}</div><div id="signing-card">${signingCard(me, app as DevApp, profile)}</div>` : ""}
       <form id="app-form" class="card mt">
         ${SECTIONS.map((s) => html`<div class="form-section"><div class="about"><h3>${s.title}</h3><p>${s.about}</p></div><div>${s.fields.map(field)}</div></div>`)}
         <div class="form-section">
@@ -296,6 +301,7 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
     navigate("/dev/apps");
   });
 
+  wireSigningCard(root, me, app as DevApp);
   if (appId) {
     const fresh = sessionStorage.getItem(`buildToken:${appId}`);
     if (fresh) {
@@ -304,6 +310,47 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
     }
     void loadReleaseCard(root, appId, app as DevApp);
   }
+}
+
+// The app's Ad Hoc profile and what is still missing before ourapps can make it.
+function signingCard(me: Me, app: DevApp, profile: ProfileSummary | null): Raw {
+  const missing = !me.secrets.apple
+    ? html`Save your App Store Connect key in <a href="/dev/settings#credentials">Settings</a> first.`
+    : !me.secrets.signing && !profile
+      ? html`Set up iPhone signing in <a href="/dev/settings#signing">Settings</a>; it makes this app's profile too.`
+      : !app.bundleId && !profile
+        ? html`Enter the iPhone bundle ID below and save, then make the profile.`
+        : null;
+  return html`
+    <div class="card mt">
+      <div class="row wrap">
+        <h2 class="grow">iPhone signing</h2>
+        ${profile ? pill(`${profile.devices} device${profile.devices === 1 ? "" : "s"}`, "ok", true) : pill("no profile yet", missing ? "warn" : "accent")}
+        ${me.secrets.apple ? html`<button class="btn sm secondary" type="button" id="profile-refresh">${icon("refresh")} ${profile ? "Make profile again" : "Make profile"}</button>` : ""}
+      </div>
+      ${profile
+        ? html`<dl class="kv mt-s"><dt>Profile</dt><dd>${profile.name}</dd><dt>Devices</dt><dd>${profile.devices}</dd><dt>Expires</dt><dd>${fmtDate(profile.expirationDate)}</dd>${profile.createdAt ? html`<dt>Made</dt><dd>${fmtDate(profile.createdAt, true)}</dd>` : ""}</dl>`
+        : ""}
+      <p class="small muted">${missing ?? "ourapps makes the profile again whenever you approve a device. The release workflow fetches it with the certificate from /api/build/<app>/signing."}</p>
+      <div id="profile-result"></div>
+    </div>`;
+}
+
+function wireSigningCard(root: HTMLElement, me: Me, app: DevApp): void {
+  const button = root.querySelector<HTMLButtonElement>("#profile-refresh");
+  if (!button || !app.id) return;
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      const { profile } = await api<{ profile: ProfileSummary }>("POST", `/api/dev/apps/${app.id}/profile`);
+      root.querySelector<HTMLElement>("#signing-card")!.innerHTML = signingCard(me, app, profile).html;
+      wireSigningCard(root, me, app);
+      toast("Profile made");
+    } catch (err) {
+      showError(root, err, "#profile-result");
+      button.disabled = false;
+    }
+  };
 }
 
 function releaseCardSkeleton(): Raw {
@@ -336,11 +383,10 @@ async function loadReleaseCard(root: HTMLElement, appId: string, app: DevApp): P
             <dt>Assets</dt><dd>${r.assets.length > 0 ? r.assets.join(", ") : "n/a"}</dd>
             <dt>Screenshots in manifest</dt><dd>${r.screenshots}</dd>
             <dt>Release notes</dt><dd>${r.changelog ? "CHANGELOG.md shipped" : "no CHANGELOG.md in this release"}</dd>
-            ${r.install?.ios ? html`<dt>Ad Hoc profile</dt><dd>${r.profile ? html`${r.profile.devices} device${r.profile.devices === 1 ? "" : "s"}, expires ${fmtDate(r.profile.expirationDate)}` : "not created yet; it is created when you approve the first iPhone"}</dd>` : ""}
+            ${r.install?.ios ? html`<dt>Ad Hoc profile</dt><dd>${r.profile ? html`${r.profile.devices} device${r.profile.devices === 1 ? "" : "s"}, expires ${fmtDate(r.profile.expirationDate)}` : "not made yet; see iPhone signing below"}</dd>` : ""}
           </dl>
           ${!r.changelog ? callout("warn", html`<p>No <code>CHANGELOG.md</code> in the latest release, so friends see release bodies or commit messages as the revision history. <a href="/dev/guide#release-notes">Add release notes</a>.</p>`) : ""}
           ${r.install?.ios && !r.appleKey ? callout("warn", html`<p>This app has an iPhone build but no App Store Connect key is saved. <a href="/dev/settings#credentials">Add it in Settings</a> before approving devices.</p>`) : ""}
-          ${r.install?.ios && !app.profileName ? callout("warn", html`<p>Set the Ad Hoc provisioning profile name below so the console can recreate it when a device is added.</p>`) : ""}
         `
         : html`
           ${callout("bad", html`<b>The console cannot read a release for ${app.repo}.</b>${r.errors.map((e) => html`<p>${e}</p>`)}`)}
@@ -610,9 +656,26 @@ const EVENT_LABELS: Record<string, string> = {
   "device-rejected": "Device rejected",
   "app-created": "App created",
   "app-deleted": "App deleted",
+  "signing-set-up": "iPhone signing set up",
 };
 
-export async function settings(root: HTMLElement, note = ""): Promise<void> {
+// Makes the key and request in this browser, then lets the server get the certificate and profiles.
+async function runSigningSetUp(): Promise<SigningSetUp> {
+  const { csr, privateKey } = await signingRequest("ourapps");
+  return api<SigningSetUp>("POST", "/api/dev/signing", { csr, privateKey });
+}
+
+function signingOutcome(outcome: { result?: SigningSetUp; error?: string }): Raw {
+  if (outcome.error) return callout("bad", html`<p><b>iPhone signing was not set up.</b> ${outcome.error}</p>`);
+  const r = outcome.result!;
+  return callout(
+    "ok",
+    html`<p><b>Certificate created: ${r.signing.name}.</b></p>
+      ${r.apps.length > 0 ? html`<ul class="bullets small">${r.apps.map((a) => html`<li><b>${a.name}</b>: ${a.profile ? `profile "${a.profile.name}" with ${a.profile.devices} device${a.profile.devices === 1 ? "" : "s"}` : a.error}</li>`)}</ul>` : ""}`,
+  );
+}
+
+export async function settings(root: HTMLElement, note = "", signingNote?: { result?: SigningSetUp; error?: string }): Promise<void> {
   const me = await requireMe(root);
   if (!me) return;
   const { events } = await api<{ events: AuditEvent[] }>("GET", "/api/dev/audit").catch(() => ({ events: [] as AuditEvent[] }));
@@ -640,7 +703,7 @@ export async function settings(root: HTMLElement, note = ""): Promise<void> {
           <p class="small muted mt">Sign-in only reads your public GitHub profile. Repository access comes from the token you save below, which you control and can revoke on GitHub at any time.</p>
           <hr />
           <h3>Delete account</h3>
-          <p class="small muted">Removes your profile, credentials, API keys, apps, share links, device records and signing profiles at once. Installed apps keep working until their profile expires. Device registrations stay on your Apple account.</p>
+          <p class="small muted">Removes your profile, credentials, API keys, apps, share links, device records, signing key and signing profiles at once. Installed apps keep working until their profile expires. Device registrations and the certificate stay on your Apple account until you remove them there.</p>
           <div class="row wrap"><input type="text" id="confirm-login" placeholder="Type ${me.developer.githubLogin} to confirm" style="flex:1;min-width:200px" /><button class="btn danger" id="delete-account" disabled>${icon("trash")} Delete my account</button></div>
           <div id="delete-error" class="mt-s"></div>
         </div>
@@ -682,6 +745,19 @@ export async function settings(root: HTMLElement, note = ""): Promise<void> {
       </form>
 
       <div class="card mt">
+        <a id="signing"></a>
+        <div class="row wrap"><h2 class="grow">iPhone signing</h2>${me.secrets.signing ? pill("set up", "ok", true) : me.secrets.apple ? pill("not set up", "warn") : ""}</div>
+        <p class="small muted">ourapps creates an Apple Distribution certificate on your Apple account, keeps its private key encrypted like the credentials above, makes each app's Ad Hoc profile, and gives certificate, key and profile to an app's release workflow when it presents that app's build token. Your repositories need no Apple secrets. The key is made in this browser.</p>
+        ${me.secrets.signing
+          ? html`<dl class="kv mt-s"><dt>Certificate</dt><dd>${me.secrets.signing.name}</dd><dt>Expires</dt><dd>${fmtDate(me.secrets.signing.expirationDate)}</dd><dt>Created</dt><dd>${fmtDate(me.secrets.signing.createdAt, true)}</dd></dl>`
+          : !me.secrets.apple
+            ? html`<p class="small">Save the App Store Connect key above; setup then runs by itself.</p>`
+            : ""}
+        <div id="signing-box">${signingNote ? signingOutcome(signingNote) : ""}</div>
+        ${me.secrets.apple ? html`<div class="form-actions"><button class="btn ${me.secrets.signing ? "secondary" : ""}" type="button" id="signing-run">${me.secrets.signing ? "Replace certificate" : "Set up iPhone signing"}</button></div>` : ""}
+      </div>
+
+      <div class="card mt">
         <a id="security"></a>
         <div class="row wrap"><h2 class="grow">Security</h2><button class="btn sm danger" id="logout-all">Sign out everywhere</button></div>
         <p class="small muted">How your credentials are kept: each field is encrypted on its own with AES-256-GCM under a key derived for your account alone; the master secret lives only in the server's secret store, never in the database or in code. API keys, build tokens and sessions are stored as keyed hashes, so a copy of the database cannot be used to sign in. Credentials can only be changed from this page with a fresh browser session, never with an API key.</p>
@@ -709,7 +785,8 @@ export async function settings(root: HTMLElement, note = ""): Promise<void> {
     await api("POST", "/api/auth/logout-everywhere");
     location.href = "/";
   };
-  if (location.hash === "#credentials" || location.hash === "#security") root.querySelector(location.hash)?.scrollIntoView();
+  if (signingNote) root.querySelector("#signing")?.scrollIntoView();
+  else if (["#credentials", "#security", "#signing"].includes(location.hash)) root.querySelector(location.hash)?.scrollIntoView();
 
   const meForm = root.querySelector<HTMLFormElement>("#me-form")!;
   meForm.onsubmit = async (e) => {
@@ -730,13 +807,36 @@ export async function settings(root: HTMLElement, note = ""): Promise<void> {
     const body: Record<string, unknown> = {};
     for (const k of ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken"]) body[k] = fd.get(k);
     const changed = Object.values(body).filter((v) => String(v ?? "").trim() !== "").length;
+    const appleChanged = ["appleIssuerId", "appleKeyId", "applePrivateKey"].some((k) => String(body[k] ?? "").trim() !== "");
+    let saved: { secrets: SecretStatus };
     try {
-      await api("PUT", "/api/dev/secrets", body);
-      await settings(root, changed > 0 ? "Credentials saved." : "Nothing to save; all fields were blank.");
+      saved = await api<{ secrets: SecretStatus }>("PUT", "/api/dev/secrets", body);
     } catch (err) {
       showError(root, err, "#secrets-error");
+      return;
+    }
+    const note = changed > 0 ? "Credentials saved." : "Nothing to save; all fields were blank.";
+    if (!appleChanged || !saved.secrets.apple || saved.secrets.signing) return settings(root, note);
+    root.querySelector<HTMLElement>("#signing-box")!.innerHTML = callout("info", html`<p>Credentials saved. Setting up iPhone signing...</p>`).html;
+    try {
+      await settings(root, note, { result: await runSigningSetUp() });
+    } catch (err) {
+      await settings(root, note, { error: err instanceof Error ? err.message : String(err) });
     }
   };
+  const signingButton = root.querySelector<HTMLButtonElement>("#signing-run");
+  if (signingButton) {
+    signingButton.onclick = async () => {
+      if (me.secrets.signing && !(await confirmAction("Create a new certificate and make every app's profile again with it? The current certificate stays valid on Apple until it expires or you revoke it in the developer portal, so installed apps keep working."))) return;
+      signingButton.disabled = true;
+      root.querySelector<HTMLElement>("#signing-box")!.innerHTML = callout("info", html`<p>Making a key in this browser and asking Apple for the certificate...</p>`).html;
+      try {
+        await settings(root, "", { result: await runSigningSetUp() });
+      } catch (err) {
+        await settings(root, "", { error: err instanceof Error ? err.message : String(err) });
+      }
+    };
+  }
   root.querySelectorAll<HTMLButtonElement>("[data-remove-secret]").forEach((b) => (b.onclick = async () => {
     if (!(await confirmAction("Remove this credential? Approvals and release reads that need it stop working."))) return;
     const body: Record<string, string> = {};

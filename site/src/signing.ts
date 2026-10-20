@@ -8,7 +8,7 @@ function len(n: number): number[] {
   return [0x80 | out.length, ...out];
 }
 
-function tlv(tag: number, body: Uint8Array): Uint8Array {
+function tlv(tag: number, body: Uint8Array): Uint8Array<ArrayBuffer> {
   const head = [tag, ...len(body.length)];
   const out = new Uint8Array(head.length + body.length);
   out.set(head);
@@ -16,7 +16,7 @@ function tlv(tag: number, body: Uint8Array): Uint8Array {
   return out;
 }
 
-function cat(...parts: Uint8Array[]): Uint8Array {
+function cat(...parts: Uint8Array[]): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;
   for (const p of parts) {

@@ -40,6 +40,7 @@ export interface DevApp extends AppDetails {
   repo: string;
   manifestUrl: string;
   profileName: string;
+  bundleId: string;
   showOnPage: boolean;
   releaseIcon?: string;
   createdAt: string;
@@ -115,6 +116,28 @@ export interface SecretStatus {
   appleTeamIdSavedAt: string | null;
   github: boolean;
   githubSavedAt: string | null;
+  signing: SigningStatus | null;
+}
+
+export interface SigningStatus {
+  name: string;
+  serialNumber: string;
+  expirationDate: string | null;
+  createdAt: string;
+}
+
+export interface ProfileSummary {
+  name: string;
+  uuid: string;
+  expirationDate: string | null;
+  devices: number;
+  createdAt?: string;
+}
+
+// The result of POST /api/dev/signing: the certificate, then one line per app.
+export interface SigningSetUp {
+  signing: SigningStatus;
+  apps: { id: string; name: string; profile: ProfileSummary | null; error: string | null }[];
 }
 
 export interface Me {

@@ -436,8 +436,8 @@ describe("iPhone signing", () => {
     const body = (await res.json()) as SetUp;
     expect(body.signing).toMatchObject({ name: "Apple Distribution: Test Person", expirationDate: "2027-10-20T10:00:00.000+00:00" });
     expect(body.apps).toEqual([
-      { id: app.id, name: "Skull", profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1 }, error: null },
-      { id: expect.any(String), name: "Web only", profile: null, error: "no iPhone bundle ID on this app yet" },
+      { id: app.id, name: "Skull", profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1, createdAt: deps.now().toISOString() }, error: null },
+      { id: expect.any(String), name: "Web only", profile: null, error: "skipped: no iPhone bundle ID" },
     ]);
 
     const cert = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/certificates"))!;
@@ -501,7 +501,7 @@ describe("iPhone signing", () => {
     const d = { ...deps, fetch: fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [{ id: "dev-1", udid: UDID_1 }], profileCount: 0 }) }).fetch };
     const res = await handle(api(null, "POST", `/api/dev/apps/${app.id}/profile`, {}, { Authorization: `Bearer ${key}` }), env, d);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1 } });
+    expect(await res.json()).toEqual({ profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1, createdAt: deps.now().toISOString() } });
   });
 
   it("refuses bad input, API keys and missing Apple keys; Settings cannot write the signing key", async () => {

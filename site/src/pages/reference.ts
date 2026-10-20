@@ -38,20 +38,23 @@ function architectureSvg(): Raw {
     ${card(336, 100, 258, 52, "Install page", "/l/&lt;link&gt;: listing, steps, QR")}
     ${card(336, 162, 258, 52, "Signed downloads", "/dl/&#8230;: streams .ipa and .apk")}
     ${card(336, 224, 258, 52, "iPhone enrolment", "device number, Apple registration")}
-    ${card(336, 286, 258, 52, "Web host", "&lt;link&gt;.ourapps.app: copy of web.zip")}
+    ${card(336, 286, 258, 52, "iPhone signing", "certificate and Ad Hoc profile")}
     <text x="465" y="372" text-anchor="middle" ${s("fill:var(--text-2);font-size:11.5px;font-style:italic")}>no app code, API or database runs here</text>
 
-    <rect x="680" y="40" width="300" height="232" rx="16" ${s("fill:var(--surface-2);stroke:var(--line-2);stroke-width:1")} />
+    <rect x="680" y="40" width="300" height="214" rx="16" ${s("fill:var(--surface-2);stroke:var(--line-2);stroke-width:1")} />
     <text x="700" y="68" ${s("fill:var(--text);font-weight:800;font-size:15px")}>Your GitHub repository</text>
-    ${card(696, 82, 268, 52, "Actions", "build and sign each release")}
-    <rect x="696" y="144" width="268" height="112" rx="12" ${s("fill:var(--surface);stroke:var(--line-2);stroke-width:1")} />
+    ${card(696, 82, 268, 52, "Actions", "build, sign and deploy each release")}
+    <rect x="696" y="144" width="268" height="94" rx="12" ${s("fill:var(--surface);stroke:var(--line-2);stroke-width:1")} />
     <text x="710" y="168" ${s("fill:var(--text);font-weight:700;font-size:13px")}>Releases</text>
     <text x="710" y="190" ${s("fill:var(--text-2);font-size:11.5px")}>my-app.json · CHANGELOG.md</text>
     <text x="710" y="208" ${s("fill:var(--text-2);font-size:11.5px")}>.ipa + manifest.plist</text>
     <text x="710" y="226" ${s("fill:var(--text-2);font-size:11.5px")}>.apk</text>
-    <text x="710" y="244" ${s("fill:var(--text-2);font-size:11.5px")}>web.zip</text>
 
-    ${card(680, 300, 300, 64, "Apple App Store Connect API", "devices and Ad Hoc profiles, with your key")}
+    <rect x="680" y="270" width="300" height="72" rx="16" ${s("fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.2")} />
+    <text x="696" y="296" ${s("fill:var(--text);font-weight:700;font-size:13px")}>Your Cloudflare account</text>
+    <text x="696" y="316" ${s("fill:var(--text-2);font-size:11.5px")}>web app files, served free</text>
+
+    ${card(680, 360, 300, 64, "Apple App Store Connect API", "devices, certificate, Ad Hoc profiles")}
 
     <rect x="20" y="460" width="960" height="124" rx="16" ${s("fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.2")} />
     <text x="40" y="488" ${s("fill:var(--text);font-weight:800;font-size:15px")}>Your backend, hosted wherever you like</text>
@@ -62,13 +65,17 @@ function architectureSvg(): Raw {
 
     ${install("M320,126 C290,126 280,82 252,82")}
     ${install("M320,188 C290,188 280,166 252,166")}
-    ${install("M336,312 C300,312 280,250 252,250")}
+    ${install("M320,134 C292,134 284,250 252,250")}
     ${install("M696,200 L596,188")}
-    ${install("M696,236 L596,312")}
-    ${install("M596,250 C640,250 640,332 678,332")}
+    ${install("M596,250 C640,250 640,392 678,392")}
     ${install("M596,126 C640,126 650,108 694,108")}
+    ${install("M596,312 C650,312 660,124 694,124")}
+    ${install("M964,108 C996,108 996,306 982,306")}
     ${label(640, 98, "rebuild", "--accent")}
     ${label(626, 182, "files", "--accent")}
+    ${label(612, 340, "certificate, profile", "--accent")}
+    ${run("M155,282 L155,438 L830,438 L830,346")}
+    ${label(420, 432, "opens the web app", "--ok")}
 
     <path d="M60,82 L40,82 L40,456" ${s("fill:none;stroke:var(--ok);stroke-width:2.2")} marker-end="url(#ah-run)" />
     <path d="M60,166 L40,166" ${s("fill:none;stroke:var(--ok);stroke-width:2.2")} />
@@ -124,25 +131,25 @@ const TOPOLOGIES: Topology[] = [
     ],
   },
   {
-    id: "topo-web-bundle",
-    title: "Static web app served by ourapps (apps that ship web.zip)",
-    file: "web-bundle.png",
-    summary: "Apps that already publish web.zip: ourapps copies it once per release and serves it from the link's own origin. New web apps go on your own Cloudflare account instead.",
+    id: "topo-web",
+    title: "Static web app on your own Cloudflare account",
+    file: "web-cloudflare.png",
+    summary: "A Vite, Flutter web or similar build that the release workflow deploys to your free Cloudflare account as a Worker with files only. The install page links to it; ourapps never serves or proxies it.",
     parts: [
       ["Clients", "any browser, added to the home screen"],
-      ["ourapps", "unpacks web.zip into its storage, serves https://<link>.ourapps.app/"],
-      ["You host", "your API if there is one; allow the link origins in CORS"],
+      ["ourapps", "the install page and the link"],
+      ["You host", "the files, free on Cloudflare, and your API if there is one"],
     ],
   },
   {
     id: "topo-web-link",
-    title: "Web app on your own Cloudflare account, or hosted elsewhere",
+    title: "Web app with its own server, hosted elsewhere",
     file: "web-link.png",
-    summary: "A static build your workflow deploys to your free Cloudflare account, or a server-rendered site anywhere. The install page links to it; ourapps does not proxy it.",
+    summary: "A server-rendered site, or one already on Vercel, Netlify or your own server. The install page links to it; ourapps does not proxy it.",
     parts: [
       ["Clients", "any browser"],
       ["ourapps", "the install page and the link, nothing else"],
-      ["You host", "the whole web app; static files are free on Cloudflare"],
+      ["You host", "the whole web app"],
     ],
   },
   {

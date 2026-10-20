@@ -11,7 +11,8 @@
   "scripts": {
     "test": "npm test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces",
-    "build": "npm run build -w site"
+    "build": "npm run build -w site",
+    "smoke": "node scripts/smoke.mjs"
   },
   "engines": {
     "node": ">=20"

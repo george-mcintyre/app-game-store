@@ -87,11 +87,11 @@ export async function dashboard(root: HTMLElement): Promise<void> {
             </div>
             <div class="card">
               <h2>${icon("shield", "icon-20")} Security in one paragraph</h2>
-              <p class="small muted">Your Apple key and GitHub token are encrypted per account with keys derived from a secret that lives only in the server's secret store; API keys, build tokens and sessions are stored as keyed hashes; credential changes need you in a browser; friends' iPhone records are visible to you alone and sent only to Apple under your account. <a href="/dev/guide#security">Full description</a>, <a href="/terms">terms and data statement</a>, and recent activity under <a href="/dev/settings#security">Settings</a>.</p>
+              <p class="small muted">Your Apple key, iPhone signing key and GitHub token are encrypted per account with keys derived from a secret that lives only in the server's secret store; API keys, build tokens and sessions are stored as keyed hashes; credential changes need you in a browser; friends' iPhone records are visible to you alone and sent only to Apple under your account. <a href="/dev/guide#security">Full description</a>, <a href="/terms">terms and data statement</a>, and recent activity under <a href="/dev/settings#security">Settings</a>.</p>
             </div>
             <div class="card">
               <h2>Learn and automate</h2>
-              <p class="small muted">The <a href="/dev/guide#tldr">guide's TL;DR</a> lists the few things only you can do (sign in, tokens, Apple portal, approvals). Everything else an agent does with the API key and prompts on the <a href="/dev/agents">agents page</a>.</p>
+              <p class="small muted">The <a href="/dev/guide#tldr">guide's TL;DR</a> lists the few things only you can do (sign in, tokens and keys, approvals). Everything else an agent does with the API key and prompts on the <a href="/dev/agents">agents page</a>.</p>
             </div>
           </div>
         </div>

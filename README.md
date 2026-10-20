@@ -63,6 +63,11 @@ an app's API or database. Details and limits: `/reference` (source `site/src/pag
 the diagrams by app type are in `site/public/reference/` (PNG masters, WebP for the site),
 generated from the prompts in `docs/diagram-prompts.md`.
 
+## Live check
+
+`npm run smoke` checks the live site; with `OURAPPS_API_KEY` set to a manage key it walks every
+endpoint in agents.md on a throwaway app and cleans up (`scripts/smoke.mjs`).
+
 ## Who does what
 
 Only a few steps need a human: signing in with GitHub, creating the GitHub token and the Apple

@@ -136,7 +136,7 @@ function sections(origin: string, slug: string): Section[] {
         <ul class="bullets small">
           <li><b>The address is public.</b> Anyone who has it can open the app, and revoking a share link does not stop them. Keep anything private behind the app's own sign-in.</li>
           <li><b>Unity and other pre-compressed builds:</b> Cloudflare compresses files itself, so build without pre-compression, or turn on Unity's Decompression Fallback.</li>
-          <li><b>Older apps</b> that publish <code>web.zip</code> are still served by ourapps at their link addresses; moving them frees ourapps' shared allowance for installs.</li>
+          <li><b>Older apps</b> that publish <code>web.zip</code> are still served by ourapps at their link addresses; moving them frees ourapps' shared allowance for installs. Once a release drops <code>web.zip</code>, the old link addresses redirect to the new one, so icons already on friends' home screens keep working.</li>
         </ul>
 
         <h3 id="android-setup">Android signing</h3>

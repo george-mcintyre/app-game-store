@@ -272,7 +272,9 @@ a bundle of the built site that the store copies and serves at `https://<linkId>
 one origin per share link, nothing from the console shared with it. On the first request after a
 release the store fetches the zip, unpacks it once into its storage and serves single files from
 there; the release is re-checked at most once a minute. These requests count against ourapps'
-shared allowance, which is why new web apps go on the developer's own account.
+shared allowance, which is why new web apps go on the developer's own account. When a release
+drops `web.zip` and `install.pwa` names an address elsewhere, the link addresses redirect there,
+so home screen icons made from them keep opening the app.
 
 - Limits: zip at most 25 MB, at most 32 MB unpacked, any file at most 24 MB, at most 2,000
   files, at most 8 MB of compressed (deflated) content. Build it uncompressed:

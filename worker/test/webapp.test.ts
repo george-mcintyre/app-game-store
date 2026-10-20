@@ -138,6 +138,18 @@ describe("serving", () => {
     expect(await none.text()).toContain("no web.zip");
   });
 
+  it("sends an old link address to the app's new address once web.zip is gone", async () => {
+    const { linkId } = await createSkull(env, deps, cookie);
+    const routes = githubRoutes();
+    routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () => jsonRes({ ...manifest, install: { ...manifest.install, pwa: "https://skull-web.you.workers.dev/" } });
+    const d = { ...deps, fetch: fakeFetch(routes).fetch };
+    const root = await handle(new Request(`https://${linkId}.${HOST}/`), env, d);
+    expect(root.status).toBe(302);
+    expect(root.headers.get("Location")).toBe("https://skull-web.you.workers.dev/");
+    const deep = await handle(new Request(`https://${linkId}.${HOST}/table/7?seat=2`), env, d);
+    expect(deep.headers.get("Location")).toBe("https://skull-web.you.workers.dev/table/7?seat=2");
+  });
+
   it("does not name the repository on a public page when the release cannot be read", async () => {
     const { linkId } = await createSkull(env, deps, cookie);
     const routes = webRoutes(bundle());

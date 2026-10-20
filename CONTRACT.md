@@ -144,7 +144,9 @@ jq -r .profile.profileBase64 "$RUNNER_TEMP/signing.json" | base64 -d \
 ```
 
 Build with manual signing: identity `Apple Distribution` and the profile named
-`.profile.profileName`. Delete the keychain and `signing.json` when the job ends, also on failure.
+`.profile.profileName`, set on the app target only (in the project, for example XcodeGen's
+`project.yml`). Passed as `xcodebuild` overrides they also reach Swift package resource bundles,
+which then fail with "requires a development team". The team id is `.teamId`. Delete the keychain and `signing.json` when the job ends, also on failure.
 `<profileUrl>` from the payload returns the profile alone:
 `{ "profileName", "profileId", "uuid", "profileBase64", "expirationDate" }`.
 

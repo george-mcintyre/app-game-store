@@ -183,7 +183,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
         <p>The console never looks at your source code. It reads one file, <code>my-app.json</code>, from the latest GitHub Release of the repository, and follows the URLs inside it. Your repository therefore needs a release workflow that:</p>
         <ol class="steps">
           <li>Builds the signed APK and, for iPhone apps, the Ad Hoc signed <code>.ipa</code>.</li>
-          <li>Creates a GitHub Release (not a draft, not a pre-release) and uploads: <code>my-app.json</code>, <code>icon.png</code>, screenshots, the <code>.apk</code>, and for iPhone <code>manifest.plist</code> plus the <code>.ipa</code>.</li>
+          <li>Creates a GitHub Release as a draft, uploads <code>icon.png</code>, screenshots, the <code>.apk</code>, for iPhone <code>manifest.plist</code> plus the <code>.ipa</code>, and <code>my-app.json</code> last, then publishes it. A release that goes public before its files are in makes install pages fail until <code>my-app.json</code> arrives.</li>
           <li>Writes every URL inside my-app.json and manifest.plist as a release-asset API URL (<code>https://api.github.com/repos/owner/name/releases/assets/123</code>). Private repositories work this way and nothing is guessable; the console turns them into short-lived links for the phone.</li>
           <li>For iPhone apps: fetches the certificate, its key and the profile from the console with the build token, and also runs on the <code>my-store-rebuild</code> event, after which it calls <code>/api/build-ready</code>. The <a href="/contract.md">contract</a> spells out every field.</li>
         </ol>

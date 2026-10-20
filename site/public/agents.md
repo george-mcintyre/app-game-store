@@ -85,12 +85,14 @@ Field rules: `name` required; `repo` must be `owner/name`; `bundleId` is the Xco
 
 App object: `{ id, developerId, name, tagline, description, whatsNew, size, minOs, ageNote, privacySummary, iconUrl, screenshots, screenshotsByPlatform, repo, manifestUrl, bundleId, profileName, showOnPage, createdAt, updatedAt }`.
 
-After creating an app, store the token and id in the repository at once:
+After creating an app, store the token and id in the repository at once, passing the values on standard input so they never appear on a command line:
 
 ```
-gh secret set STORE_BUILD_TOKEN --body "<buildToken>" --repo owner/name
-gh secret set STORE_APP_ID --body "<app.id>" --repo owner/name
+printf '%s' "$BUILD_TOKEN" | gh secret set STORE_BUILD_TOKEN --repo owner/name
+printf '%s' "$APP_ID" | gh secret set STORE_APP_ID --repo owner/name
 ```
+
+Never print the build token or put it in a file or a chat: it lets its holder fetch the developer's iPhone signing key. If it cannot be stored (no `gh`, no access, the repository does not exist yet), say so and drop it; once the repository is ready, `POST /api/dev/apps/:id/build-token` makes a new one to store.
 
 ## Release status
 
@@ -100,16 +102,17 @@ GET /api/dev/apps/:id/release
      "web": { "hosting": "own", "url": "https://poker-night-web.you.workers.dev/", "ok": true, "status": 200 } | { "hosting": "ourapps", ... } | null,
      "tag": "v0.1.1", "publishedAt": "...", "assets": ["my-app.json", "icon.png", "poker-night.apk"],
      "manifestUrl": "https://api.github.com/repos/.../assets/123", "version": "0.1.1",
-     "install": { "ios": false, "android": true, "pwa": false }, "screenshots": 3,
-     "profile": { "uuid", "expirationDate", "devices" } | null, "errors": [] }
--> { "ok": false, ..., "errors": ["no release visible on owner/name; a private repository needs a GitHub token in Settings"] }
+     "install": { "ios": false, "android": true, "pwa": false }, "screenshots": 3, "changelog": true,
+     "profile": { "name", "uuid", "expirationDate", "devices", "createdAt" } | null, "errors": [] }
+-> { "ok": false, ..., "errors": ["no release visible on owner/name: the repository does not exist, has no published release yet, or is private and needs a GitHub token in Settings"] }
 ```
 
 Use this after every publish. Typical errors and what fixes them:
 
 | error contains | fix |
 |---|---|
-| `needs a GitHub token` | the developer saves a token at /dev/settings (you cannot) |
+| `no release visible` | GitHub answers the same for a missing repository, one without a published release, and a private one the store cannot see. Tell them apart with `gh repo view owner/name` and `gh release list --repo owner/name`; a private repository needs the developer to save a GitHub token at /dev/settings (you cannot) |
+| `does not include this repository` | the developer adds the repository to their fine-grained GitHub token on GitHub |
 | `no published release found` | publish the release (create it as a draft, upload every asset with my-app.json last, then publish; never a pre-release) |
 | `has no asset named my-app.json` | upload the file with exactly that name |
 | `is invalid:` | the field named in the message; see schema below |
@@ -120,7 +123,12 @@ Use this after every publish. Typical errors and what fixes them:
 GET /api/dev/apps/:id/preview
 -> { "preview": true, "linkId": null, "developer": {...}, "app": {...},
      "release": { "version", "minPlayers", "maxPlayers", "install", "fallbackName", "fallbackIcon", "fallbackDescription", "fallbackScreenshots" } | null,
-     "releaseError": null | "message" }
+     "releaseError": null | "message", "screenshots": {...}, "history": [...] }
+```
+
+When `release` is null the install page shows the listing with "has no published build yet" and no install button; `releaseError` in the preview says why. `GET /api/public/links/:id` returns the same shape without `preview`, and its `releaseError` is only "no published build yet", never the reason.
+
+```
 ```
 
 The same data the install page renders, so you can confirm icon, screenshots and text are in place. Both this and the public link endpoint include `screenshots`: `{ "all": [...], "iphone"?: [...], "ipad"?: [...], "android"?: [...], "web"?: [...] }`, the general list and each version's own list, private release assets already on signed links. For each version (iPhone, iPad, Android, Web) the install page shows the first list that exists: that version's list in the dashboard, that version's list in my-app.json, the general list in the dashboard, the general list in my-app.json, then the closest other version's list (so a single set covers every version), and generated previews in the version's shape only when no screenshots exist at all. Both also include `history`: one entry per published release (`version`, `tag`, `title`, `notes`, `date`, `sha`, `releaseUrl`, `commitUrl`), built from the repository's releases and tags. Notes come from the `CHANGELOG.md` release asset (Keep a Changelog sections matched by version), then the release body, then the commit message. GitHub links are present only for public repositories.
@@ -139,7 +147,7 @@ PUT /api/dev/links/:id            body: { "label": "Thursday table" } -> { "link
 POST /api/dev/links/:id/revoke    -> { "ok": true }
 DELETE /api/dev/links/:id         -> { "ok": true }
 
-GET /api/public/links/:id         (no auth) -> install page data, 410 when expired or revoked, 404 when unknown
+GET /api/public/links/:id         (no auth) -> install page data (the preview shape, see above), 410 when expired or revoked, 404 when unknown
 GET /api/public/links/:id/qr.svg  (no auth) -> SVG QR code of the link
 GET /api/public/links/:id/latest  (no auth) -> { "name", "version", "ios": { "installUrl", "manifestUrl", "bundleId" } | null, "android": { "apkUrl" } | null, "pwa", "linksExpireAt" }
                                   "pwa" is the URL to open: https://<linkId>.ourapps.app/ when the release ships web.zip, else the manifest's own URL, else null

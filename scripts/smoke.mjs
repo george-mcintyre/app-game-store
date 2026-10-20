@@ -148,6 +148,7 @@ async function keyedChecks() {
       const page = await call("GET", L("/api/public/links/:id"), { auth: "", pattern: "/api/public/links/:id" });
       expectStatus("GET /api/public/links/:id", page, 200);
       expectKeys("public link page shape", page.json, ["linkId", "developer", "app", "release", "releaseError", "history", "screenshots"]);
+      record(!page.text.includes("ourapps-smoke-test"), "the public link data does not name the repository", page.json?.releaseError);
       const qr = await fetch(base + L("/api/public/links/:id/qr.svg"));
       exercised.add("GET /api/public/links/:id/qr.svg");
       record(qr.status === 200 && (qr.headers.get("content-type") ?? "").includes("svg"), "GET /api/public/links/:id/qr.svg", String(qr.status));

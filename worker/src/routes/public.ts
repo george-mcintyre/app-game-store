@@ -106,7 +106,9 @@ async function activeLink(env: Env, deps: Deps, linkId: string): Promise<{ link:
 // GET /api/public/links/:id
 export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Response> {
   const { link, app, dev } = await activeLink(env, deps, linkId);
-  return json(await buildLinkPage(env, deps, app, dev, link.id));
+  const page = await buildLinkPage(env, deps, app, dev, link.id);
+  // The reason can name a private repository; friends only learn that no build is out yet.
+  return json({ ...page, releaseError: page.releaseError ? "no published build yet" : null });
 }
 
 // GET /api/public/links/:id/latest - what an installed app polls to offer an update.

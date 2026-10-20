@@ -32,7 +32,7 @@ export async function resolveRelease(env: Env, deps: Deps, app: AppRow, githubTo
     throw new Error(
       githubToken
         ? `no published release visible on ${app.repo}: either none is published (drafts and pre-releases do not count) or the GitHub token in Settings does not include this repository`
-        : `no release visible on ${app.repo}; a private repository needs a GitHub token in Settings`,
+        : `no release visible on ${app.repo}: the repository does not exist, has no published release yet, or is private and needs a GitHub token in Settings`,
     );
   }
   if (!res.ok) throw new Error(`latest release for ${app.repo}: ${res.status}`);

@@ -9,8 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "prebuild": "cp ../CONTRACT.md public/contract.md && node scripts/free-tiers-md.ts",
-    "predev": "cp ../CONTRACT.md public/contract.md && node scripts/free-tiers-md.ts"
+    "prebuild": "cp ../CONTRACT.md public/contract.md && mkdir -p public/web && cp ../worker/src/assets/install-banner.js public/web/install-banner.js && node scripts/free-tiers-md.ts",
+    "predev": "cp ../CONTRACT.md public/contract.md && mkdir -p public/web && cp ../worker/src/assets/install-banner.js public/web/install-banner.js && node scripts/free-tiers-md.ts"
   },
   "dependencies": {
     "@my/store-shared": "*",

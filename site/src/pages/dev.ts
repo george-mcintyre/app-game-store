@@ -38,6 +38,7 @@ export async function dashboard(root: HTMLElement): Promise<void> {
     const ready = enrolments.filter((e) => e.state === "ready").length;
     const anyRelease = releases.some((r) => r?.ok);
     const needsIos = releases.some((r) => r?.install?.ios) || apps.some((a) => a.profileName || a.bundleId);
+    const webReleases = releases.filter((r) => r?.web);
 
     const steps: { done: boolean; title: string; why: string; href: string; cta: string; optional?: boolean }[] = [
       { done: true, title: "Sign in with GitHub", why: "Done. Your page is /" + me.developer.slug + ".", href: "/dev/settings", cta: "Profile" },
@@ -46,6 +47,9 @@ export async function dashboard(root: HTMLElement): Promise<void> {
       { done: Boolean(me.secrets.signing), title: "Set up iPhone signing", why: needsIos ? "One click: ourapps creates the certificate and each app's Ad Hoc profile; your repositories need no Apple secrets." : "Only needed for iPhone apps.", href: "/dev/settings#signing", cta: "Settings", optional: !needsIos },
       { done: apps.length > 0, title: "Add your first app", why: "Name, icon, a few lines, and the repository that publishes it.", href: "/dev/apps/new", cta: "Add app" },
       { done: anyRelease, title: "Publish a release the console can read", why: "A GitHub Release with my-app.json and the app files. The guide and the agent prompt show exactly how.", href: apps[0] ? `/dev/apps/${apps[0].id}` : "/dev/guide#release", cta: apps[0] ? "Check release" : "Guide" },
+      ...(webReleases.length > 0
+        ? [{ done: webReleases.every((r) => r?.web?.hosting === "own" && r.web.ok), title: "Host web apps on your own Cloudflare account", why: "Free and without a request limit; ourapps links to the address. A token in the app's repository lets its workflow deploy.", href: "/dev/guide#cloudflare", cta: "Guide", optional: true }]
+        : []),
       { done: activeLinks > 0, title: "Create a share link", why: "Each link is private, has a QR code and can be revoked.", href: apps[0] ? `/dev/apps/${apps[0].id}/links` : "/dev/apps", cta: "Links" },
       { done: ready > 0, title: "Get the first iPhone installed", why: needsIos ? "Approve the device when it appears; the console does the rest." : "Not needed for Android or web apps.", href: "/dev/devices", cta: "Devices", optional: !needsIos },
     ];
@@ -382,9 +386,12 @@ async function loadReleaseCard(root: HTMLElement, appId: string, app: DevApp): P
             <dt>Platforms</dt><dd>${platforms || "none"}</dd>
             <dt>Assets</dt><dd>${r.assets.length > 0 ? r.assets.join(", ") : "n/a"}</dd>
             <dt>Screenshots in manifest</dt><dd>${r.screenshots}</dd>
+            ${r.web ? html`<dt>Web app</dt><dd>${r.web.hosting === "own" ? html`<a href="${r.web.url!}" target="_blank" rel="noopener">${new URL(r.web.url!).host}</a> ${r.web.ok ? pill("answers", "ok") : pill(r.web.status ? `answers ${r.web.status}` : "no answer", "bad")}` : html`served by ourapps from web.zip`}</dd>` : ""}
             <dt>Release notes</dt><dd>${r.changelog ? "CHANGELOG.md shipped" : "no CHANGELOG.md in this release"}</dd>
             ${r.install?.ios ? html`<dt>Ad Hoc profile</dt><dd>${r.profile ? html`${r.profile.devices} device${r.profile.devices === 1 ? "" : "s"}, expires ${fmtDate(r.profile.expirationDate)}` : "not made yet; see iPhone signing below"}</dd>` : ""}
           </dl>
+          ${r.web?.hosting === "ourapps" ? callout("info", html`<p>The web version is served by ourapps from <code>web.zip</code>. Moving it to your own Cloudflare account makes it free without a request limit and leaves ourapps' shared allowance for installs. <a href="/dev/guide#cloudflare">How</a>.</p>`) : ""}
+          ${r.web?.hosting === "own" && !r.web.ok ? callout("bad", html`<p>The web version's address <code>${r.web.url!}</code> did not answer${r.web.status ? html` (status ${r.web.status})` : ""}. Check the deploy step in the release workflow and that the Cloudflare secrets are set on the repository.</p>`) : ""}
           ${!r.changelog ? callout("warn", html`<p>No <code>CHANGELOG.md</code> in the latest release, so friends see release bodies or commit messages as the revision history. <a href="/dev/guide#release-notes">Add release notes</a>.</p>`) : ""}
           ${r.install?.ios && !r.appleKey ? callout("warn", html`<p>This app has an iPhone build but no App Store Connect key is saved. <a href="/dev/settings#credentials">Add it in Settings</a> before approving devices.</p>`) : ""}
         `

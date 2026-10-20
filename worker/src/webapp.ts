@@ -118,6 +118,22 @@ export function webAppUrl(env: Env, linkId: string): string {
 }
 
 // Does the manifest's pwa value name a web.zip bundle the store should serve?
+export type WebHosting = { hosting: "ourapps"; url: null; ok: null; status: null } | { hosting: "own"; url: string; ok: boolean; status: number | null };
+
+// Where the web version lives: copied from web.zip by ourapps, or at the developer's own address,
+// which is fetched once to confirm it answers.
+export async function webHosting(deps: Deps, pwa: string | null, release: { manifestUrl: string; assets: string[] } | null): Promise<WebHosting | null> {
+  if (!pwa) return null;
+  if (isBundleUrl(pwa, release)) return { hosting: "ourapps", url: null, ok: null, status: null };
+  try {
+    const res = await deps.fetch(pwa, { redirect: "follow", headers: { "User-Agent": "ourapps" } });
+    await res.body?.cancel();
+    return { hosting: "own", url: pwa, ok: res.ok, status: res.status };
+  } catch {
+    return { hosting: "own", url: pwa, ok: false, status: null };
+  }
+}
+
 export function isBundleUrl(pwa: string | null | undefined, release: { manifestUrl: string; assets: string[] } | null): boolean {
   if (!pwa) return false;
   try {

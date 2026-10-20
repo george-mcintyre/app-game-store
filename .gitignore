@@ -7,3 +7,4 @@ dist/
 .omo/
 site/public/contract.md
 site/public/free-tiers.md
+site/public/web/install-banner.js

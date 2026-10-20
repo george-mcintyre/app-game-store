@@ -1,4 +1,5 @@
-// Injected by ourapps into web apps it serves: a one-tap "add to home screen" banner.
+// A one-tap "add to home screen" banner: injected into web apps ourapps serves, and copied from
+// https://ourapps.app/web/install-banner.js into web apps hosted on the developer's own account.
 // Shows only in a normal browser tab, never once the app runs from the home screen.
 (function () {
   "use strict";

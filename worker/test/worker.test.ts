@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { errorResponse, handle } from "../src/index.js";
-import { BASE, CSR, GH_TOKEN, api, jsonRes, manifest, appleRoutes, applePem, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, rsaPem, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
+import { BASE, CSR, GH_TOKEN, api, jsonRes, type Call, manifest, appleRoutes, applePem, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, rsaPem, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const UDID_1 = "00008030-000A1B2C3D4E5F67";
 const UDID_2 = "00008030-000F0E0D0C0B0A09";
@@ -591,6 +591,24 @@ describe("API keys and agent endpoints", () => {
     const routes = { "GET api.github.com/repos/o/private/releases/latest": () => new Response("{}", { status: 404 }) };
     const missing = (await (await handle(api(noToken, "GET", `/api/dev/apps/${app.id}/release`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { errors: string[] };
     expect(missing.errors[0]).toMatch(/GitHub token/);
+  });
+
+  it("reports where the web version is hosted and whether the developer's address answers", async () => {
+    const { appId } = await createSkull(env, deps, cookie);
+    const check = async (pwa: string, assets: string[], site?: number) => {
+      const routes: Record<string, (c: Call) => Response> = {
+        ...githubRoutes(),
+        "GET api.github.com/repos/o/skull/releases/latest": () => jsonRes({ assets: [{ name: "my-app.json", url: "https://api.github.com/repos/o/skull/releases/assets/1" }, ...assets.map((name, i) => ({ name, url: `https://api.github.com/repos/o/skull/releases/assets/${20 + i}` }))] }),
+        "GET api.github.com/repos/o/skull/releases/assets/1": () => jsonRes({ ...manifest, install: { ...manifest.install, pwa } }),
+      };
+      if (site !== undefined) routes["GET skull.dev-name.workers.dev/"] = () => new Response("<!doctype html>", { status: site });
+      const res = await handle(api(cookie, "GET", `/api/dev/apps/${appId}/release`), env, { ...deps, fetch: fakeFetch(routes).fetch });
+      return ((await res.json()) as { web: unknown }).web;
+    };
+    expect(await check("https://api.github.com/repos/o/skull/releases/assets/20", ["web.zip"])).toEqual({ hosting: "ourapps", url: null, ok: null, status: null });
+    expect(await check("https://skull.dev-name.workers.dev/", [], 200)).toEqual({ hosting: "own", url: "https://skull.dev-name.workers.dev/", ok: true, status: 200 });
+    expect(await check("https://skull.dev-name.workers.dev/", [], 404)).toEqual({ hosting: "own", url: "https://skull.dev-name.workers.dev/", ok: false, status: 404 });
+    expect(await check("https://skull.dev-name.workers.dev/", [])).toMatchObject({ hosting: "own", ok: false });
   });
 
   it("tells an installed app what the latest version is, with fresh install links", async () => {

@@ -30,9 +30,9 @@ GET /api/dev/me
 Full detail: https://ourapps.app/reference.
 
 - Native iPhone and iPad (.ipa, Ad Hoc; 100 devices per product family per membership year), native Android (signed universal .apk; no .aab), and anything that compiles to those (Flutter, React Native, .NET MAUI, Capacitor, Kotlin Multiplatform, Unity and Godot mobile).
-- Static web apps and web games as a `web.zip` bundle served by ourapps on `https://<linkId>.ourapps.app/` (25 MB zip, 32 MB unpacked, built with `zip -0`; pre-compressed `.br`/`.gz` files and an allowlisted `_headers` file supported).
-- Web apps needing a server: host them yourself and put their URL in `install.pwa`; ourapps links to them, never proxies.
-- Backends, APIs and databases are never hosted by ourapps; apps call them directly. Web bundles must allow the link origins in CORS and authenticate with tokens, not cookies.
+- Static web apps and web games: the release workflow deploys the build to the developer's own free Cloudflare account (`npx wrangler deploy`, files only, with repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`) and writes the address into `install.pwa`; contract.md "Web apps" has the exact files and steps. ourapps links to it and never proxies it. Apps that already ship a `web.zip` bundle are still served by ourapps on `https://<linkId>.ourapps.app/`; do not start new ones that way.
+- Web apps needing a server: host them yourself and put their URL in `install.pwa`.
+- Backends, APIs and databases are never hosted by ourapps; apps call them directly. Allow the web app's address in CORS and authenticate with tokens, not cookies.
 
 ## Free services for the app's backend
 
@@ -45,6 +45,7 @@ Tell the developer plainly when a task is theirs; do not try to work around it:
 - Signing in with GitHub, and creating the GitHub fine-grained token and the Apple App Store Connect API key (saved at `/dev/settings`; there is no API for credentials).
 - Pressing "Set up iPhone signing" once at `/dev/settings#signing` (it runs by itself when the Apple key is saved). ourapps then creates the Apple Distribution certificate, each app's App ID and Ad Hoc profile; the repository needs no Apple secrets.
 - Providing the Android keystore and its passwords; you may store them with `gh secret set` once handed over.
+- Web apps: creating a free Cloudflare account and a token from the "Edit Cloudflare Workers" template, then the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (you may run `gh secret set` once handed the values). ourapps never holds them.
 - Creating API keys (browser session only).
 - Deciding which iPhones to approve: list the waiting devices and approve only the people they name.
 - Sending share links to people.
@@ -96,6 +97,7 @@ gh secret set STORE_APP_ID --body "<app.id>" --repo owner/name
 ```
 GET /api/dev/apps/:id/release
 -> { "ok": true, "githubToken": true, "appleKey": true,
+     "web": { "hosting": "own", "url": "https://poker-night-web.you.workers.dev/", "ok": true, "status": 200 } | { "hosting": "ourapps", ... } | null,
      "tag": "v0.1.1", "publishedAt": "...", "assets": ["my-app.json", "icon.png", "skull.apk"],
      "manifestUrl": "https://api.github.com/repos/.../assets/123", "version": "0.1.1",
      "install": { "ios": false, "android": true, "pwa": false }, "screenshots": 3,
@@ -213,7 +215,7 @@ Published as a release asset named `my-app.json`:
 }
 ```
 
-`install.pwa`: a release-asset URL whose asset is named exactly `web.zip` is a bundle of the built site that the store serves at `https://<linkId>.ourapps.app/` (see contract.md for the build rules: relative base, index.html at the zip root, relative manifest and service worker paths); any other https URL is opened as is. The install page, `/api/public/links/:id` and `/latest` report the served address, never the GitHub one; the dashboard preview reports null because no link exists yet. Served HTML gets an injected "add to home screen" banner (`/__ourapps/install.js`) and, when missing, a standalone manifest, Apple home screen tags and an icon link, so the app installs to the home screen with one tap and keeps its camera and microphone grants. When writing a web app for this, request `getUserMedia` from a tap handler and reuse the stream.
+`install.pwa`: the https address of the web version, normally the developer's own Cloudflare deploy (`https://<app>-web.<subdomain>.workers.dev/`), opened as is; its build carries a manifest, the Apple home screen tags and a copy of https://ourapps.app/web/install-banner.js (contract.md "Web apps"). A release-asset URL whose asset is named exactly `web.zip` is a bundle the store serves at `https://<linkId>.ourapps.app/`, kept for apps that already ship one. The install page, `/api/public/links/:id` and `/latest` report the served address, never the GitHub one; the dashboard preview reports null because no link exists yet. Served HTML gets an injected "add to home screen" banner (`/__ourapps/install.js`) and, when missing, a standalone manifest, Apple home screen tags and an icon link, so the app installs to the home screen with one tap and keeps its camera and microphone grants. When writing a web app for this, request `getUserMedia` from a tap handler and reuse the stream.
 
 Rules: `schema` must be 1; `id` lowercase slug; `name`, `version`, `description` non-empty; `icon` https; `minPlayers` and `maxPlayers` integers of at least 1 with min <= max; `screenshots` optional list of https URLs; optional `screenshotsByPlatform` object with keys `iphone`, `ipad`, `android`, `web`, each a list of https URLs (empty lists allowed, unknown keys rejected); `install` must name all three keys, at least one not null; `ios` needs `adhoc` or `testflight`; optional `ios.devices` lists `"iphone"` and/or `"ipad"` (display only: the page says which devices the build is for and warns on the other, never blocks). Release-asset API URLs are fetched with the developer's GitHub token and re-served to phones through signed links; any other https URL is used as is.
 

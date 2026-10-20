@@ -194,32 +194,102 @@ on iPads (in a phone-sized window) and uses an iPad slot there.
 
 `STORE_BUILD_TOKEN` is per app. Rotate it from the app's page in the dashboard.
 
-## Optional: web apps served by the store
+## Optional: web apps
 
-`install.pwa` is an https URL. Two meanings:
+`install.pwa` is the https address the install page opens. Put the built site on your own free
+Cloudflare account: Cloudflare serves plain files without a request limit or charge, your
+workflow deploys them, and ourapps never sees your Cloudflare token.
 
-- A release-asset URL whose asset is named exactly `web.zip`: a bundle of the built site that
-  the store copies and serves at `https://<linkId>.ourapps.app/`, one origin per share link,
-  nothing from the console shared with it. On the first request after a release the store
-  fetches the zip, unpacks it once into its storage and serves single files from there; the
-  release is re-checked at most once a minute.
-  - Limits: zip at most 25 MB, at most 32 MB unpacked, any file at most 24 MB, at most 2,000
-    files, at most 8 MB of compressed (deflated) content. Build it uncompressed:
-    `zip -0 -r web.zip .` (text is brotli-compressed on the way to the browser anyway).
-  - Layout: `index.html` at the zip root or inside one top-level folder. Relative (`./`) or
-    root (`/`) paths both work because the app is served at the root of its own origin.
-    `manifest.webmanifest` with `start_url` and `scope` of `./`; service worker registered
-    with a relative path. Unknown paths without an extension get `index.html`.
-  - Pre-compressed files (`.wasm.br`, `.js.gz`, `.data.br` and similar) are sent with
-    `Content-Encoding` and the inner content type, as Unity and Godot expect.
-  - An optional `_headers` file (Cloudflare Pages format) may set
-    `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`,
-    `Cross-Origin-Resource-Policy`, `Permissions-Policy`, `Content-Security-Policy` and
-    `Cache-Control`; anything else is ignored. Needed for threaded Unity and Godot builds.
-  - Storage, service workers and permissions belong to each link's origin. Allow the link
-    origins (`^https://[0-9a-f]{16,64}\.ourapps\.app$`) in your API's CORS and use token
-    authentication, not cookies.
-- Any other https URL, including a release asset with another name: opened as is.
+### On your own Cloudflare account
+
+Once per Cloudflare account, in the dashboard:
+
+1. Create a free account at https://dash.cloudflare.com, or use an existing one.
+2. Workers & Pages: choose a `workers.dev` subdomain. Sites are served at
+   `https://<worker name>.<subdomain>.workers.dev`.
+3. My Profile, API Tokens, Create Token, template "Edit Cloudflare Workers". Account
+   Resources: your account; Zone Resources: all zones from that account. Copy the token; it is
+   shown once.
+4. Copy the Account ID (Workers & Pages, Account details).
+
+Once per repository: Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+
+`wrangler.jsonc` in the repository describes a Worker with files only, under a name no other
+Worker on the account uses:
+
+```jsonc
+{
+  "name": "<app>-web",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./web/dist", "not_found_handling": "single-page-application" },
+  "workers_dev": true,
+  "preview_urls": false
+}
+```
+
+The release workflow builds the site, deploys it and keeps the address for `install.pwa`:
+
+```yaml
+- name: Deploy the web app
+  env:
+    CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  run: |
+    npx wrangler@4 deploy | tee "$RUNNER_TEMP/deploy.log"
+    echo "WEB_URL=$(grep -oE 'https://[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev' "$RUNNER_TEMP/deploy.log" | head -1)/" >> "$GITHUB_ENV"
+```
+
+Each deploy replaces the site in place, so the address stays the same from release to release.
+Fail the release when the deploy fails or `WEB_URL` is empty.
+
+In the build output:
+
+- `manifest.webmanifest` (name, `start_url` and `scope` of `./`, `display: "standalone"`, 192
+  and 512 pixel icons) and the `apple-mobile-web-app-capable`, `apple-mobile-web-app-title` and
+  `apple-touch-icon` tags, so the app runs from the home screen.
+- A copy of https://ourapps.app/web/install-banner.js, fetched at build time and loaded with
+  `<script src="install-banner.js" defer></script>`: the "add to home screen" banner the install
+  page tells friends to expect. Copy it; do not link to ourapps.
+- `_headers` at the root: `X-Robots-Tag: noindex` for `/*`, and for threaded Unity or Godot
+  builds `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`.
+- No pre-compressed files. Cloudflare compresses `.html`, `.js`, `.css` and `.wasm` itself and
+  does not honour `Content-Encoding` from `_headers`, so a `.br` or `.gz` file reaches the browser
+  still compressed. Unity: Compression Format "Disabled", or Brotli with "Decompression Fallback".
+
+Free plan limits: 20,000 files per deploy, 25 MiB per file, 100 Workers per account.
+
+The address is public: anyone who has it can open the app, and revoking a share link does not
+stop them. Keep private data behind the app's own sign-in, and allow the address in your API's
+CORS. Storage, service workers and permissions belong to that address.
+
+An app that already runs its own Cloudflare Worker can serve the build from it instead, with an
+`assets` block in that Worker's settings, which puts the web app and its server on one address.
+
+### Served by the store from `web.zip`
+
+Apps that publish it keep working: a release-asset URL whose asset is named exactly `web.zip` is
+a bundle of the built site that the store copies and serves at `https://<linkId>.ourapps.app/`,
+one origin per share link, nothing from the console shared with it. On the first request after a
+release the store fetches the zip, unpacks it once into its storage and serves single files from
+there; the release is re-checked at most once a minute. These requests count against ourapps'
+shared allowance, which is why new web apps go on the developer's own account.
+
+- Limits: zip at most 25 MB, at most 32 MB unpacked, any file at most 24 MB, at most 2,000
+  files, at most 8 MB of compressed (deflated) content. Build it uncompressed:
+  `zip -0 -r web.zip .` (text is brotli-compressed on the way to the browser anyway).
+- Layout: `index.html` at the zip root or inside one top-level folder. Relative (`./`) or
+  root (`/`) paths both work because the app is served at the root of its own origin.
+  `manifest.webmanifest` with `start_url` and `scope` of `./`; service worker registered
+  with a relative path. Unknown paths without an extension get `index.html`.
+- Pre-compressed files (`.wasm.br`, `.js.gz`, `.data.br` and similar) are sent with
+  `Content-Encoding` and the inner content type, as Unity and Godot expect.
+- An optional `_headers` file (Cloudflare Pages format) may set
+  `Cross-Origin-Opener-Policy`, `Cross-Origin-Embedder-Policy`,
+  `Cross-Origin-Resource-Policy`, `Permissions-Policy`, `Content-Security-Policy` and
+  `Cache-Control`; anything else is ignored. Needed for threaded Unity and Godot builds.
+- Storage, service workers and permissions belong to each link's origin. Allow the link
+  origins (`^https://[0-9a-f]{16,64}\.ourapps\.app$`) in your API's CORS and use token
+  authentication, not cookies.
 
 ## Optional: in-app updates
 

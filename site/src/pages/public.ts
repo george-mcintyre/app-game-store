@@ -355,7 +355,20 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     target?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
   }));
   const form = root.querySelector<HTMLFormElement>("#enrol-form");
-  if (form && data.linkId) form.onsubmit = (e) => startEnrolment(e, data.linkId!, form);
+  if (form && data.linkId) {
+    form.onsubmit = (e) => startEnrolment(e, data.linkId!, form);
+    // A registration started earlier in this browser carries on instead of starting a second one.
+    const earlier = localStorage.getItem(`enrolment:${data.linkId}`);
+    if (earlier) {
+      const linkId = data.linkId;
+      api<{ state: string }>("GET", `/api/enrol/${earlier}/status`)
+        .then((s) => {
+          if (["rejected", "failed"].includes(s.state)) return;
+          form.insertAdjacentHTML("afterbegin", callout("info", html`<p>You started registering this device already. <a href="/l/${linkId}/wait/${earlier}"><b>Carry on where you left off</b></a></p>`).html);
+        })
+        .catch(() => localStorage.removeItem(`enrolment:${linkId}`));
+    }
+  }
   if (form && !data.linkId) form.onsubmit = (e) => { e.preventDefault(); toast(opts.example ? "Example only: nothing to install" : "Preview only: create a share link to try this"); };
 }
 
@@ -519,9 +532,9 @@ async function startEnrolment(e: Event, linkId: string, form: HTMLFormElement): 
   try {
     const res = await api<{ enrolmentId: string; profileUrl: string }>("POST", "/api/enrol/new", { linkId, name });
     localStorage.setItem(`enrolment:${linkId}`, res.enrolmentId);
-    // Safari downloads the profile; the wait page takes over once the device has reported in.
+    // The wait page comes first: a browser that blanks the page for the download can go back to it.
+    navigate(`/l/${linkId}/wait/${res.enrolmentId}`);
     location.href = res.profileUrl;
-    setTimeout(() => navigate(`/l/${linkId}/wait/${res.enrolmentId}`), 1500);
   } catch (err) {
     button.disabled = false;
     toast(err instanceof Error ? err.message : String(err));
@@ -567,7 +580,7 @@ const STEPS = [
 
 function waitCopy(state: string, device: string): string {
   switch (state) {
-    case "awaiting-device": return `Open Settings, tap Profile Downloaded, then Install. This page updates by itself once your ${device} has reported in.`;
+    case "awaiting-device": return `Allow the download, then open Settings, tap Profile Downloaded and tap Install. This page updates by itself once your ${device} has reported in. If the page went blank after the download, tap back.`;
     case "pending-approval": return `Your ${device} is registered with this page. The developer approves it next; this page updates by itself when they do, so you can close it and come back to the same link.`;
     case "registering": return `Registering your ${device} with Apple.`;
     case "building": return `A fresh build that includes your ${device} is on its way. This usually takes 10 to 20 minutes. You can close this page and come back to the same link.`;
@@ -603,6 +616,7 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
                 return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${title}</h3><p>${cls === "now" ? "In progress" : cls === "bad" ? "Stopped here" : stepHint(s.key)}</p></div></li>`;
               })}
             </ol>
+            ${state === "awaiting-device" ? html`<a class="btn block secondary" href="/api/enrol/${enrolmentId}/profile.mobileconfig">Download the profile again</a><p class="tiny faint center mt-s">Settings drops a downloaded profile that is not installed within about 8 minutes. Inside another app's browser, open this page in Safari first.</p>` : ""}
             ${done && manifestUrl ? html`<a class="btn block lg" href="${itmsLink(manifestUrl)}">Install</a><p class="tiny faint center mt-s">The install link is good for an hour; reload this page for a fresh one.</p>` : ""}
             <p class="small center mt"><a href="/l/${linkId}">Back to the app page</a></p>
           </div>

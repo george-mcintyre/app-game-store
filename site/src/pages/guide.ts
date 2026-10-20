@@ -126,7 +126,7 @@ function sections(origin: string, slug: string): Section[] {
         <h3 id="cloudflare">Cloudflare account (web apps)</h3>
         <p>Web apps run from your own free Cloudflare account. Cloudflare serves plain files without a request limit or a charge, your repository's workflow deploys them, and ourapps only links to the address. ourapps never sees the token.</p>
         <ol class="steps">
-          <li>Create a free account at <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">dash.cloudflare.com</a>, or use one you have.</li>
+          <li>Create a free account at <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">dash.cloudflare.com</a>. Use a separate one if your existing account runs Workers you care about: Cloudflare cannot limit the token to one Worker, so it can replace any Worker on the account.</li>
           <li>Open <b>Workers &amp; Pages</b> and choose your <b>workers.dev subdomain</b>, for example your name. Web apps appear at addresses like <code>https://skull-web.yourname.workers.dev</code>.</li>
           <li>Open <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">My Profile, API Tokens</a>, tap <b>Create Token</b> and use the template <b>Edit Cloudflare Workers</b>. Account Resources: your account. Zone Resources: all zones from that account. Continue, Create, then copy the token; it is shown once.</li>
           <li>Copy the <b>Account ID</b> from Workers &amp; Pages (Account details).</li>

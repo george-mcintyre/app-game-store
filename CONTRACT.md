@@ -204,7 +204,9 @@ workflow deploys them, and ourapps never sees your Cloudflare token.
 
 Once per Cloudflare account, in the dashboard:
 
-1. Create a free account at https://dash.cloudflare.com, or use an existing one.
+1. Create a free account at https://dash.cloudflare.com, or use one that runs nothing else you
+   care about: Cloudflare cannot limit the token to one Worker, so it can replace any Worker on
+   the account.
 2. Workers & Pages: choose a `workers.dev` subdomain. Sites are served at
    `https://<worker name>.<subdomain>.workers.dev`.
 3. My Profile, API Tokens, Create Token, template "Edit Cloudflare Workers". Account

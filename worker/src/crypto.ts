@@ -158,3 +158,15 @@ export async function validateAppleKey(pem: string): Promise<boolean> {
     return false;
   }
 }
+
+// Confirms a PEM private key is a 2048-bit RSA PKCS#8 key, the kind Apple certifies for signing.
+export async function validateSigningKey(pem: string): Promise<boolean> {
+  try {
+    if (!/^-----BEGIN PRIVATE KEY-----[A-Za-z0-9+/=\s]+-----END PRIVATE KEY-----$/.test(pem.trim())) return false;
+    const body = pem.replace(/-----[A-Z ]+-----/g, "").replace(/\s+/g, "");
+    const key = await crypto.subtle.importKey("pkcs8", fromBase64(body), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, true, ["sign"]);
+    return (key.algorithm as { modulusLength?: number }).modulusLength === 2048;
+  } catch {
+    return false;
+  }
+}

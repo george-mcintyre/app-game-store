@@ -30,7 +30,7 @@ describe("GitHub sign-in", () => {
     expect(me.status).toBe(200);
     const body = (await me.json()) as { developer: { slug: string; displayName: string; githubLogin: string }; secrets: { apple: boolean; github: boolean } };
     expect(body.developer).toMatchObject({ slug: "george", displayName: "George", githubLogin: "george" });
-    expect(body.secrets).toEqual({ apple: false, appleSavedAt: null, appleTeamId: "", appleTeamIdSavedAt: null, github: false, githubSavedAt: null });
+    expect(body.secrets).toEqual({ apple: false, appleSavedAt: null, appleTeamId: "", appleTeamIdSavedAt: null, github: false, githubSavedAt: null, signing: null });
 
     const again = await signIn(env, deps);
     const me2 = (await (await handle(api(again, "GET", "/api/dev/me"), env, deps)).json()) as { developer: { id: string } };
@@ -135,7 +135,7 @@ describe("account settings", () => {
     const pem = await applePem();
     const res = await handle(api(cookie, "PUT", "/api/dev/secrets", { appleIssuerId: "iss", appleKeyId: "kid", applePrivateKey: pem, githubToken: GH_TOKEN }), env, deps);
     const saved = "2026-10-16T10:00:00.000Z";
-    expect(await res.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "", appleTeamIdSavedAt: null, github: true, githubSavedAt: saved } });
+    expect(await res.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "", appleTeamIdSavedAt: null, github: true, githubSavedAt: saved, signing: null } });
 
     const row = await env.DB.prepare("SELECT blob FROM developer_secrets").first<{ blob: string }>();
     const envelope = JSON.parse(row!.blob) as { v: number; kid: string; fields: Record<string, { iv: string; ct: string }>; savedAt: Record<string, string> };
@@ -147,7 +147,7 @@ describe("account settings", () => {
     expect(row!.blob).not.toContain(pem.split("\n")[1]);
 
     const cleared = await handle(api(cookie, "PUT", "/api/dev/secrets", { githubToken: "-", appleTeamId: "TEAM" }), env, deps);
-    expect(await cleared.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "TEAM", appleTeamIdSavedAt: saved, github: false, githubSavedAt: null } });
+    expect(await cleared.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "TEAM", appleTeamIdSavedAt: saved, github: false, githubSavedAt: null, signing: null } });
 
     const me = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, deps)).json()) as { secrets: { apple: boolean; github: boolean } };
     expect(me.secrets).toMatchObject({ apple: true, github: false });

@@ -2,17 +2,17 @@
 import { SCREENSHOT_PLATFORMS, TERMS_VERSION, type ScreenshotPlatform } from "@my/store-shared";
 import { audit } from "../audit.js";
 import { RESERVED_SLUGS, apiKeyHash, clearSessionCookie, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
-import { randomId, tokenHash, validateAppleKey } from "../crypto.js";
-import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow } from "../db.js";
+import { randomId, tokenHash, validateAppleKey, validateSigningKey } from "../crypto.js";
+import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow, type SigningCertificateRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
-import { approveEnrolment, dlUrl, transition } from "../flow.js";
+import { appleClient, approveEnrolment, dlUrl, refreshProfile, transition } from "../flow.js";
 import { HttpError, httpsUrlOrEmpty, json, readJson, text } from "../http.js";
-import { SECRET_FIELDS, appleReady, loadSecrets, saveSecrets, secretsSummary } from "../secrets.js";
+import { EDITABLE_SECRET_FIELDS, appleReady, loadSecrets, saveSecrets, secretsSummary } from "../secrets.js";
 import { CHANGELOG_ASSET } from "../history.js";
 import { fetchManifest, loadManifest, resolveRelease } from "../upstream.js";
 import { buildLinkPage } from "./public.js";
 
-type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName", string>> & {
+type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName" | "bundleId", string>> & {
   screenshots?: unknown;
   screenshotsByPlatform?: unknown;
   showOnPage?: unknown;
@@ -42,6 +42,10 @@ function applyInput(app: AppRow, body: AppInput): void {
   if (body.iconUrl !== undefined) app.iconUrl = httpsUrlOrEmpty(body.iconUrl);
   if (body.manifestUrl !== undefined) app.manifestUrl = httpsUrlOrEmpty(body.manifestUrl);
   if (body.profileName !== undefined) app.profileName = text(body.profileName, 120);
+  if (body.bundleId !== undefined) {
+    app.bundleId = text(body.bundleId, 155);
+    if (app.bundleId !== "" && !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(app.bundleId)) throw new HttpError(400, "bundleId must look like com.yourname.app");
+  }
   if (body.showOnPage !== undefined) app.showOnPage = body.showOnPage === true;
   if (body.screenshots !== undefined) {
     if (!Array.isArray(body.screenshots) || body.screenshots.length > 10) throw new HttpError(400, "screenshots must be a list of at most 10 https URLs");
@@ -67,8 +71,13 @@ async function ownedApp(db: Db, dev: Developer, id: string): Promise<AppRow> {
   return app;
 }
 
+// The certificate counts only while its private key is stored too.
+function signingStatus(s: DeveloperSecrets, c: SigningCertificateRow | null) {
+  return c && s.signingKey ? { name: c.name, serialNumber: c.serialNumber, expirationDate: c.expirationDate, createdAt: c.createdAt } : null;
+}
+
 // What the dashboard may know about stored credentials: presence and save dates, never values.
-function secretStatus(s: DeveloperSecrets) {
+function secretStatus(s: DeveloperSecrets, signing: SigningCertificateRow | null) {
   const at = s.savedAt ?? {};
   const appleDates = [at.appleIssuerId, at.appleKeyId, at.applePrivateKey].filter((d): d is string => Boolean(d)).sort();
   return {
@@ -78,13 +87,15 @@ function secretStatus(s: DeveloperSecrets) {
     appleTeamIdSavedAt: s.appleTeamId ? at.appleTeamId ?? null : null,
     github: Boolean(s.githubToken),
     githubSavedAt: s.githubToken ? at.githubToken ?? null : null,
+    signing: signingStatus(s, signing),
   };
 }
 
 // GET /api/dev/me
 export async function me(env: Env, dev: AuthedDeveloper): Promise<Response> {
   const { authVia, scope, keyId: _k, ...developer } = dev;
-  return json({ developer, authVia, scope, termsVersion: TERMS_VERSION, secrets: secretStatus(await secretsSummary(env, dev.id)) });
+  const [summary, signing] = await Promise.all([secretsSummary(env, dev.id), Db.from(env).signingCertificate(dev.id)]);
+  return json({ developer, authVia, scope, termsVersion: TERMS_VERSION, secrets: secretStatus(summary, signing) });
 }
 
 // POST /api/dev/terms - dashboard only; records acceptance of the current terms.
@@ -133,7 +144,7 @@ export async function updateSecrets(request: Request, env: Env, deps: Deps, dev:
   const now = deps.now().toISOString();
   const saved: string[] = [];
   const removed: string[] = [];
-  for (const key of SECRET_FIELDS) {
+  for (const key of EDITABLE_SECRET_FIELDS) {
     const value = body[key];
     if (typeof value !== "string" || value.trim() === "") continue;
     if (value.trim() === "-") {
@@ -155,7 +166,70 @@ export async function updateSecrets(request: Request, env: Env, deps: Deps, dev:
   await saveSecrets(env, dev.id, next, deps.now());
   if (saved.length > 0) await audit(request, env, deps, dev.id, "credentials-saved", saved.join(", "));
   if (removed.length > 0) await audit(request, env, deps, dev.id, "credentials-removed", removed.join(", "));
-  return json({ secrets: secretStatus(next) });
+  return json({ secrets: secretStatus(next, await Db.from(env).signingCertificate(dev.id)) });
+}
+
+// POST /api/dev/signing - dashboard only. The browser makes the RSA key and the certificate signing
+// request; Apple issues an Apple Distribution certificate, the key is stored encrypted, and every
+// app with a bundle ID gets its Ad Hoc profile made with it. Run again to replace the certificate.
+export async function setUpSigning(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper): Promise<Response> {
+  requireSession(dev);
+  const body = await readJson<{ csr?: unknown; privateKey?: unknown }>(request);
+  const csr = typeof body.csr === "string" ? body.csr.trim() : "";
+  const privateKey = typeof body.privateKey === "string" ? body.privateKey.trim() : "";
+  if (!/^-----BEGIN CERTIFICATE REQUEST-----[A-Za-z0-9+/=\s]+-----END CERTIFICATE REQUEST-----$/.test(csr) || csr.length > 4000) {
+    throw new HttpError(400, "csr must be a PEM certificate signing request");
+  }
+  if (!(await validateSigningKey(privateKey))) throw new HttpError(400, "privateKey must be a 2048-bit RSA private key in PKCS #8 PEM form");
+  const db = Db.from(env);
+  const secrets = await loadSecrets(env, dev.id);
+  const apple = appleClient(env, deps, secrets);
+  let issued: Awaited<ReturnType<typeof apple.createDistributionCertificate>>;
+  try {
+    issued = await apple.createDistributionCertificate(csr);
+  } catch (err) {
+    throw new HttpError(502, err instanceof Error ? err.message : String(err));
+  }
+  const now = deps.now().toISOString();
+  const certificate: SigningCertificateRow = {
+    developerId: dev.id,
+    certificateId: issued.id,
+    name: issued.name,
+    serialNumber: issued.serialNumber,
+    certificateBase64: issued.certificateContent,
+    expirationDate: issued.expirationDate,
+    createdAt: now,
+  };
+  await saveSecrets(env, dev.id, { ...secrets, signingKey: privateKey, savedAt: { ...secrets.savedAt, signingKey: now } }, deps.now());
+  await db.putSigningCertificate(certificate);
+  await audit(request, env, deps, dev.id, "signing-set-up", `${issued.name} ${issued.serialNumber}`);
+  const apps = [];
+  for (const app of await db.appsByDeveloper(dev.id)) {
+    if (!app.bundleId) {
+      apps.push({ id: app.id, name: app.name, profile: null, error: "no iPhone bundle ID on this app yet" });
+      continue;
+    }
+    try {
+      const p = await refreshProfile(env, deps, app, apple);
+      apps.push({ id: app.id, name: app.name, profile: { name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length }, error: null });
+    } catch (err) {
+      apps.push({ id: app.id, name: app.name, profile: null, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return json({ signing: signingStatus({ signingKey: privateKey }, certificate), apps }, 201);
+}
+
+// POST /api/dev/apps/:id/profile - make the app's Ad Hoc profile again with every registered device.
+export async function refreshAppProfile(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+  const db = Db.from(env);
+  const app = await ownedApp(db, dev, id);
+  const apple = appleClient(env, deps, await loadSecrets(env, dev.id, ["appleIssuerId", "appleKeyId", "applePrivateKey"]));
+  try {
+    const p = await refreshProfile(env, deps, app, apple);
+    return json({ profile: { name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length } });
+  } catch (err) {
+    throw new HttpError(502, err instanceof Error ? err.message : String(err));
+  }
 }
 
 // GET /api/dev/apps - apps without a dashboard icon get the latest release icon, best effort.
@@ -201,6 +275,7 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
     repo: "",
     manifestUrl: "",
     profileName: "",
+    bundleId: "",
     showOnPage: false,
     buildTokenHash: await buildTokenHash(env, buildToken),
     createdAt: now,
@@ -216,7 +291,7 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
 export async function getApp(env: Env, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
-  return json({ app: publicApp(app), links: await db.linksByApp(app.id), profile: await db.latestProfile(app.id).then((p) => (p ? { uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length } : null)) });
+  return json({ app: publicApp(app), links: await db.linksByApp(app.id), profile: await db.latestProfile(app.id).then((p) => (p ? { name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length, createdAt: p.createdAt } : null)) });
 }
 
 // PUT /api/dev/apps/:id

@@ -107,6 +107,9 @@ export interface Enrolment {
   message: string | null;
   createdAt: string;
   updatedAt: string;
+  // When the registration profile was last downloaded, and in which browser.
+  profileFetchedAt?: string | null;
+  profileBrowser?: string | null;
 }
 
 export interface SecretStatus {

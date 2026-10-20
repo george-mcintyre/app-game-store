@@ -599,7 +599,7 @@ export async function devices(root: HTMLElement): Promise<void> {
           <div class="stack">${list.map((e) => html`
             <div class="device-card">
               <div class="head"><b>${e.name}</b>${statePill(e.state)}<span class="muted small">${appName(e.appId)}${e.product ? ` · ${e.product}` : ""} · ${fmtDate(e.createdAt, true)}</span></div>
-              <p class="small muted" style="margin:6px 0">${STATE_HELP[e.state] ?? ""}${e.message ? html` <span class="faint">(${e.message})</span>` : ""}</p>
+              <p class="small muted" style="margin:6px 0">${STATE_HELP[e.state] ?? ""}${e.message ? html` <span class="faint">(${e.message})</span>` : ""}${e.state === "awaiting-device" ? html` <span class="faint">${e.profileFetchedAt ? `Profile downloaded in ${e.profileBrowser ?? "a browser"} at ${fmtDate(e.profileFetchedAt, true)}, not installed yet.` : "Profile not downloaded yet."}</span>` : ""}</p>
               ${e.udid ? html`<div class="tiny faint">UDID <code>${e.udid}</code>${e.profileUuid ? html` · profile <code>${e.profileUuid}</code>` : ""}</div>` : ""}
               <div class="row wrap mt-s">
                 ${["pending-approval", "failed"].includes(e.state) ? html`<button class="btn sm ok" data-approve="${e.id}">${icon("check")} Approve</button>` : ""}

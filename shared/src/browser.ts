@@ -1,6 +1,5 @@
-// Only Safari passes a configuration profile on to iOS Settings. Other iPhone browsers and the
-// browsers built into apps download it and stop there. A Safari view inside another app reports
-// itself as Safari and usually works.
+// Names the browser that fetched a registration profile, for the developer's console when a
+// registration stalls.
 const OTHERS: [RegExp, string][] = [
   [/CriOS/, "Chrome"],
   [/FxiOS/, "Firefox"],

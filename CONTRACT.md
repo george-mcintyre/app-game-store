@@ -22,7 +22,9 @@ Every build publishes a GitHub Release (not a pre-release, not a draft) with the
 Create the release as a draft, upload every asset with `my-app.json` last, then publish it
 (`gh release edit <tag> --draft=false`). A release that goes public first is "latest" while its
 files are still uploading, and install pages fail until `my-app.json` arrives. Asset ids, and so
-the asset API URLs, stay the same when a draft is published.
+the asset API URLs, stay the same when a draft is published. Read a draft's asset ids by release
+id (`GET /repos/<owner>/<repo>/releases/<id>/assets`); the by-tag endpoint does not return
+drafts.
 
 The store resolves `GET /repos/<owner>/<repo>/releases/latest`, takes the asset named
 `my-app.json`, and follows the URLs inside it. Those URLs are the release-asset API URLs,

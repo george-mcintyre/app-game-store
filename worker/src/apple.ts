@@ -30,11 +30,19 @@ export async function makeToken(creds: AppleCredentials, now: Date): Promise<str
   return `${header}.${payload}.${base64url(new Uint8Array(signature))}`;
 }
 
+interface Linkage {
+  id: string;
+  type: string;
+}
+
+const asList = (data: Linkage | Linkage[] | undefined): Linkage[] => (data === undefined ? [] : Array.isArray(data) ? data : [data]);
+
 interface Resource<A = Record<string, unknown>> {
   id: string;
   type: string;
   attributes: A;
-  relationships?: Record<string, { data?: { id: string; type: string }[] }>;
+  // To-one relationships (bundleId) carry one object; to-many (certificates, devices) an array.
+  relationships?: Record<string, { data?: Linkage | Linkage[] }>;
 }
 
 export class AppleClient {
@@ -96,8 +104,8 @@ export class AppleClient {
   async recreateAdHocProfile(name: string, deviceIds: string[]): Promise<{ id: string; uuid: string; profileContent: string; expirationDate: string }> {
     const old = await this.findProfileByName(name);
     if (!old) throw new Error(`Apple profile "${name}" not found; create it once in the developer portal`);
-    const bundleId = old.relationships?.bundleId?.data?.[0];
-    const certificates = old.relationships?.certificates?.data ?? [];
+    const bundleId = asList(old.relationships?.bundleId?.data)[0];
+    const certificates = asList(old.relationships?.certificates?.data);
     if (!bundleId || certificates.length === 0) throw new Error(`Apple profile "${name}" has no bundle id or certificates in its relationships`);
     await this.call("DELETE", `/v1/profiles/${old.id}`);
     const res = await this.call<{ data: Resource<{ uuid: string; profileContent: string; expirationDate: string }> }>("POST", "/v1/profiles", {

@@ -5,7 +5,7 @@ import { randomId } from "./crypto.js";
 import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady, buildSigning } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
-import { enrolCallback, enrolLatest, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
+import { PROFILE_TYPE, enrolCallback, enrolLatest, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
 import { serveWebApp, webAppLinkId } from "./webapp.js";
 
@@ -45,6 +45,8 @@ export async function handle(request: Request, env: Env, deps: Deps = defaultDep
     res = errorResponse(request, err);
   }
   res = new Response(res.body, res);
+  // Registration profiles go to iOS Settings as they are; page headers have no meaning there.
+  if (res.headers.get("Content-Type") === PROFILE_TYPE) return res;
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!res.headers.has(k)) res.headers.set(k, v);
   return res;
 }

@@ -718,7 +718,7 @@ function settingsSteps(enrolmentId: string, device: string, appName: string, pag
     <ol class="settings-steps steps">
       <li><b>Allow</b> the download when your ${device} asks about a configuration profile, then tap <b>Close</b>.</li>
       <li>Open the <b>Settings</b> app.</li>
-      <li>Tap <b>Profile Downloaded</b>, just below your name.<span class="small muted"> Not there? Tap <b>General</b>, then <b>VPN &amp; Device Management</b>, then <b>Install ${appName}</b>.</span></li>
+      <li>Tap <b>Profile Downloaded</b>, just below your name.<span class="small muted"> Not there? Tap <b>General</b>, then <b>VPN &amp; Device Management</b> (on older iPhones <b>Profiles &amp; Device Management</b> or <b>Profiles</b>), then <b>Install ${appName}</b>.</span></li>
       <li>Tap <b>Install</b> at the top right and enter your passcode if asked. Tap <b>Install</b> again, then <b>Install</b> once more in the box that appears.<span class="small muted"> It says Not Signed; that is normal for this profile.</span></li>
       <li>Your ${device} brings you back to this page by itself.</li>
     </ol>

@@ -417,6 +417,37 @@ describe("approve, rebuild and build-ready", () => {
     expect(await res2.json()).toEqual({ ready: [second], waiting: [], redispatched: false });
   });
 
+  it("times builds and tells the waiting page how long the next one should take", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { appId, linkId, buildToken } = await createSkull(env, deps, cookie);
+    const { fetch } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [], profileCount: 0 }) });
+    const d = { ...deps, fetch };
+    const auth = { Authorization: `Bearer ${buildToken}` };
+    const ready = (uuid: string) => handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://api.github.com/repos/o/skull/releases/assets/3", profileUuid: uuid }, auth), env, d);
+
+    // No build yet: 20 minutes.
+    const bob = await enrol(env, d, linkId, "Bob", UDID_1);
+    expect((await status(env, d, bob)).build).toBeUndefined();
+    await handle(api(cookie, "POST", `/api/dev/devices/${bob}/approve`), env, d);
+    expect((await status(env, d, bob)).build).toEqual({ elapsedSeconds: 0, expectedSeconds: 1200, typicalSeconds: null });
+    d.advance(4 * 60_000);
+    expect((await status(env, d, bob)).build?.elapsedSeconds).toBe(240);
+    d.advance(6 * 60_000);
+    expect((await ready("uuid-1")).status).toBe(200);
+    expect((await status(env, d, bob)).build).toBeUndefined();
+
+    // One ten-minute build: the next is expected to take eleven.
+    const sue = await enrol(env, d, linkId, "Sue", UDID_2);
+    await handle(api(cookie, "POST", `/api/dev/devices/${sue}/approve`), env, d);
+    expect((await status(env, d, sue)).build).toEqual({ elapsedSeconds: 0, expectedSeconds: 660, typicalSeconds: 600 });
+
+    // A build that took hours was blocked or re-run by hand and is not counted.
+    d.advance(3 * 60 * 60_000);
+    expect((await ready("uuid-2")).status).toBe(200);
+    const rows = await env.DB.prepare("SELECT seconds FROM build_durations ORDER BY id").all<{ seconds: number }>();
+    expect(rows.results.map((r) => r.seconds)).toEqual([600]);
+  });
+
   it("build-ready validates its input and token", async () => {
     const { appId, buildToken } = await createSkull(env, deps, cookie);
     const auth = { Authorization: `Bearer ${buildToken}` };

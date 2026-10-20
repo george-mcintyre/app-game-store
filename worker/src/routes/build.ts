@@ -7,6 +7,7 @@ import { rebuildPayload, transition } from "../flow.js";
 import { dispatchRebuild } from "../github.js";
 import { HttpError, bearer, json, readJson } from "../http.js";
 import { loadSecrets } from "../secrets.js";
+import { MAX_SAMPLE_SECONDS } from "../buildtime.js";
 
 // Verifies the per-app token; a token stored as a plain hash is rewritten as a keyed hash.
 async function requireBuildToken(request: Request, env: Env, app: AppRow): Promise<void> {
@@ -62,6 +63,9 @@ export async function buildReady(request: Request, env: Env, deps: Deps): Promis
   if (!body.manifestUrl || !body.profileUuid) throw new HttpError(400, "app, manifestUrl and profileUuid are required");
   const built = await db.profileByUuid(app.id, body.profileUuid);
   if (!built) throw new HttpError(409, "profileUuid does not match a profile this store created");
+  // The profile is made just before the rebuild request, so its age is how long this build took.
+  const seconds = Math.round((deps.now().getTime() - Date.parse(built.createdAt)) / 1000);
+  if (seconds > 0 && seconds <= MAX_SAMPLE_SECONDS) await db.addBuildSeconds(app.id, seconds, deps.now().toISOString());
   const inProfile = new Set(built.udids);
   const ready: string[] = [];
   const late: EnrolmentRow[] = [];

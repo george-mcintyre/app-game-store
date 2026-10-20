@@ -295,7 +295,7 @@ startButton.onclick = async () => {
           <tr><td>awaiting device</td><td>Tapped Register, has not installed the profile yet</td><td>Nothing; remove if abandoned</td></tr>
           <tr><td>pending approval</td><td>The iPhone sent its device number</td><td><b>Approve</b> or Reject</td></tr>
           <tr><td>registering</td><td>Talking to Apple</td><td>Wait</td></tr>
-          <tr><td>building</td><td>Apple accepted it; the repository was asked to rebuild</td><td>Wait for the workflow (10 to 20 minutes on a macOS runner)</td></tr>
+          <tr><td>building</td><td>Apple accepted it; the repository was asked to rebuild</td><td>Wait for the workflow (10 to 20 minutes on a macOS runner). The friend's page shows a progress ring timed from this app's recent builds.</td></tr>
           <tr><td>ready</td><td>The friend's page shows Install</td><td>Done</td></tr>
           <tr><td>failed</td><td>Apple or GitHub refused; the message says why</td><td>Fix the cause, Approve again</td></tr>
         </table>

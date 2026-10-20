@@ -388,6 +388,21 @@ export class Db {
     return (res.meta.changes ?? 0) > 0;
   }
 
+  // Build durations
+
+  async recentBuildSeconds(appId: string, limit: number): Promise<number[]> {
+    const res = await this.d1.prepare("SELECT seconds FROM build_durations WHERE app_id = ? ORDER BY id DESC LIMIT ?").bind(appId, limit).all<{ seconds: number }>();
+    return res.results.map((r) => r.seconds);
+  }
+
+  // Keeps the ten latest per app.
+  async addBuildSeconds(appId: string, seconds: number, now: string): Promise<void> {
+    await this.d1.batch([
+      this.d1.prepare("INSERT INTO build_durations (app_id, seconds, created_at) VALUES (?, ?, ?)").bind(appId, seconds, now),
+      this.d1.prepare("DELETE FROM build_durations WHERE app_id = ? AND id NOT IN (SELECT id FROM build_durations WHERE app_id = ? ORDER BY id DESC LIMIT 10)").bind(appId, appId),
+    ]);
+  }
+
   // Signing certificate
 
   async signingCertificate(developerId: string): Promise<SigningCertificateRow | null> {

@@ -358,7 +358,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   }));
   const form = root.querySelector<HTMLFormElement>("#enrol-form");
   if (form && data.linkId) {
-    form.onsubmit = (e) => startEnrolment(e, data.linkId!, form);
+    form.onsubmit = (e) => startEnrolment(e, data.linkId!, form, name);
     // A registration started earlier in this browser carries on instead of starting a second one.
     const earlier = localStorage.getItem(`enrolment:${data.linkId}`);
     if (earlier) {
@@ -583,7 +583,7 @@ function iosEnrol(name: string, device: "iPhone" | "iPad", devices?: ("iphone" |
   `;
 }
 
-async function startEnrolment(e: Event, linkId: string, form: HTMLFormElement): Promise<void> {
+async function startEnrolment(e: Event, linkId: string, form: HTMLFormElement, appName: string): Promise<void> {
   e.preventDefault();
   const button = form.querySelector<HTMLButtonElement>("button")!;
   button.disabled = true;
@@ -591,6 +591,8 @@ async function startEnrolment(e: Event, linkId: string, form: HTMLFormElement): 
   try {
     const res = await api<{ enrolmentId: string; profileUrl: string }>("POST", "/api/enrol/new", { linkId, name });
     localStorage.setItem(`enrolment:${linkId}`, res.enrolmentId);
+    // The download cancels the wait page's own requests in Safari, so it gets the name from here.
+    sessionStorage.setItem(`appName:${res.enrolmentId}`, appName);
     // The wait page comes first: a browser that blanks the page for the download can go back to it.
     navigate(`/l/${linkId}/wait/${res.enrolmentId}`);
     location.href = res.profileUrl;
@@ -736,9 +738,11 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
   const device = detect().device;
   const pageUrl = `${location.origin}/l/${linkId}/wait/${enrolmentId}`;
   // The profile is named "Install <app>" in Settings, so the steps use the app's name.
-  const appName = await api<LinkPage>("GET", `/api/public/links/${encodeURIComponent(linkId)}`)
-    .then((d) => d.app.name || d.release?.fallbackName || "the app")
-    .catch(() => "the app");
+  const appName =
+    sessionStorage.getItem(`appName:${enrolmentId}`) ??
+    (await api<LinkPage>("GET", `/api/public/links/${encodeURIComponent(linkId)}`)
+      .then((d) => d.app.name || d.release?.fallbackName || "the app")
+      .catch(() => "the app"));
   let since: string | undefined;
   let stopped = false;
   // Whichever browser shows this page remembers the registration for the app page.

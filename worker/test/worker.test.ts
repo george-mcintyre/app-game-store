@@ -185,13 +185,21 @@ describe("share links and public pages", () => {
     }
   });
 
-  it("still serves details when the release cannot be loaded", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, testDeps());
+  it("still serves details when the release cannot be loaded, without naming the repository", async () => {
+    const { appId, linkId } = await createSkull(env, deps, cookie);
+    // A private repository: no GitHub links in the history either.
+    const hidden = { ...githubRoutes(), "GET api.github.com/repos/o/skull": () => jsonRes({ private: true }), "GET api.github.com/repos/o/skull/releases/latest": () => new Response("{}", { status: 404 }) };
+    const d = { ...deps, fetch: fakeFetch(hidden).fetch };
+    const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { release: null; releaseError: string };
+    const text = await res.text();
+    const body = JSON.parse(text) as { release: null; releaseError: string };
     expect(body.release).toBeNull();
-    expect(body.releaseError).toMatch(/599/);
+    expect(body.releaseError).toBe("no published build yet");
+    expect(text).not.toContain("o/skull");
+    // The developer's preview keeps the reason.
+    const preview = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/preview`), env, d)).json()) as { releaseError: string };
+    expect(preview.releaseError).toMatch(/o\/skull/);
   });
 
   it("refuses expired and tampered artefact links", async () => {

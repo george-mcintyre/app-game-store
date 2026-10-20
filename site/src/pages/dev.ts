@@ -427,7 +427,7 @@ function showToken(root: HTMLElement, appId: string, token: string): void {
       <p><b>Add both as Actions secrets on the app's GitHub repository.</b> Either route works:</p>
       <ol class="steps small">
         <li>On GitHub: open the repository, then <b>Settings</b>, <b>Secrets and variables</b>, <b>Actions</b>, <b>Repository secrets</b>, <b>New repository secret</b>. Create <code>STORE_BUILD_TOKEN</code> and <code>STORE_APP_ID</code>.</li>
-        <li>In a terminal inside a checkout of the repository: ${copyRow(`gh secret set STORE_BUILD_TOKEN --body "${token}" && gh secret set STORE_APP_ID --body "${appId}"`, "Copy command")}</li>
+        <li>In a terminal inside a checkout of the repository: ${copyRow(`gh secret set STORE_APP_ID --body "${appId}" && gh secret set STORE_BUILD_TOKEN`, "Copy command")}<div class="hint">The second command asks you to paste the token, so it never lands in your shell history. The token lets its holder fetch your iPhone signing key; keep it in repository secrets only.</div></li>
       </ol>
       <p class="small muted">Then make the repository follow the <a href="/contract.md">contract</a>, or hand that to an agent with the prompt on <a href="/dev/agents">Agents and API</a>.</p>
     </div>

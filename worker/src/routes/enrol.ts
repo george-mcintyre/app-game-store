@@ -1,5 +1,5 @@
 // The iOS enrolment flow a friend goes through.
-import { isFinal, type EnrolmentStatus, type InstallPhase } from "@my/store-shared";
+import { isFinal, profileBrowser, type EnrolmentStatus, type InstallPhase } from "@my/store-shared";
 import { SAMPLES, expectedSeconds, median } from "../buildtime.js";
 import { randomId } from "../crypto.js";
 import { Db, type EnrolmentRow } from "../db.js";
@@ -53,10 +53,12 @@ export async function enrolNew(request: Request, env: Env, deps: Deps): Promise<
 }
 
 // GET /api/enrol/:id/profile.mobileconfig
-export async function enrolProfile(env: Env, id: string): Promise<Response> {
+export async function enrolProfile(request: Request, env: Env, deps: Deps, id: string): Promise<Response> {
   const db = Db.from(env);
   const record = await db.enrolmentById(id);
   if (!record) throw new HttpError(404, "unknown enrolment");
+  // Only Safari hands the profile to Settings; the wait page and the developer see who fetched it.
+  await db.profileFetched(id, deps.now().toISOString(), profileBrowser(request.headers.get("User-Agent") ?? "").name);
   const app = await db.appById(record.appId);
   const dev = app && (await db.developerById(app.developerId));
   const body = enrolmentProfile({
@@ -95,6 +97,9 @@ export async function enrolStatus(request: Request, env: Env, deps: Deps, id: st
     record = (await db.enrolmentById(id)) ?? record;
   }
   const status: EnrolmentStatus = { id: record.id, state: record.state, app: record.appId, linkId: record.linkId, message: record.message ?? undefined, updatedAt: record.updatedAt };
+  if (record.state === "awaiting-device") {
+    status.profile = { fetchedAt: record.profileFetchedAt ?? null, browser: record.profileBrowser ?? null, safari: record.profileBrowser ? record.profileBrowser === "Safari" : null };
+  }
   if (record.state === "registering" || record.state === "building") {
     const typical = median(await db.recentBuildSeconds(record.appId, SAMPLES));
     const elapsed = record.state === "building" ? Math.max(0, Math.round((deps.now().getTime() - Date.parse(record.updatedAt)) / 1000)) : 0;

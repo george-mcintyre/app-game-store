@@ -585,3 +585,10 @@ h3.ft-category { font-size: 19px; margin-top: 26px; }
 .install-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding: 10px 12px; border-radius: var(--r-s); background: var(--surface-2); font-size: 14px; }
 .install-progress.installed { color: var(--ok); }
 .install-progress .warn-mark { color: var(--warn); width: 20px; text-align: center; }
+
+/* Settings steps on the wait page */
+.settings-steps { margin: 12px 0 4px; }
+.settings-steps li { margin: 8px 0; }
+.settings-steps li .small { display: block; margin-top: 2px; }
+.settings-steps.warn { border: 1px solid var(--warn); border-radius: var(--r-s); padding: 12px 14px; background: var(--warn-soft); }
+.settings-steps.warn h3 { margin: 0 0 4px; }

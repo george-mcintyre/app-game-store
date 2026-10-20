@@ -267,6 +267,19 @@ describe("enrolment", () => {
     expect((await status(env, deps, enrolmentId)).state).toBe("awaiting-device");
   });
 
+  it("records which browser downloaded the profile, so the wait page can send the friend to Safari", async () => {
+    const { linkId } = await createSkull(env, deps, cookie);
+    const created = await handle(api(null, "POST", "/api/enrol/new", { linkId, name: "Iluminada" }), env, deps);
+    const { enrolmentId } = (await created.json()) as { enrolmentId: string };
+    expect((await status(env, deps, enrolmentId) as { profile?: unknown }).profile).toEqual({ fetchedAt: null, browser: null, safari: null });
+    const chrome = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1";
+    expect((await handle(new Request(`${BASE}/api/enrol/${enrolmentId}/profile.mobileconfig`, { headers: { "User-Agent": chrome } }), env, deps)).status).toBe(200);
+    expect((await status(env, deps, enrolmentId) as { profile?: unknown }).profile).toMatchObject({ browser: "Chrome", safari: false });
+    const safari = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
+    await handle(new Request(`${BASE}/api/enrol/${enrolmentId}/profile.mobileconfig`, { headers: { "User-Agent": safari } }), env, deps);
+    expect((await status(env, deps, enrolmentId) as { profile?: unknown }).profile).toMatchObject({ browser: "Safari", safari: true });
+  });
+
   it("requires a name and a known link", async () => {
     const { linkId } = await createSkull(env, deps, cookie);
     expect((await handle(api(null, "POST", "/api/enrol/new", { linkId, name: " " }), env, deps)).status).toBe(400);

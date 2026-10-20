@@ -56,9 +56,10 @@ steps: `SECURITY.md`.
 
 ![How a typical app is hosted and installed](site/public/reference/architecture.png)
 
-Native iPhone and Android apps (and anything that compiles to them), static web apps and web
-games served by ourapps, and server-rendered web apps linked from it. ourapps never hosts an
-app's API or database. Details and limits: `/reference` (source `site/src/pages/reference.ts`);
+Native iPhone and Android apps (and anything that compiles to them), and web apps and web games
+that the app's workflow deploys to the developer's own free Cloudflare account; the install page
+links to them. Apps that already ship `web.zip` are still served by ourapps. ourapps never hosts
+an app's API or database. Details and limits: `/reference` (source `site/src/pages/reference.ts`);
 the diagrams by app type are in `site/public/reference/` (PNG masters, WebP for the site),
 generated from the prompts in `docs/diagram-prompts.md`.
 

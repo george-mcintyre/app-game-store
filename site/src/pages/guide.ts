@@ -22,12 +22,14 @@ function sections(origin: string, slug: string): Section[] {
           <li><b>Sign in with GitHub</b> at <a href="/dev">/dev</a>. An agent cannot do this; it is your identity.</li>
           <li><b>Create a GitHub fine-grained token</b> (Contents, read and write, on your app repositories) and paste it under <a href="/dev/settings#credentials">Settings</a>. Tokens are created on GitHub while signed in as you. <a href="/dev/guide#github-token">Steps</a>.</li>
           <li><b>iPhone apps only: pay for the Apple Developer Program</b> (99 US dollars a year), then create an <b>App Store Connect API key</b> with the Admin role and paste issuer id, key id and the .p8 contents under Settings, plus your team id. Saving it sets up iPhone signing by itself. <a href="/dev/guide#apple-key">Steps</a>.</li>
+          <li><b>Web apps only: create a free Cloudflare account</b> and a token that lets your workflows deploy to it. Your web apps then run from your account, free and without a request limit. <a href="/dev/guide#cloudflare">Steps</a>.</li>
           <li><b>Create one API key</b> on <a href="/dev/agents">Agents and API</a> and store it where your agent runs. Keys are made from a browser session only; agents cannot mint their own.</li>
         </ol>
         <h3>You, once per app</h3>
         <ol class="steps">
           <li><b>iPhone apps: nothing in the Apple portal.</b> The app needs its iPhone bundle ID, which the agent sets when it registers the app. ourapps creates the App ID, the Ad Hoc profile and the certificate it signs with, and the repository holds no Apple secrets. <a href="/dev/guide#apple-setup">What it does</a>.</li>
           <li><b>Android apps: put the signing keystore into the repository</b>, with its passwords. The agent can run <code>gh secret set</code> for you if you hand it the values, but the values come from you.</li>
+          <li><b>Web apps: add the two Cloudflare secrets</b> (<code>CLOUDFLARE_API_TOKEN</code>, <code>CLOUDFLARE_ACCOUNT_ID</code>) to the repository, the same way.</li>
         </ol>
         <h3>You, as things happen</h3>
         <ol class="steps">
@@ -56,7 +58,7 @@ function sections(origin: string, slug: string): Section[] {
         <div class="grid-2">
           <div class="card flat"><h3>${icon("android", "icon-20")} Android</h3><p>The page offers a direct download of your signed APK and walks the friend through the one-time "allow from this source" prompt. Nothing else is needed.</p></div>
           <div class="card flat"><h3>${icon("phone", "icon-20")} iPhone</h3><p>Apple only runs an app on iPhones whose device number is in the app's signing profile. The page registers the friend's iPhone, you approve it, the console registers it with Apple and asks your repository to rebuild, and the page turns into an Install button. This is Apple's Ad Hoc distribution; no review, no TestFlight, 100 iPhones and 100 iPads per year. iPads work the same way.</p></div>
-          <div class="card flat"><h3>${icon("globe", "icon-20")} Web apps</h3><p>Ship your built site as <code>web.zip</code> and ourapps serves it at its own address per share link, with a one-tap offer to add it to the home screen. A site you host yourself is linked instead. Details in the <a href="/reference#web">reference</a>.</p></div>
+          <div class="card flat"><h3>${icon("globe", "icon-20")} Web apps</h3><p>Your repository deploys the built site to your own free Cloudflare account, which serves plain files without a request limit. The install page opens it, and the app offers a one-tap add to the home screen. Details in the <a href="/reference#web">reference</a>.</p></div>
           <div class="card flat"><h3>${icon("lock", "icon-20")} Private by design</h3><p>No search, no listing, no index. Install pages live at random addresses, the app files are served through links that expire after an hour, and a share link can be revoked at any time.</p></div>
         </div>
         <p>The whole thing runs on free tiers. The only paid item is Apple's developer membership, which you need for iPhone apps anyway.</p>
@@ -83,6 +85,7 @@ function sections(origin: string, slug: string): Section[] {
         { id: "github-token", title: "GitHub token" },
         { id: "apple-key", title: "App Store Connect key" },
         { id: "apple-setup", title: "iPhone signing" },
+        { id: "cloudflare", title: "Cloudflare (web apps)" },
         { id: "android-setup", title: "Android signing" },
       ],
       body: html`
@@ -119,6 +122,22 @@ function sections(origin: string, slug: string): Section[] {
         </ol>
         ${callout("info", html`<p>Apple makes an Ad Hoc profile only once at least one device is registered. On a new Apple account, open your own share link on your iPhone and approve it; that registers the device and makes the profile.</p>`)}
         <p class="small muted">The certificate lasts a year: replace it under Settings before then and publish a release. Replacing leaves the old certificate valid until it expires or you revoke it in the developer portal, so installed apps keep working.</p>
+
+        <h3 id="cloudflare">Cloudflare account (web apps)</h3>
+        <p>Web apps run from your own free Cloudflare account. Cloudflare serves plain files without a request limit or a charge, your repository's workflow deploys them, and ourapps only links to the address. ourapps never sees the token.</p>
+        <ol class="steps">
+          <li>Create a free account at <a href="https://dash.cloudflare.com/sign-up" target="_blank" rel="noopener">dash.cloudflare.com</a>, or use one you have.</li>
+          <li>Open <b>Workers &amp; Pages</b> and choose your <b>workers.dev subdomain</b>, for example your name. Web apps appear at addresses like <code>https://skull-web.yourname.workers.dev</code>.</li>
+          <li>Open <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">My Profile, API Tokens</a>, tap <b>Create Token</b> and use the template <b>Edit Cloudflare Workers</b>. Account Resources: your account. Zone Resources: all zones from that account. Continue, Create, then copy the token; it is shown once.</li>
+          <li>Copy the <b>Account ID</b> from Workers &amp; Pages (Account details).</li>
+          <li>In each web app's repository add two secrets: ${kbd("Settings")}, ${kbd("Secrets and variables")}, ${kbd("Actions")}, <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ACCOUNT_ID</code>. Or, inside the repository, <code>gh secret set CLOUDFLARE_API_TOKEN</code> and <code>gh secret set CLOUDFLARE_ACCOUNT_ID</code>. A personal GitHub account has no account-wide secrets, so each repository needs its own pair; an organisation can share one pair across its repositories.</li>
+        </ol>
+        ${callout("info", html`<p>The agent prompt writes the rest: a settings file for a Worker with files only, a deploy step in the release workflow, and the address in my-app.json. The app's page in this console shows whether the address answers.</p>`)}
+        <ul class="bullets small">
+          <li><b>The address is public.</b> Anyone who has it can open the app, and revoking a share link does not stop them. Keep anything private behind the app's own sign-in.</li>
+          <li><b>Unity and other pre-compressed builds:</b> Cloudflare compresses files itself, so build without pre-compression, or turn on Unity's Decompression Fallback.</li>
+          <li><b>Older apps</b> that publish <code>web.zip</code> are still served by ourapps at their link addresses; moving them frees ourapps' shared allowance for installs.</li>
+        </ul>
 
         <h3 id="android-setup">Android signing</h3>
         <p>Android needs no account and no console credential, only a signing key your workflow uses. Create one once:</p>
@@ -210,8 +229,8 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
         <p>Headings like <code>### Added</code> become "Added:" labels on the page; bullets stay bullets; GitHub's generated "by @user in ..." and "Full Changelog" lines are dropped; links to GitHub appear only when the repository is public. The Latest release card in the console says whether the release shipped a changelog. An agent can draft the entry from the commits; the words to your friends are yours to approve.</p>
 
         <h3 id="web-apps">Web apps: home screen and permissions</h3>
-        <p>When <code>install.pwa</code> names a <code>web.zip</code> release asset, the store serves your site at <code>https://&lt;linkId&gt;.ourapps.app/</code>, its own origin per share link. The store adds, when your page lacks them, a web app manifest, the Apple home screen tags and an icon link, and injects a small banner that offers "Add to home screen": Chrome's native install prompt on Android, the exact Share steps on iPhone Safari, and an "open in Safari" hint inside in-app browsers. Once added, the app launches from the icon in standalone mode and the banner never shows again.</p>
-        <p>No web page can place a shortcut on its own; the user's single tap is required by both platforms. The banner makes that tap obvious. You can ship your own manifest and tags instead; the store leaves them untouched and only adds the banner.</p>
+        <p>The web version runs from your own Cloudflare account (<a href="#cloudflare">setup</a>). Its build carries a web app manifest, the Apple home screen tags and a copy of ourapps' small banner script (<code>https://ourapps.app/web/install-banner.js</code>), which offers "Add to home screen": Chrome's native install prompt on Android, the exact Share steps on iPhone Safari, and an "open in Safari" hint inside in-app browsers. Once added, the app launches from the icon in standalone mode and the banner never shows again. Apps still published as <code>web.zip</code> get the same pieces added by ourapps.</p>
+        <p>No web page can place a shortcut on its own; the user's single tap is required by both platforms. The banner makes that tap obvious.</p>
         <h3>Camera and microphone without asking every time</h3>
         <p>Permissions are stored per origin, and the home screen app shares the origin, so a grant survives. What to know:</p>
         <ul class="bullets">
@@ -440,7 +459,7 @@ suspend fun checkForUpdate(context: Context) {
         <ul class="bullets">
           <li>Your release files stay in your GitHub repository, public or private. Phones never receive a GitHub address; they receive a signed one-hour link to this service, which fetches the file with your token and streams it on.</li>
           <li>Share links are random ids, never listed, never indexed, revocable at any time, and may carry an expiry. A revoked link shows "no longer active"; the friend keeps what they installed.</li>
-          <li>Web apps served by this service run on their own origin per share link, so they cannot read your console session.</li>
+          <li>Web apps run on their own address (your Cloudflare account, or a per-link address for older <code>web.zip</code> apps), so they cannot read your console session.</li>
           <li>Every response carries HSTS, a strict Content Security Policy, no-sniff, frame-deny and cross-origin isolation headers.</li>
         </ul>
 

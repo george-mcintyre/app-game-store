@@ -159,6 +159,8 @@ export interface ReleaseStatus {
   manifestUrl: string | null;
   version: string | null;
   install: { ios: boolean; android: boolean; pwa: boolean } | null;
+  // Web version: copied from web.zip by ourapps, or at the developer's own address.
+  web: { hosting: "ourapps" | "own"; url: string | null; ok: boolean | null; status: number | null } | null;
   screenshots: number;
   changelog: boolean;
   errors: string[];

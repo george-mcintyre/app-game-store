@@ -10,6 +10,7 @@ import { HttpError, httpsUrlOrEmpty, json, readJson, text } from "../http.js";
 import { EDITABLE_SECRET_FIELDS, appleReady, loadSecrets, saveSecrets, secretsSummary } from "../secrets.js";
 import { CHANGELOG_ASSET } from "../history.js";
 import { fetchManifest, loadManifest, resolveRelease } from "../upstream.js";
+import { webHosting } from "../webapp.js";
 import { buildLinkPage } from "./public.js";
 
 type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName" | "bundleId", string>> & {
@@ -418,12 +419,13 @@ export async function releaseStatus(env: Env, deps: Deps, dev: Developer, id: st
       manifestUrl: release.manifestUrl,
       version: manifest.version,
       install: { ios: Boolean(manifest.install.ios), android: Boolean(manifest.install.android), pwa: Boolean(manifest.install.pwa) },
+      web: await webHosting(deps, manifest.install.pwa, release),
       screenshots: (manifest.screenshots ?? []).length,
       changelog: release.assets.some((n) => CHANGELOG_ASSET.test(n)),
       errors: [],
     });
   } catch (err) {
-    return json({ ok: false, ...base, tag: null, publishedAt: null, assets: [], manifestUrl: null, version: null, install: null, screenshots: 0, changelog: false, errors: [err instanceof Error ? err.message : String(err)] });
+    return json({ ok: false, ...base, tag: null, publishedAt: null, assets: [], manifestUrl: null, version: null, install: null, web: null, screenshots: 0, changelog: false, errors: [err instanceof Error ? err.message : String(err)] });
   }
 }
 

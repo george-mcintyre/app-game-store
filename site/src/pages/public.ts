@@ -1,4 +1,4 @@
-import { pickScreenshots, type ScreenshotSets } from "@my/store-shared";
+import { pickScreenshots, profileBrowser, type ScreenshotSets } from "@my/store-shared";
 import { ApiError, api, whoAmI, type AppDetails, type HistoryEntry, type Install, type LinkPage, type Me } from "../api.js";
 import { html, mount, paragraphs, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
@@ -150,12 +150,14 @@ export interface Detected {
   inApp: InAppBrowser | null;
   // "iPhone" or "iPad", used in wording on Apple devices.
   device: "iPhone" | "iPad";
+  // Whether this browser can pass a registration profile on to iOS Settings, and its name.
+  profile: { safari: boolean; name: string };
 }
 
 export function detect(): Detected {
   const ua = navigator.userAgent;
   const platform = detectPlatform(ua, navigator.platform, navigator.maxTouchPoints);
-  return { platform, inApp: detectInAppBrowser(ua, platform), device: appleDeviceName(ua, navigator.platform, navigator.maxTouchPoints) };
+  return { platform, inApp: detectInAppBrowser(ua, platform), device: appleDeviceName(ua, navigator.platform, navigator.maxTouchPoints), profile: profileBrowser(ua) };
 }
 
 export async function installPage(root: HTMLElement, linkId: string): Promise<void> {
@@ -486,7 +488,7 @@ function ctaArea(data: LinkPage, d: Detected, name: string): Raw {
   const install = data.release.install;
   if (d.inApp && !d.inApp.installWorks) return html`<button class="btn get" data-get>Get</button><span class="small muted">Open in ${d.platform === "ios" ? "Safari" : "Chrome"} first</span>`;
   if (d.platform === "ios") {
-    if (install.ios?.adhoc) return html`<button class="btn get" data-get>Get</button><span class="small muted">Two quick steps</span>`;
+    if (install.ios?.adhoc) return html`<button class="btn get" data-get>Get</button><span class="small muted">${d.profile.safari ? "Two quick steps" : "Open in Safari first"}</span>`;
     if (install.ios?.testflight) return html`<a class="btn get" href="${install.ios.testflight}">Get</a><span class="small muted">via TestFlight</span>`;
     if (install.pwa) return html`<a class="btn get" href="${install.pwa}">Open</a><span class="small muted">web app</span>`;
     return html`<span class="pill">Not for ${d.device} yet</span>`;
@@ -520,7 +522,7 @@ function installPanel(view: ViewKind | null, data: LinkPage, d: Detected, name: 
   if (view === "web") return remote ? webOnComputer(install.pwa!, name) : pwaSteps(install.pwa!, d.platform);
   if (remote) return remoteCard(view, install, pageUrl);
   if (view === "android") return androidSteps(install.android!.apk, name);
-  if (install.ios?.adhoc) return iosEnrol(name, d.device, install.ios.devices);
+  if (install.ios?.adhoc) return d.profile.safari ? iosEnrol(name, d.device, install.ios.devices) : openInSafari(name, d.device, d.profile.name, pageUrl);
   return html`<div class="install-card"><h3>Install through TestFlight</h3><p class="muted small">Apple's TestFlight app opens; tap Install there.</p><a class="btn block" href="${install.ios!.testflight!}">Open in TestFlight</a></div>`;
 }
 
@@ -565,6 +567,24 @@ function shotsBlock(view: ViewKind | null, sets: ScreenshotSets, name: string, t
   return html`${source ? html`<p class="sub">${VIEW_LABEL[source]} screenshots</p>` : ""}<div class="shots shape-${shape}">${picked.urls.map((u) => html`<img src="${u}" alt="Screenshot of ${name}" loading="lazy" />`)}</div>`;
 }
 
+// Settings only accepts the registration profile from Safari, so other browsers get this instead
+// of the form.
+function openInSafari(name: string, device: string, browser: string, pageUrl: string): Raw {
+  return html`
+    <div class="install-card" id="open-in-safari">
+      <h3>${icon("phone", "icon-20")} Open this page in Safari</h3>
+      <p class="muted small">Your ${device} only accepts the install from Safari, Apple's own browser. This page is open in ${browser}.</p>
+      <ol class="steps">
+        <li>Tap <b>Copy link</b>.</li>
+        <li>Open the <b>Safari</b> app, the blue compass.</li>
+        <li>Tap the address bar, choose <b>Paste and Go</b>.</li>
+        <li>Tap <b>Get</b> on the page that opens.</li>
+      </ol>
+      ${copyRow(pageUrl, "Copy link")}
+      <p class="tiny faint mt-s">Installing ${name} needs Safari once. After that the app opens from your home screen like any other.</p>
+    </div>`;
+}
+
 function iosEnrol(name: string, device: "iPhone" | "iPad", devices?: ("iphone" | "ipad")[]): Raw {
   const note = deviceNote(devices, device);
   return html`
@@ -578,7 +598,7 @@ function iosEnrol(name: string, device: "iPhone" | "iPad", devices?: ("iphone" |
         <input type="text" id="friend-name" name="name" required maxlength="60" autocomplete="given-name" placeholder="Sam" />
       </div>
       <button class="btn block lg" type="submit">Register this ${device}</button>
-      <p class="tiny faint mt-s">A small profile downloads. Open <b>Settings</b>, tap <b>Profile Downloaded</b>, then <b>Install</b>. It tells the developer your ${device}'s device number and nothing else.</p>
+      <p class="tiny faint mt-s">Next your ${device} asks to download a small profile, and this page shows how to install it in Settings. It tells the developer your ${device}'s device number and nothing else.</p>
     </form>
   `;
 }
@@ -639,7 +659,7 @@ const STEPS = [
 
 function waitCopy(state: string, device: string): string {
   switch (state) {
-    case "awaiting-device": return `Allow the download, then open Settings, tap Profile Downloaded and tap Install. This page updates by itself once your ${device} has reported in. If the page went blank after the download, tap back.`;
+    case "awaiting-device": return `Your ${device} just downloaded a small profile. Install it in Settings:`;
     case "pending-approval": return `Your ${device} is registered with this page. The developer approves it next; this page updates by itself when they do, so you can close it and come back to the same link.`;
     case "registering": return `Registering your ${device} with Apple.`;
     case "building": return `A fresh build that includes your ${device} is on its way. You can close this page and come back to the same link.`;
@@ -710,15 +730,52 @@ function tickRings(root: HTMLElement): void {
   });
 }
 
+type ProfileFetch = { fetchedAt: string | null; browser: string | null; safari: boolean | null };
+
+// What to do in Settings, step by step, with a way out when the profile never reached Settings.
+function settingsSteps(enrolmentId: string, device: string, appName: string, profile: ProfileFetch | undefined, pageUrl: string): Raw {
+  const here = profileBrowser(navigator.userAgent);
+  const wrongBrowser = !here.safari || profile?.safari === false;
+  if (wrongBrowser) {
+    const name = profile?.safari === false && profile.browser ? profile.browser : here.name;
+    return html`
+      <div class="settings-steps warn">
+        <h3>Open this page in Safari</h3>
+        <p class="small">The profile was downloaded in ${name}, which cannot pass it to Settings. Safari can.</p>
+        <ol class="steps">
+          <li>Tap <b>Copy link</b>.</li>
+          <li>Open the <b>Safari</b> app, the blue compass.</li>
+          <li>Tap the address bar, choose <b>Paste and Go</b>, and carry on there.</li>
+        </ol>
+        ${copyRow(pageUrl, "Copy link")}
+      </div>`;
+  }
+  return html`
+    <ol class="settings-steps steps">
+      <li><b>Allow</b> the download when your ${device} asks about a configuration profile, then tap <b>Close</b>.</li>
+      <li>Open the <b>Settings</b> app.</li>
+      <li>Tap <b>Profile Downloaded</b>, near the top under your name.<span class="small muted"> Not there? Tap <b>General</b>, then <b>VPN &amp; Device Management</b>, then <b>Install ${appName}</b>.</span></li>
+      <li>Tap <b>Install</b> at the top right, enter your passcode, tap <b>Install</b> again, then <b>Done</b>.<span class="small muted"> It is marked Not Verified; that is normal for this profile.</span></li>
+      <li>Come back to this page. It moves on by itself.</li>
+    </ol>
+    <a class="btn block secondary mt" href="/api/enrol/${enrolmentId}/profile.mobileconfig">Download the profile again</a>
+    <p class="tiny faint center mt-s">Use this if nothing appeared, or after 8 minutes: Settings drops a profile that is not installed by then.</p>`;
+}
+
 export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: string): Promise<void> {
   setTheme("store", "Almost there");
   const device = detect().device;
+  const pageUrl = `${location.origin}/l/${linkId}/wait/${enrolmentId}`;
+  // The profile is named "Install <app>" in Settings, so the steps use the app's name.
+  const appName = await api<LinkPage>("GET", `/api/public/links/${encodeURIComponent(linkId)}`)
+    .then((d) => d.app.name || d.release?.fallbackName || "the app")
+    .catch(() => "the app");
   let since: string | undefined;
   let stopped = false;
   // Whichever browser shows this page remembers the registration for the app page.
   localStorage.setItem(`enrolment:${linkId}`, enrolmentId);
   const ticker = setInterval(() => (stopped ? clearInterval(ticker) : tickRings(root)), 1000);
-  const render = (state: string, manifestUrl?: string, message?: string, build?: BuildTiming, install?: InstallInfo) => {
+  const render = (state: string, manifestUrl?: string, message?: string, build?: BuildTiming, install?: InstallInfo, profile?: ProfileFetch) => {
     const installed = state === "ready" && install?.phase === "installed";
     const idx = STEPS.findIndex((s) => s.states.includes(state));
     const failed = state === "failed" || state === "rejected";
@@ -728,8 +785,9 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
       storeFrame(
         html`
           <div class="card pad-l" style="max-width:560px;margin:24px auto">
-            <h1 style="font-size:24px" id="wait-title">${installed ? "Installed" : done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : "Almost there"}</h1>
+            <h1 style="font-size:24px" id="wait-title">${installed ? "Installed" : done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : state === "awaiting-device" ? "Install the profile" : "Almost there"}</h1>
             <p class="muted">${installed ? `${install?.version ? `Version ${install.version}` : "The app"} is on your home screen.` : waitCopy(state, device)}</p>
+            ${state === "awaiting-device" ? settingsSteps(enrolmentId, device, appName, profile, pageUrl) : ""}
             ${build && (state === "building" || state === "registering") ? buildRing(build) : ""}
             ${message && state === "failed" ? html`<p class="small faint">${message}</p>` : ""}
             <ol class="timeline">
@@ -740,7 +798,6 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
                 return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${title}</h3><p>${cls === "now" ? "In progress" : cls === "bad" ? "Stopped here" : stepHint(s.key)}</p></div></li>`;
               })}
             </ol>
-            ${state === "awaiting-device" ? html`<a class="btn block secondary" href="/api/enrol/${enrolmentId}/profile.mobileconfig">Download the profile again</a><p class="tiny faint center mt-s">Settings drops a downloaded profile that is not installed within about 8 minutes. Inside another app's browser, open this page in Safari first.</p>` : ""}
             ${done && manifestUrl ? html`<button class="btn block lg ${installed ? "secondary" : ""}" type="button" id="install-now">${installed ? "Install again" : "Install"}</button><div class="install-progress" id="install-progress" hidden></div>` : ""}
             <p class="small center mt"><a href="/l/${linkId}">Back to the app page</a></p>
           </div>
@@ -764,8 +821,8 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
   const poll = async () => {
     while (!stopped) {
       try {
-        const s = await api<{ state: string; manifestUrl?: string; message?: string; build?: BuildTiming; install?: InstallInfo }>("GET", `/api/enrol/${enrolmentId}/status${since ? `?since=${since}` : ""}`);
-        render(s.state, s.manifestUrl, s.message, s.build, s.install);
+        const s = await api<{ state: string; manifestUrl?: string; message?: string; build?: BuildTiming; install?: InstallInfo; profile?: ProfileFetch }>("GET", `/api/enrol/${enrolmentId}/status${since ? `?since=${since}` : ""}`);
+        render(s.state, s.manifestUrl, s.message, s.build, s.install, s.profile);
         since = s.state;
         if (["ready", "rejected", "failed"].includes(s.state)) {
           clearInterval(ticker);

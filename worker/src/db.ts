@@ -85,6 +85,9 @@ export interface EnrolmentRow {
   message: string | null;
   createdAt: string;
   updatedAt: string;
+  // When the registration profile was last downloaded, and by which browser.
+  profileFetchedAt?: string | null;
+  profileBrowser?: string | null;
   // The latest install from a share page: iOS fetched the manifest, then the .ipa began and finished.
   installAttemptAt?: string | null;
   installStartedAt?: string | null;
@@ -339,6 +342,10 @@ export class Db {
       .prepare("UPDATE enrolments SET state = ?, udid = ?, product = ?, apple_device_id = ?, profile_uuid = ?, manifest_url = ?, message = ?, updated_at = ? WHERE id = ?")
       .bind(e.state, e.udid, e.product, e.appleDeviceId, e.profileUuid, e.manifestUrl, e.message, e.updatedAt, e.id)
       .run();
+  }
+
+  async profileFetched(id: string, at: string, browser: string): Promise<void> {
+    await this.d1.prepare("UPDATE enrolments SET profile_fetched_at = ?, profile_browser = ? WHERE id = ?").bind(at, browser, id).run();
   }
 
   // A new attempt clears the progress of the previous one; the installed version stays until replaced.

@@ -47,6 +47,8 @@ export interface EnrolmentStatus {
   updatedAt: string;
   // While registering or building: seconds since the rebuild was asked for, and how long it should take.
   build?: { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null };
+  // While awaiting the device: when the profile was downloaded and by which browser.
+  profile?: { fetchedAt: string | null; browser: string | null; safari: boolean | null };
   // Once ready: the latest install attempt from a share page and the version last installed.
   install?: { attemptAt: string | null; phase: InstallPhase; version: string | null };
 }

@@ -5,7 +5,7 @@ import { randomId } from "./crypto.js";
 import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady, buildSigning } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
-import { enrolCallback, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
+import { enrolCallback, enrolLatest, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
 import { serveWebApp, webAppLinkId } from "./webapp.js";
 
@@ -86,6 +86,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     if (p.length === 3 && p[2] === "profile.mobileconfig" && m === "GET") return enrolProfile(env, p[1]);
     if (p.length === 2 && m === "POST") return enrolCallback(request, env, deps, p[1]);
     if (p.length === 3 && p[2] === "status" && m === "GET") return enrolStatus(request, env, deps, p[1]);
+    if (p.length === 3 && p[2] === "latest" && m === "GET") return enrolLatest(env, deps, p[1]);
   }
 
   if (p[0] === "build-ready" && m === "POST") return buildReady(request, env, deps);

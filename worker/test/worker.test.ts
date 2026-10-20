@@ -448,6 +448,38 @@ describe("approve, rebuild and build-ready", () => {
     expect(rows.results.map((r) => r.seconds)).toEqual([600]);
   });
 
+  it("tracks an install from the manifest to the end of the .ipa download, and gives ready devices the newest build", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const { appId, linkId, buildToken } = await createSkull(env, deps, cookie);
+    const { fetch } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [], profileCount: 0 }) });
+    const d = { ...deps, fetch };
+    const bob = await enrol(env, d, linkId, "Bob", UDID_1);
+    expect((await handle(api(null, "GET", `/api/enrol/${bob}/latest`), env, d)).status).toBe(409);
+    await handle(api(cookie, "POST", `/api/dev/devices/${bob}/approve`), env, d);
+    await handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://api.github.com/repos/o/skull/releases/assets/3", version: "0.1.1", profileUuid: "uuid-1" }, { Authorization: `Bearer ${buildToken}` }), env, d);
+
+    const ready = await status(env, d, bob);
+    expect(ready.install).toEqual({ attemptAt: null, phase: "none", version: null });
+    const plist = await (await handle(new Request(ready.manifestUrl!), env, d)).text();
+    expect((await status(env, d, bob)).install?.phase).toBe("requested");
+    const ipaUrl = /<key>url<\/key>\s*<string>([^<]+)</.exec(plist)![1];
+    const ipa = await handle(new Request(ipaUrl), env, d);
+    expect((await status(env, d, bob)).install?.phase).toBe("downloading");
+    expect(await ipa.text()).toBe("IPABYTES");
+    expect((await status(env, d, bob)).install).toMatchObject({ phase: "installed", version: "0.1.1" });
+
+    // The newest release for an update; a new attempt clears progress and keeps the installed version.
+    const latest = (await (await handle(api(null, "GET", `/api/enrol/${bob}/latest`), env, d)).json()) as { version: string; manifestUrl: string };
+    expect(latest.version).toBe("0.1.0");
+    expect(latest.manifestUrl).toMatch(new RegExp(`^${BASE}/dl/`));
+    await (await handle(new Request(latest.manifestUrl), env, d)).text();
+    expect((await status(env, d, bob)).install).toMatchObject({ phase: "requested", version: "0.1.1" });
+
+    // A revoked link gives no new install links.
+    await handle(api(cookie, "POST", `/api/dev/links/${linkId}/revoke`), env, d);
+    expect((await handle(api(null, "GET", `/api/enrol/${bob}/latest`), env, d)).status).toBe(410);
+  });
+
   it("build-ready validates its input and token", async () => {
     const { appId, buildToken } = await createSkull(env, deps, cookie);
     const auth = { Authorization: `Bearer ${buildToken}` };

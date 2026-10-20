@@ -152,9 +152,12 @@ export async function serveArtefact(env: Env, deps: Deps, token: string): Promis
   const secrets = await loadSecrets(env, link.dev, ["githubToken"]);
   const upstream = await fetchUpstream(env, deps, link.url, secrets.githubToken);
   if (!upstream.ok) throw new HttpError(502, `upstream returned ${upstream.status}`);
+  const db = Db.from(env);
   if (link.kind === "manifest") {
+    // iOS fetches the manifest to show its Install prompt: the start of an install attempt.
+    if (link.e) await db.installAttempt(link.e, deps.now().toISOString());
     const plist = await upstream.text();
-    const rewritten = await rewriteManifestUrls(plist, (u) => dlUrl(env, deps, { url: u, kind: "ipa", dev: link.dev }));
+    const rewritten = await rewriteManifestUrls(plist, (u) => dlUrl(env, deps, { url: u, kind: "ipa", dev: link.dev, e: link.e, v: link.v }));
     return new Response(rewritten, { status: 200, headers: { "Content-Type": "text/xml", "Cache-Control": "no-store" } });
   }
   if (link.kind === "icon") {
@@ -162,7 +165,25 @@ export async function serveArtefact(env: Env, deps: Deps, token: string): Promis
   }
   const type = link.kind === "apk" ? "application/vnd.android.package-archive" : "application/octet-stream";
   const name = link.kind === "apk" ? "app.apk" : "app.ipa";
-  return new Response(upstream.body, {
+  let body = upstream.body;
+  // iOS downloads the .ipa only after the friend taps Install; the end of the download is as close
+  // to "installed" as a web page can know.
+  if (link.kind === "ipa" && link.e && body) {
+    const id = link.e;
+    await db.installStarted(id, deps.now().toISOString());
+    body = body.pipeThrough(
+      new TransformStream({
+        async flush() {
+          try {
+            await db.installDone(id, deps.now().toISOString(), link.v ?? null);
+          } catch (err) {
+            console.error(`install ${id}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        },
+      }),
+    );
+  }
+  return new Response(body, {
     status: 200,
     headers: { "Content-Type": type, "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "no-store" },
   });

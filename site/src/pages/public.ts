@@ -4,6 +4,7 @@ import { html, mount, paragraphs, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { notesHtml } from "../notes.js";
 import { buildFraction, timeLeft, usualTime } from "../progress.js";
+import { installCopy, startInstall, type InstallInfo, type InstallStep } from "../install.js";
 import { screenshotSvg } from "../placeholders.js";
 import { appleDeviceName, detectInAppBrowser, detectPlatform, itmsLink, type InAppBrowser, type Platform } from "../platform.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
@@ -362,15 +363,39 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     const earlier = localStorage.getItem(`enrolment:${data.linkId}`);
     if (earlier) {
       const linkId = data.linkId;
-      api<{ state: string }>("GET", `/api/enrol/${earlier}/status`)
+      api<{ state: string; install?: InstallInfo }>("GET", `/api/enrol/${earlier}/status`)
         .then((s) => {
           if (["rejected", "failed"].includes(s.state)) return;
+          if (s.state === "ready") return onDevice(root, form, earlier, d.device, data.release?.version ?? null, s.install);
           form.insertAdjacentHTML("afterbegin", callout("info", html`<p>You started registering this device already. <a href="/l/${linkId}/wait/${earlier}"><b>Carry on where you left off</b></a></p>`).html);
         })
         .catch(() => localStorage.removeItem(`enrolment:${linkId}`));
     }
   }
   if (form && !data.linkId) form.onsubmit = (e) => { e.preventDefault(); toast(opts.example ? "Example only: nothing to install" : "Preview only: create a share link to try this"); };
+}
+
+// A device this browser registered and the developer approved: install, update or install again
+// without a new registration.
+function onDevice(root: HTMLElement, form: HTMLFormElement, enrolmentId: string, device: string, latest: string | null, install: InstallInfo | undefined): void {
+  const installed = install?.phase === "installed" ? (install.version ?? "") : null;
+  const newer = installed !== null && latest !== null && installed !== "" && installed !== latest;
+  const label = newer ? `Update to ${latest}` : installed !== null ? "Install again" : "Install";
+  form.outerHTML = html`
+    <div class="install-card" id="on-device">
+      <h3>${icon("phone", "icon-20")} On this ${device}</h3>
+      <p class="muted small">${installed !== null ? (installed ? `Version ${installed} is installed.` : "The app is installed.") : `Your ${device} is approved and ready to install.`}${newer ? ` Version ${latest} is out.` : ""}</p>
+      <button class="btn block lg ${newer || installed === null ? "" : "secondary"}" type="button" id="install-latest">${label}</button>
+      <div class="install-progress" id="install-progress" hidden></div>
+    </div>`.html;
+  root.querySelectorAll<HTMLButtonElement>("[data-get]").forEach((b) => (b.textContent = newer ? "Update" : installed !== null ? "Installed" : "Install"));
+  const button = root.querySelector<HTMLButtonElement>("#install-latest")!;
+  wireInstall(root, button, enrolmentId, device, async () => (await api<{ manifestUrl: string }>("GET", `/api/enrol/${enrolmentId}/latest`)).manifestUrl, install?.attemptAt ?? null, () => {
+    button.textContent = "Install again";
+    button.classList.add("secondary");
+    button.disabled = false;
+    root.querySelectorAll<HTMLButtonElement>("[data-get]").forEach((b) => (b.textContent = "Installed"));
+  });
 }
 
 // Latest version with a clamped summary; "more..." reveals the full list.
@@ -594,6 +619,34 @@ function waitCopy(state: string, device: string): string {
 
 type BuildTiming = { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null };
 
+function installStepHtml(step: InstallStep, device: string): string {
+  const mark = step === "installed" ? icon("check", "icon-20").html : step === "nothing" ? `<b class="warn-mark">!</b>` : `<span class="spinner"></span>`;
+  return `${mark}<span>${installCopy(step, device)}</span>`;
+}
+
+// The Install button and the line under it that follows the install.
+function wireInstall(root: HTMLElement, button: HTMLButtonElement, enrolmentId: string, device: string, getManifest: () => Promise<string>, before: string | null, onInstalled?: (version: string | null) => void): void {
+  const box = root.querySelector<HTMLElement>("#install-progress")!;
+  let stop: (() => void) | null = null;
+  button.onclick = async () => {
+    stop?.();
+    button.disabled = true;
+    try {
+      const manifestUrl = await getManifest();
+      stop = startInstall(enrolmentId, manifestUrl, before, (step, version) => {
+        box.hidden = false;
+        box.className = `install-progress ${step}`;
+        box.innerHTML = installStepHtml(step, device);
+        if (step === "nothing") button.disabled = false;
+        if (step === "installed") onInstalled?.(version);
+      });
+    } catch (err) {
+      button.disabled = false;
+      toast(err instanceof Error ? err.message : String(err));
+    }
+  };
+}
+
 const RING_R = 44;
 const RING_C = 2 * Math.PI * RING_R;
 
@@ -629,8 +682,11 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
   const device = detect().device;
   let since: string | undefined;
   let stopped = false;
+  // Whichever browser shows this page remembers the registration for the app page.
+  localStorage.setItem(`enrolment:${linkId}`, enrolmentId);
   const ticker = setInterval(() => (stopped ? clearInterval(ticker) : tickRings(root)), 1000);
-  const render = (state: string, manifestUrl?: string, message?: string, build?: BuildTiming) => {
+  const render = (state: string, manifestUrl?: string, message?: string, build?: BuildTiming, install?: InstallInfo) => {
+    const installed = state === "ready" && install?.phase === "installed";
     const idx = STEPS.findIndex((s) => s.states.includes(state));
     const failed = state === "failed" || state === "rejected";
     const done = state === "ready";
@@ -639,8 +695,8 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
       storeFrame(
         html`
           <div class="card pad-l" style="max-width:560px;margin:24px auto">
-            <h1 style="font-size:24px">${done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : "Almost there"}</h1>
-            <p class="muted">${waitCopy(state, device)}</p>
+            <h1 style="font-size:24px" id="wait-title">${installed ? "Installed" : done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : "Almost there"}</h1>
+            <p class="muted">${installed ? `${install?.version ? `Version ${install.version}` : "The app"} is on your home screen.` : waitCopy(state, device)}</p>
             ${build && (state === "building" || state === "registering") ? buildRing(build) : ""}
             ${message && state === "failed" ? html`<p class="small faint">${message}</p>` : ""}
             <ol class="timeline">
@@ -652,19 +708,29 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
               })}
             </ol>
             ${state === "awaiting-device" ? html`<a class="btn block secondary" href="/api/enrol/${enrolmentId}/profile.mobileconfig">Download the profile again</a><p class="tiny faint center mt-s">Settings drops a downloaded profile that is not installed within about 8 minutes. Inside another app's browser, open this page in Safari first.</p>` : ""}
-            ${done && manifestUrl ? html`<a class="btn block lg" href="${itmsLink(manifestUrl)}">Install</a><p class="tiny faint center mt-s">The install link is good for an hour; reload this page for a fresh one.</p>` : ""}
+            ${done && manifestUrl ? html`<button class="btn block lg ${installed ? "secondary" : ""}" type="button" id="install-now">${installed ? "Install again" : "Install"}</button><div class="install-progress" id="install-progress" hidden></div><p class="tiny faint center mt-s">The install link is good for an hour; reload this page for a fresh one.</p>` : ""}
             <p class="small center mt"><a href="/l/${linkId}">Back to the app page</a></p>
           </div>
         `,
         { nav: true },
       ),
     );
+    const button = root.querySelector<HTMLButtonElement>("#install-now");
+    if (button && manifestUrl) {
+      wireInstall(root, button, enrolmentId, device, async () => manifestUrl, install?.attemptAt ?? null, (version) => {
+        root.querySelector("#wait-title")!.textContent = "Installed";
+        button.textContent = "Install again";
+        button.classList.add("secondary");
+        button.disabled = false;
+        if (version) toast(`Version ${version} installed`);
+      });
+    }
   };
   const poll = async () => {
     while (!stopped) {
       try {
-        const s = await api<{ state: string; manifestUrl?: string; message?: string; build?: BuildTiming }>("GET", `/api/enrol/${enrolmentId}/status${since ? `?since=${since}` : ""}`);
-        render(s.state, s.manifestUrl, s.message, s.build);
+        const s = await api<{ state: string; manifestUrl?: string; message?: string; build?: BuildTiming; install?: InstallInfo }>("GET", `/api/enrol/${enrolmentId}/status${since ? `?since=${since}` : ""}`);
+        render(s.state, s.manifestUrl, s.message, s.build, s.install);
         since = s.state;
         if (["ready", "rejected", "failed"].includes(s.state)) {
           clearInterval(ticker);

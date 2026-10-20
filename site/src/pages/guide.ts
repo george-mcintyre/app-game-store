@@ -21,13 +21,13 @@ function sections(origin: string, slug: string): Section[] {
         <ol class="steps">
           <li><b>Sign in with GitHub</b> at <a href="/dev">/dev</a>. An agent cannot do this; it is your identity.</li>
           <li><b>Create a GitHub fine-grained token</b> (Contents, read and write, on your app repositories) and paste it under <a href="/dev/settings#credentials">Settings</a>. Tokens are created on GitHub while signed in as you. <a href="/dev/guide#github-token">Steps</a>.</li>
-          <li><b>iPhone apps only: pay for the Apple Developer Program</b> (99 US dollars a year), then create an <b>App Store Connect API key</b> with the Admin role and paste issuer id, key id and the .p8 contents under Settings, plus your team id. <a href="/dev/guide#apple-key">Steps</a>.</li>
+          <li><b>iPhone apps only: pay for the Apple Developer Program</b> (99 US dollars a year), then create an <b>App Store Connect API key</b> with the Admin role and paste issuer id, key id and the .p8 contents under Settings, plus your team id. Saving it sets up iPhone signing by itself. <a href="/dev/guide#apple-key">Steps</a>.</li>
           <li><b>Create one API key</b> on <a href="/dev/agents">Agents and API</a> and store it where your agent runs. Keys are made from a browser session only; agents cannot mint their own.</li>
         </ol>
-        <h3>You, once per iPhone app</h3>
+        <h3>You, once per app</h3>
         <ol class="steps">
-          <li><b>In the Apple developer portal:</b> an App ID for the bundle id, an Apple Distribution certificate (exported as .p12 with a password), your own iPhone registered, and an <b>Ad Hoc</b> provisioning profile with a name you choose. <a href="/dev/guide#apple-setup">Steps</a>. Apple has no API for the certificate, so this stays manual.</li>
-          <li><b>Put the signing secrets into the repository:</b> the .p12 as base64, its password, and for Android the keystore and its passwords. The agent can run <code>gh secret set</code> for you if you hand it the values, but the values come from you.</li>
+          <li><b>iPhone apps: nothing in the Apple portal.</b> The app needs its iPhone bundle ID, which the agent sets when it registers the app. ourapps creates the App ID, the Ad Hoc profile and the certificate it signs with, and the repository holds no Apple secrets. <a href="/dev/guide#apple-setup">What it does</a>.</li>
+          <li><b>Android apps: put the signing keystore into the repository</b>, with its passwords. The agent can run <code>gh secret set</code> for you if you hand it the values, but the values come from you.</li>
         </ol>
         <h3>You, as things happen</h3>
         <ol class="steps">
@@ -44,7 +44,7 @@ function sections(origin: string, slug: string): Section[] {
           <li>Cutting releases, checking <code>/release</code> status and fixing what it reports.</li>
           <li>Creating, labelling, revoking share links; listing waiting devices; approving the ones you name (prompt 2).</li>
         </ul>
-        <p class="small muted">Rule of thumb: if it needs a password, a payment, a certificate, or a decision about a person, it is yours. If it is typing, reading a file, or calling this API, it is the agent's.</p>
+        <p class="small muted">Rule of thumb: if it needs a password, a payment, a signing key, or a decision about a person, it is yours. If it is typing, reading a file, or calling this API, it is the agent's.</p>
         <p class="small muted">Wondering whether your kind of app fits (Unity, Flutter, server-rendered sites, games with a server)? The <a href="/reference">technical reference</a> lists the supported types, where every part runs and the exact limits.</p>
       `,
     },
@@ -82,7 +82,7 @@ function sections(origin: string, slug: string): Section[] {
       sub: [
         { id: "github-token", title: "GitHub token" },
         { id: "apple-key", title: "App Store Connect key" },
-        { id: "apple-setup", title: "One-time Apple setup" },
+        { id: "apple-setup", title: "iPhone signing" },
         { id: "android-setup", title: "Android signing" },
       ],
       body: html`
@@ -100,7 +100,7 @@ function sections(origin: string, slug: string): Section[] {
         ${callout("info", html`<p>When you add a new app repository later, edit the token on GitHub and add the repository to it. The console does not need a new token.</p>`)}
 
         <h3 id="apple-key">App Store Connect API key (iPhone apps)</h3>
-        <p>This is how the console registers your friends' iPhones with Apple and rebuilds the signing profile. You need a paid Apple Developer Program membership (the same one you need to run your app on any iPhone for more than a week).</p>
+        <p>This is how the console creates the certificate your iPhone builds are signed with, registers your friends' iPhones with Apple and rebuilds the signing profile. You need a paid Apple Developer Program membership (the same one you need to run your app on any iPhone for more than a week).</p>
         <ol class="steps">
           <li>Open <a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noopener">App Store Connect, Users and Access, Integrations, App Store Connect API</a>. If you have never used it, tap <b>Request Access</b> first.</li>
           <li>Under <b>Team Keys</b>, tap the plus. Name: <b>ourapps</b>. Access: <b>Admin</b>. Devices and provisioning profiles are only editable with Admin, which is why the lower roles do not work.</li>
@@ -110,15 +110,15 @@ function sections(origin: string, slug: string): Section[] {
           <li>Your <b>Team ID</b> is on <a href="https://developer.apple.com/account" target="_blank" rel="noopener">developer.apple.com/account</a> under Membership details. Paste it too.</li>
         </ol>
 
-        <h3 id="apple-setup">One-time Apple setup per app</h3>
-        <p>Done once in the <a href="https://developer.apple.com/account/resources" target="_blank" rel="noopener">Apple developer portal</a>; afterwards the console keeps the profile up to date.</p>
+        <h3 id="apple-setup">iPhone signing</h3>
+        <p>Saving the App Store Connect key sets up iPhone signing by itself; <b>Set up iPhone signing</b> under <a href="/dev/settings#signing">Settings</a> runs it again. Nothing is done by hand in the Apple developer portal:</p>
         <ol class="steps">
-          <li><b>Identifier.</b> Identifiers, plus, App IDs, App. Bundle ID explicit, for example <code>com.yourname.skull</code>. This must match the bundle id in your Xcode project and in my-app.json.</li>
-          <li><b>Distribution certificate.</b> Easiest in Xcode: ${kbd("Settings")}, ${kbd("Accounts")}, your team, ${kbd("Manage Certificates")}, plus, <b>Apple Distribution</b>. Then in Keychain Access export that certificate with its private key as a <code>.p12</code> with a password; your build workflow needs both (base64 of the file and the password) as secrets.</li>
-          <li><b>Your own iPhone.</b> Devices, plus, name and UDID. Find the UDID in Finder (click the device name under the picture until it shows) or Xcode, Window, Devices and Simulators. Ad Hoc profiles need at least one device to exist.</li>
-          <li><b>Ad Hoc profile.</b> Profiles, plus, <b>Ad Hoc</b>, choose the App ID, the distribution certificate, your iPhone, and give it a name such as <b>Skull Ad Hoc</b>. Generate. You never download it by hand; type the exact name into the app's "Ad Hoc provisioning profile name" field in this console.</li>
+          <li>Your browser makes a private key and a certificate request. ourapps asks Apple for an <b>Apple Distribution</b> certificate with it and keeps the key encrypted like your credentials.</li>
+          <li>For each app with an <b>iPhone bundle ID</b>, ourapps finds or creates the App ID and makes an <b>Ad Hoc</b> profile named after the app, holding every iPhone and iPad registered on your account. Each approval makes it again with the new device.</li>
+          <li>The release workflow fetches certificate, key and profile with the app's build token from <code>/api/build/&lt;app&gt;/signing</code>, so the repository holds no Apple secrets. The <a href="/contract.md">contract</a> shows the exact commands.</li>
         </ol>
-        ${callout("warn", html`<p>Choose <b>Ad Hoc</b>, not Development. Development profiles make iOS show "Untrusted Developer" and need a trust step in Settings; Ad Hoc apps open straight away.</p>`)}
+        ${callout("info", html`<p>Apple makes an Ad Hoc profile only once at least one device is registered. On a new Apple account, open your own share link on your iPhone and approve it; that registers the device and makes the profile.</p>`)}
+        <p class="small muted">The certificate lasts a year: replace it under Settings before then and publish a release. Replacing leaves the old certificate valid until it expires or you revoke it in the developer portal, so installed apps keep working.</p>
 
         <h3 id="android-setup">Android signing</h3>
         <p>Android needs no account and no console credential, only a signing key your workflow uses. Create one once:</p>
@@ -142,7 +142,8 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
           <tr><td>Size, compatibility, age</td><td>Facts strip and Information</td><td>Compatibility is free text, for example "iOS 17 or later".</td></tr>
           <tr><td>Screenshots</td><td>Preview carousel, per version</td><td>A general list plus optional lists for iPhone, iPad, Android and Web, one URL per line, in their own proportions. A version without its own list shows the general one; a single list is shown for every version. Blank lists fall back to my-app.json (<code>screenshots</code> and <code>screenshotsByPlatform</code>), then to generated previews. On a phone or tablet the page shows the matching version; on a computer, a tab per version.</td></tr>
           <tr><td>Repository</td><td>Not shown</td><td><code>owner/name</code>. The console reads the latest release here.</td></tr>
-          <tr><td>Ad Hoc profile name</td><td>Not shown</td><td>Must match the profile created in step 2 exactly.</td></tr>
+          <tr><td>iPhone bundle ID</td><td>Not shown</td><td>The bundle identifier in your Xcode project. ourapps creates the App ID and the Ad Hoc profile for it.</td></tr>
+          <tr><td>Ad Hoc profile name</td><td>Not shown</td><td>Optional; blank becomes the app's name followed by "Ad Hoc".</td></tr>
           <tr><td>Show on my public page</td><td>Your /${slug} page</td><td>Details only, never install links. Off by default.</td></tr>
         </table>
         <p>On <b>Create</b>, the console shows the app's <b>build token</b> once, together with the app id. Put both into the repository as Actions secrets straight away:</p>
@@ -159,13 +160,13 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
       title: "4. Make the repository publish releases (agent does this)",
       sub: [{ id: "release-notes", title: "Release notes" }, { id: "web-apps", title: "Web apps: home screen" }],
       body: html`
-        ${callout("info", html`<p><b>For your information.</b> Prompt 1 on <a href="/dev/agents">Agents and API</a>, pasted into a coding agent inside the repository, writes everything in this section. What remains for you is the signing material in step 2 of the TL;DR.</p>`)}
+        ${callout("info", html`<p><b>For your information.</b> Prompt 1 on <a href="/dev/agents">Agents and API</a>, pasted into a coding agent inside the repository, writes everything in this section. What remains for you is the Android signing keystore.</p>`)}
         <p>The console never looks at your source code. It reads one file, <code>my-app.json</code>, from the latest GitHub Release of the repository, and follows the URLs inside it. Your repository therefore needs a release workflow that:</p>
         <ol class="steps">
           <li>Builds the signed APK and, for iPhone apps, the Ad Hoc signed <code>.ipa</code>.</li>
           <li>Creates a GitHub Release (not a draft, not a pre-release) and uploads: <code>my-app.json</code>, <code>icon.png</code>, screenshots, the <code>.apk</code>, and for iPhone <code>manifest.plist</code> plus the <code>.ipa</code>.</li>
           <li>Writes every URL inside my-app.json and manifest.plist as a release-asset API URL (<code>https://api.github.com/repos/owner/name/releases/assets/123</code>). Private repositories work this way and nothing is guessable; the console turns them into short-lived links for the phone.</li>
-          <li>For iPhone apps: listens for the <code>my-store-rebuild</code> event, downloads the fresh profile from the console, builds, publishes, and calls <code>/api/build-ready</code>. The <a href="/contract.md">contract</a> spells out every field.</li>
+          <li>For iPhone apps: fetches the certificate, its key and the profile from the console with the build token, and also runs on the <code>my-store-rebuild</code> event, after which it calls <code>/api/build-ready</code>. The <a href="/contract.md">contract</a> spells out every field.</li>
         </ol>
         ${callout("info", html`<p><b>Let an agent do it.</b> On <a href="/dev/agents">Agents and API</a> there is a prompt, pre-filled for your app, that you paste into a coding agent working inside the repository. It writes the workflow, my-app.json generation and the rebuild hook to the contract.</p>`)}
         <h3>What my-app.json looks like</h3>
@@ -406,6 +407,7 @@ suspend fun checkForUpdate(context: Context) {
           <tr><th>What</th><th>How it is stored</th><th>When it is decrypted</th></tr>
           <tr><td>App Store Connect key (issuer id, key id, .p8), Apple team id</td><td>AES-256-GCM, one ciphertext per field, under a key derived for your account alone (HKDF from the master secret), with your account id and the field name bound in as authenticated data so a ciphertext cannot be moved between accounts or fields</td><td>Only while approving a device, inside one request</td></tr>
           <tr><td>GitHub token</td><td>Same scheme</td><td>Only when reading a release or sending a rebuild request</td></tr>
+          <tr><td>Private key of the Apple Distribution certificate ourapps created</td><td>Same scheme; the key is made in your browser</td><td>Only when an app's release workflow presents that app's build token</td></tr>
           <tr><td>API keys, build tokens, sign-in sessions</td><td>Keyed hashes (HMAC-SHA256 with a pepper derived from the master secret); the key itself is shown to you once and never stored</td><td>Never; a presented key is hashed and compared</td></tr>
           <tr><td>Download links for app files</td><td>Signed with their own secret; expire after one hour</td><td>n/a</td></tr>
         </table>
@@ -420,9 +422,9 @@ suspend fun checkForUpdate(context: Context) {
         <ul class="bullets">
           <li><b>You, in a browser.</b> Sign-in is GitHub OAuth reading your public profile only. The session cookie is HttpOnly, Secure, SameSite, lasts 30 days, and is stored as a keyed hash. State-changing requests are refused unless they come from this site. "Sign out everywhere" under Settings ends every session.</li>
           <li><b>Your agents, with an API key.</b> Each key has a scope (read only, or manage), an expiry you choose, and can be revoked alone or all at once. A key can never create or revoke keys, change credentials, delete your account or sign out sessions; those need you in a browser. Keys are per developer: no key can see another developer's apps, links or devices.</li>
-          <li><b>Your app's repository, with a build token.</b> Per app, used only to fetch the signing profile and report a build; rotate it on the app's page.</li>
+          <li><b>Your app's repository, with a build token.</b> Per app, used to fetch the signing certificate, its key and the profile, and to report a build. Whoever holds it can sign builds that run on the devices in your profiles, so keep it in repository secrets only; rotate it on the app's page.</li>
           <li><b>Nobody else.</b> There is no shared admin interface; every row is tied to one developer and every query is filtered by it.</li>
-          <li>Every security event (sign-in, sign-out, credential saves and removals, key creation and revocation, build token rotation, device approvals, app deletion, terms acceptance) is recorded with the country of the request and shown to you under Settings, Security.</li>
+          <li>Every security event (sign-in, sign-out, credential saves and removals, iPhone signing setup, key creation and revocation, build token rotation, device approvals, app deletion, terms acceptance) is recorded with the country of the request and shown to you under Settings, Security.</li>
         </ul>
 
         <h3 id="security-devices">Your friends' iPhones</h3>
@@ -430,7 +432,7 @@ suspend fun checkForUpdate(context: Context) {
           <li>What is recorded: the name the friend typed, the device identifier (UDID) and model their iPhone reported, the share link used, and the state of the request. Nothing else: no contacts, no location, no account.</li>
           <li>Who sees it: you, under Devices. It is sent to Apple, under your developer account, only when you approve the device. It is never shown on any public page, never listed by any API without your session or key, and deleted when you remove the record or delete the app.</li>
           <li>How it gets there: the enrolment profile is a standard Apple "profile service" payload asking for UDID, product and OS version only. It installs no configuration, no certificates and no management on the phone, and removes itself. The friend sees it as "Unsigned" because it is served over HTTPS and not separately signed; that is expected.</li>
-          <li>The app a friend installs is signed with your certificate for their device by your repository's workflow. ourapps never holds your signing certificate.</li>
+          <li>The app a friend installs is signed for their device by your repository's workflow, with the certificate ourapps created on your Apple account and hands only to that workflow.</li>
           <li>Android and web installs record nothing about the friend. Install pages set no cookies and load no analytics or third-party scripts.</li>
         </ul>
 
@@ -461,11 +463,11 @@ suspend fun checkForUpdate(context: Context) {
           <tr><th>Symptom</th><th>Cause and fix</th></tr>
           <tr><td>No icon or version in the console, yellow notice about a GitHub token</td><td>No token saved, or the repository is not selected on it. Settings, GitHub token.</td></tr>
           <tr><td>Latest release says "no asset named my-app.json"</td><td>The workflow uploaded it under another name or to a pre-release. Names are exact; the latest non-draft, non-pre-release is used.</td></tr>
-          <tr><td>Approve fails with "profile ... not found"</td><td>The Ad Hoc profile name on the app does not match the portal exactly, or the profile was never created. Step 2.</td></tr>
+          <tr><td>Approve fails with "profile ... not found"</td><td>iPhone signing is not set up, or the app has no iPhone bundle ID. Settings, then the app's page.</td></tr>
           <tr><td>Approve fails with "device limit reached"</td><td>100 registrations this membership year. Wait for renewal.</td></tr>
           <tr><td>Approve fails with a GitHub 404 on dispatches</td><td>The token cannot write to that repository. Edit the token on GitHub: add the repository, Contents read and write.</td></tr>
           <tr><td>Friend stuck on "Building" for over an hour</td><td>Open the repository's Actions tab. The workflow failed or did not call build-ready; its logs say why. Fix and re-run the workflow; it can call build-ready again.</td></tr>
-          <tr><td>build-ready returns 409</td><td>The workflow sent a profileUuid the console did not create, usually a cached profile. Download the profile fresh from profileUrl on every run.</td></tr>
+          <tr><td>build-ready returns 409</td><td>The workflow sent a profileUuid the console did not create, usually a cached profile. Fetch the signing material fresh on every run.</td></tr>
           <tr><td>iPhone says "Untrusted Developer"</td><td>The build used a Development profile. Use the Ad Hoc profile from the console; no trust step exists for Ad Hoc.</td></tr>
           <tr><td>iPhone says "Unable to Verify App" or the app will not open</td><td>The profile expired or the device is not in it. Approve the device again, which recreates the profile and rebuilds.</td></tr>
           <tr><td>Nothing happens when tapping Install on iPhone</td><td>The page is inside another app's browser (Gmail, Instagram). Open in Safari. WhatsApp and Messages are fine.</td></tr>

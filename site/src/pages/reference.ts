@@ -248,16 +248,17 @@ function body(): Raw {
           <h2>Native iPhone and iPad</h2>
           <p>Apple's Ad Hoc distribution: the build is signed with a provisioning profile listing the device numbers allowed to run it. ourapps automates the list.</p>
           <ol class="steps">
+            <li><b>Signing setup, once.</b> Your browser makes an RSA key and a certificate request; with your App Store Connect key ourapps gets an Apple Distribution certificate (<code>POST /v1/certificates</code>), stores the key encrypted, finds or creates each app's App ID (<code>/v1/bundleIds</code>) and makes its Ad Hoc profile.</li>
             <li><b>Enrolment.</b> The friend taps Register. ourapps serves a configuration profile of type <code>Profile Service</code> asking for <code>UDID</code>, <code>PRODUCT</code> and <code>VERSION</code> only. iOS posts those back as a signed plist to <code>/api/enrol/&lt;id&gt;</code>; ourapps reads the device number. The profile installs nothing else.</li>
             <li><b>Approval.</b> You approve the device in the console or through the API.</li>
             <li><b>Apple.</b> With your App Store Connect key (ES256 token, ten minutes), ourapps registers the device (<code>POST /v1/devices</code>, or finds it), then deletes and recreates your Ad Hoc profile with every enabled iOS device, because Apple profiles cannot be edited.</li>
-            <li><b>Rebuild.</b> ourapps sends <code>repository_dispatch</code> of type <code>my-store-rebuild</code>. Your workflow downloads the new profile from <code>/api/build/&lt;app&gt;/profile</code>, builds, publishes, and calls <code>/api/build-ready</code> with the profile's uuid.</li>
+            <li><b>Rebuild.</b> ourapps sends <code>repository_dispatch</code> of type <code>my-store-rebuild</code>. Your workflow fetches certificate, key and the new profile from <code>/api/build/&lt;app&gt;/signing</code> with the app's build token, builds, publishes, and calls <code>/api/build-ready</code> with the profile's uuid.</li>
             <li><b>Install.</b> Devices inside that profile become ready. The page offers <code>itms-services://?action=download-manifest&amp;url=&#8230;</code>; ourapps rewrites the .ipa address inside manifest.plist to a signed link. A device approved after the workflow fetched its profile gets one more rebuild automatically.</li>
           </ol>
           <ul class="bullets">
             <li>Limits: 100 devices per product family per membership year (iPhone and iPad counted separately); slots return only at renewal. Builds stop launching a year after the profile was created.</li>
             <li>Updates install over the existing app when the bundle id is the same and <code>CFBundleVersion</code> is higher; data stays.</li>
-            <li>ourapps never holds your signing certificate; your workflow does.</li>
+            <li>ourapps holds the certificate's private key, encrypted per account, and gives it only to a workflow presenting the app's build token. The repository needs no Apple secrets.</li>
             <li><b>iPad and universal apps:</b> build one .ipa with <code>TARGETED_DEVICE_FAMILY</code> <code>1,2</code>; nothing else changes. iPads detect, enrol, register and install exactly like iPhones and use Apple's separate iPad allowance. An iPhone-only build also installs on an iPad, where it runs in a phone-sized window and still uses an iPad slot. Say which devices a build targets with the optional <code>install.ios.devices</code> (<code>["iphone", "ipad"]</code>); the page shows it and warns on the other device, but never blocks.</li>
           </ul>
         </section>

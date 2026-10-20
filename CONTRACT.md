@@ -92,7 +92,7 @@ POST https://api.github.com/repos/<owner>/<repo>/dispatches
 | `deviceName`    | the friend's name as typed on the install page                     |
 | `profileName`   | Ad Hoc profile name                                                |
 | `profileId`     | Apple's id of the new profile                                      |
-| `profileUuid`   | UUID of the new profile; echo it in build-ready                    |
+| `profileUuid`   | UUID of the new profile                                            |
 | `profileUrl`    | where to download the profile (step 3)                             |
 | `buildReadyUrl` | where to report the published build (step 5)                       |
 
@@ -104,17 +104,49 @@ on:
     types: [my-store-rebuild]
 ```
 
-## 3. Download the profile
+## 3. Get the certificate, key and profile
+
+The store holds the developer's Apple Distribution certificate, its private key and each app's
+Ad Hoc profile; the repository needs no Apple secrets. One call returns all three:
 
 ```
-GET <profileUrl>
+GET https://ourapps.app/api/build/<STORE_APP_ID>/signing
 Authorization: Bearer $STORE_BUILD_TOKEN
 ```
 
-Response: `{ "profileName", "profileId", "uuid", "profileBase64", "expirationDate" }`.
-Decode `profileBase64` to `~/Library/MobileDevice/Provisioning Profiles/<uuid>.mobileprovision`
-and build with manual signing against that profile and your distribution certificate.
-No App Store Connect key is needed in the app repository.
+Response: `{ "certificate": { "id", "name", "serialNumber", "expirationDate", "base64" },
+"privateKeyPem", "teamId", "profile": { "profileName", "profileId", "uuid", "profileBase64",
+"expirationDate" } }`. `certificate.base64` is the DER certificate and `privateKeyPem` a PKCS #8
+RSA key. The answer is 404 until the developer has set up iPhone signing and the app has a
+profile; `HEAD` gives the same status without the key, so build for iPhone only when it is 200.
+The profile is the latest one the store made, so tag builds and rebuilds use the same call.
+
+On the macOS runner:
+
+```bash
+curl -sSf -H "Authorization: Bearer $STORE_BUILD_TOKEN" \
+  "https://ourapps.app/api/build/$STORE_APP_ID/signing" > "$RUNNER_TEMP/signing.json"
+KC="$RUNNER_TEMP/build.keychain-db"
+security create-keychain -p "" "$KC"
+security set-keychain-settings -lut 21600 "$KC"
+security unlock-keychain -p "" "$KC"
+jq -r .privateKeyPem "$RUNNER_TEMP/signing.json" > "$RUNNER_TEMP/key.pem"
+jq -r .certificate.base64 "$RUNNER_TEMP/signing.json" | base64 -d > "$RUNNER_TEMP/cert.cer"
+security import "$RUNNER_TEMP/key.pem" -k "$KC" -A
+security import "$RUNNER_TEMP/cert.cer" -k "$KC"
+rm "$RUNNER_TEMP/key.pem"
+security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KC" >/dev/null
+security list-keychain -d user -s "$KC" login.keychain-db
+uuid=$(jq -r .profile.uuid "$RUNNER_TEMP/signing.json")
+mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+jq -r .profile.profileBase64 "$RUNNER_TEMP/signing.json" | base64 -d \
+  > ~/Library/MobileDevice/Provisioning\ Profiles/"$uuid".mobileprovision
+```
+
+Build with manual signing: identity `Apple Distribution` and the profile named
+`.profile.profileName`. Delete the keychain and `signing.json` when the job ends, also on failure.
+`<profileUrl>` from the payload returns the profile alone:
+`{ "profileName", "profileId", "uuid", "profileBase64", "expirationDate" }`.
 
 ## 4. Build and publish
 
@@ -131,7 +163,7 @@ Content-Type: application/json
   "app": "<client_payload.app>",
   "manifestUrl": "<asset API URL of manifest.plist>",
   "version": "0.1.1",
-  "profileUuid": "<client_payload.profileUuid>"
+  "profileUuid": "<uuid of the profile the build used>"
 }
 ```
 
@@ -155,7 +187,7 @@ on iPads (in a phone-sized window) and uses an iPad slot there.
 | secret               | from                                                    |
 |----------------------|---------------------------------------------------------|
 | `STORE_BUILD_TOKEN`  | shown once when the app is created in the dashboard     |
-| signing certificate  | your Apple distribution certificate and its password    |
+| `STORE_APP_ID`       | the app's id in the dashboard                           |
 | Android keystore     | your own                                                |
 
 `STORE_BUILD_TOKEN` is per app. Rotate it from the app's page in the dashboard.
@@ -199,7 +231,8 @@ Installed apps do not update by themselves. An app can poll
 
 - Apple allows 100 iPhones per membership year across all of the developer's apps; slots free only at renewal.
 - Ad Hoc builds stop launching when the profile expires (one year); re-sign and publish a
-  new release before then. The store shows the profile expiry on the app page.
+  new release before then. The store shows the profile expiry on the app page. The Apple
+  Distribution certificate also lasts a year; replace it under Settings, then publish.
 - macOS GitHub Actions minutes cost ten times Linux minutes against the free allowance;
   keep the iOS job lean or document a local Xcode signing path.
 

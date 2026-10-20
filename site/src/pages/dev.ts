@@ -861,7 +861,7 @@ export async function agents(root: HTMLElement): Promise<void> {
     return failed(root, me, err);
   }
   const first = apps[0];
-  const repoPrompt = AGENT_REPO_PROMPT({ repo: first?.repo || "<owner>/<name>", appId: first?.id || "<STORE_APP_ID>", profileName: first?.profileName || "<profile name>", name: first?.name || "<app name>" });
+  const repoPrompt = AGENT_REPO_PROMPT({ repo: first?.repo || "<owner>/<name>", appId: first?.id || "<STORE_APP_ID>", bundleId: first?.bundleId || "<bundle id>", name: first?.name || "<app name>" });
   const storePrompt = AGENT_STORE_PROMPT();
 
   mountShell(

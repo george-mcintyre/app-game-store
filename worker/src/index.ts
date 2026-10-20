@@ -85,7 +85,11 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
 
   if (p[0] === "enrol") {
     if (p[1] === "new" && m === "POST") return enrolNew(request, env, deps);
-    if (p.length === 3 && p[2] === "profile.mobileconfig" && m === "GET") return enrolProfile(request, env, deps, p[1]);
+    // Some download managers ask with HEAD first; it gets the same answer without the body.
+    if (p.length === 3 && p[2] === "profile.mobileconfig" && (m === "GET" || m === "HEAD")) {
+      const res = await enrolProfile(request, env, deps, p[1]);
+      return m === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+    }
     if (p.length === 2 && m === "POST") return enrolCallback(request, env, deps, p[1]);
     if (p.length === 3 && p[2] === "status" && m === "GET") return enrolStatus(request, env, deps, p[1]);
     if (p.length === 3 && p[2] === "latest" && m === "GET") return enrolLatest(env, deps, p[1]);

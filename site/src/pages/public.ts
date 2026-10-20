@@ -766,8 +766,10 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
   setTheme("store", "Almost there");
   const device = detect().device;
   const pageUrl = `${location.origin}/l/${linkId}/wait/${enrolmentId}`;
-  let appName = "the app";
-  api<LinkPage>("GET", `/api/public/links/${encodeURIComponent(linkId)}`).then((d) => (appName = d.app.name || d.release?.fallbackName || appName)).catch(() => undefined);
+  // The profile is named "Install <app>" in Settings, so the steps use the app's name.
+  const appName = await api<LinkPage>("GET", `/api/public/links/${encodeURIComponent(linkId)}`)
+    .then((d) => d.app.name || d.release?.fallbackName || "the app")
+    .catch(() => "the app");
   let since: string | undefined;
   let stopped = false;
   // Whichever browser shows this page remembers the registration for the app page.

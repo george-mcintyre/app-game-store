@@ -116,18 +116,18 @@ const TOPOLOGIES: Topology[] = [
     parts: [
       ["Clients", "SwiftUI .ipa, Kotlin .apk and a web build, all from one release workflow"],
       ["ourapps", "install pages, iPhone enrolment and signing, signed downloads"],
-      ["You host", "the API and the database, anywhere with HTTPS"],
+      ["You host", "the API and the database anywhere with HTTPS; the web build on your Cloudflare account"],
     ],
   },
   {
     id: "topo-offline",
     title: "Offline app, no backend",
     file: "offline.png",
-    summary: "A tool or game that keeps everything on the phone. Nothing to host: ourapps is the only server involved, and only at install time.",
+    summary: "A tool or game that keeps everything on the phone. No server to run: ourapps is involved only at install and update time, and the web version is plain files on your Cloudflare account.",
     parts: [
       ["Clients", "native or web; data in the phone's storage"],
       ["ourapps", "install and update only"],
-      ["You host", "nothing"],
+      ["You host", "only the web version's files, free on Cloudflare"],
     ],
   },
   {
@@ -145,7 +145,7 @@ const TOPOLOGIES: Topology[] = [
     id: "topo-web-link",
     title: "Web app with its own server, hosted elsewhere",
     file: "web-link.png",
-    summary: "A server-rendered site, or one already on Vercel, Netlify or your own server. The install page links to it; ourapps does not proxy it.",
+    summary: "A server-rendered site, or one already on Vercel, Cloudflare Pages or your own server. The install page links to it; ourapps does not proxy it.",
     parts: [
       ["Clients", "any browser"],
       ["ourapps", "the install page and the link, nothing else"],
@@ -156,29 +156,29 @@ const TOPOLOGIES: Topology[] = [
     id: "topo-unity",
     title: "Unity or Godot game in the browser",
     file: "unity-web.png",
-    summary: "An engine's web export deployed to your Cloudflare account without pre-compression, with isolation headers from a _headers file for threaded builds. The diagram shows the older web.zip path, where ourapps serves Brotli or gzip files itself.",
+    summary: "An engine's web export deployed to your Cloudflare account without pre-compression, with isolation headers from a _headers file for threaded builds.",
     parts: [
       ["Clients", "desktop and recent mobile browsers"],
       ["ourapps", "the install page; serves the build only for web.zip apps"],
-      ["You host", "a multiplayer or leaderboard server if the game needs one"],
+      ["You host", "the build on your Cloudflare account, and a multiplayer or leaderboard server if the game needs one"],
     ],
   },
   {
     id: "topo-realtime",
     title: "Realtime multiplayer across all three",
     file: "realtime.png",
-    summary: "Native and web players at the same table over WebSockets, as Skull does. The game server is yours; installs and the web client come through ourapps.",
+    summary: "Native and web players at the same table over WebSockets. The game server is yours; installs come through ourapps, and the web client loads from your Cloudflare account.",
     parts: [
       ["Clients", "iPhone, Android and browser players together"],
-      ["ourapps", "installs and update checks; the web client runs from your Cloudflare account"],
-      ["You host", "the game server and its state"],
+      ["ourapps", "installs, iPhone signing, update checks"],
+      ["You host", "the game server and its state; the web client's files on your Cloudflare account"],
     ],
   },
   {
     id: "topo-crossplatform",
     title: "One codebase, three builds",
     file: "cross-platform.png",
-    summary: "Flutter, React Native, Capacitor or .NET MAUI produce the .ipa, the .apk and often a web build from one source; one release carries all of them.",
+    summary: "Flutter, React Native, Capacitor or .NET MAUI produce the .ipa, the .apk and often a web build from one source. One release carries the .ipa and the .apk; the web build is deployed to your Cloudflare account.",
     parts: [
       ["Clients", "the same app on every device"],
       ["ourapps", "one listing, three install paths"],
@@ -189,7 +189,7 @@ const TOPOLOGIES: Topology[] = [
     id: "topo-iphone",
     title: "iPhone install, step by step",
     file: "iphone-sequence.png",
-    summary: "The sequence behind the two taps a friend makes on an iPhone: enrolment, approval, Apple registration, rebuild, install.",
+    summary: "The sequence behind the two taps a friend makes on an iPhone: enrolment, approval, Apple registration, a rebuild signed with the certificate and profile ourapps hands the workflow, install.",
     parts: [
       ["Friend", "two taps and one Settings install"],
       ["ourapps", "enrolment, Apple calls, rebuild request, install link"],

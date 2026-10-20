@@ -150,6 +150,13 @@ describe("account settings", () => {
     const cleared = await handle(api(cookie, "PUT", "/api/dev/secrets", { githubToken: "-", appleTeamId: "ABCDE12345" }), env, deps);
     expect(await cleared.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "ABCDE12345", appleTeamIdSavedAt: saved, github: false, githubSavedAt: null, signing: null } });
 
+    // Sending the same team ID again neither moves its date nor logs a save.
+    deps.advance(60_000);
+    const again = (await (await handle(api(cookie, "PUT", "/api/dev/secrets", { appleTeamId: "ABCDE12345" }), env, deps)).json()) as { secrets: { appleTeamIdSavedAt: string } };
+    expect(again.secrets.appleTeamIdSavedAt).toBe(saved);
+    const events = (await (await handle(api(cookie, "GET", "/api/dev/audit"), env, deps)).json()) as { events: { event: string; detail: string }[] };
+    expect(events.events.filter((e) => e.event === "credentials-saved" && e.detail.includes("appleTeamId"))).toHaveLength(1);
+
     // The settings form pre-fills the team ID from here, so it must be the value, not a presence marker.
     const me = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, deps)).json()) as { secrets: { apple: boolean; github: boolean; appleTeamId: string } };
     expect(me.secrets).toMatchObject({ apple: true, github: false, appleTeamId: "ABCDE12345" });

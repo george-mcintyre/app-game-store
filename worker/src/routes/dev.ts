@@ -150,7 +150,8 @@ export async function updateSecrets(request: Request, env: Env, deps: Deps, dev:
   const removed: string[] = [];
   for (const key of EDITABLE_SECRET_FIELDS) {
     const value = body[key];
-    if (typeof value !== "string" || value.trim() === "") continue;
+    // Blank keeps the saved value; so does the same value again (the form pre-fills the team ID).
+    if (typeof value !== "string" || value.trim() === "" || value.trim() === current[key]) continue;
     if (value.trim() === "-") {
       delete next[key];
       delete next.savedAt![key];

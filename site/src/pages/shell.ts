@@ -56,7 +56,7 @@ export function shell(me: Me, title: string, body: Raw, opts: { sub?: string; ac
         ${links}
         <div class="spacer"></div>
         <a class="nav" href="/${me.developer.slug}">${icon("eye")} My public page</a>
-        <div class="who">${avatar(me.developer.displayName, githubAvatar(me))}<div class="grow"><b>${me.developer.displayName}</b><span>@${me.developer.githubLogin}</span></div><form method="post" action="/api/auth/logout"><button class="signout" type="submit">Sign out</button></form></div>
+        <div class="who">${avatar(me.developer.displayName, githubAvatar(me))}<div class="grow"><b>${me.developer.displayName}</b><span>@${me.developer.githubLogin}</span><form method="post" action="/api/auth/logout"><button class="signout" type="submit">Sign out</button></form></div></div>
       </aside>
       <div class="main">
         <div class="topbar">

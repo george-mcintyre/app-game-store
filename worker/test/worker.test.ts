@@ -467,7 +467,7 @@ describe("iPhone signing", () => {
     expect(await got.json()).toEqual({
       certificate: { id: "cert-ours", name: "Apple Distribution: Test Person", serialNumber: "5EA1", expirationDate: "2027-10-20T10:00:00.000+00:00", base64: "Q0VSVElGSUNBVEU=" },
       privateKeyPem: key.trim(),
-      teamId: "TEAM1",
+      teamId: "TEAM123456",
       profile: { profileName: "Skull Ad Hoc", profileId: "prof-1", uuid: "uuid-1", profileBase64: "b64-1", expirationDate: "2027-10-01T00:00:00Z" },
     });
     expect((await handle(api(null, "GET", `/api/build/${app.id}/signing`, undefined, { Authorization: "Bearer wrong" }), env, d)).status).toBe(401);

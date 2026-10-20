@@ -146,11 +146,13 @@ describe("account settings", () => {
     expect(row!.blob).not.toContain("iss");
     expect(row!.blob).not.toContain(pem.split("\n")[1]);
 
-    const cleared = await handle(api(cookie, "PUT", "/api/dev/secrets", { githubToken: "-", appleTeamId: "TEAM" }), env, deps);
-    expect(await cleared.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "TEAM", appleTeamIdSavedAt: saved, github: false, githubSavedAt: null, signing: null } });
+    expect((await handle(api(cookie, "PUT", "/api/dev/secrets", { appleTeamId: "set" }), env, deps)).status).toBe(400);
+    const cleared = await handle(api(cookie, "PUT", "/api/dev/secrets", { githubToken: "-", appleTeamId: "ABCDE12345" }), env, deps);
+    expect(await cleared.json()).toEqual({ secrets: { apple: true, appleSavedAt: saved, appleTeamId: "ABCDE12345", appleTeamIdSavedAt: saved, github: false, githubSavedAt: null, signing: null } });
 
-    const me = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, deps)).json()) as { secrets: { apple: boolean; github: boolean } };
-    expect(me.secrets).toMatchObject({ apple: true, github: false });
+    // The settings form pre-fills the team ID from here, so it must be the value, not a presence marker.
+    const me = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, deps)).json()) as { secrets: { apple: boolean; github: boolean; appleTeamId: string } };
+    expect(me.secrets).toMatchObject({ apple: true, github: false, appleTeamId: "ABCDE12345" });
   });
 
   it("refuses credential changes through an API key", async () => {

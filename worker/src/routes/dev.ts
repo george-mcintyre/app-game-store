@@ -97,8 +97,9 @@ function secretStatus(s: DeveloperSecrets, signing: SigningCertificateRow | null
 // GET /api/dev/me
 export async function me(env: Env, dev: AuthedDeveloper): Promise<Response> {
   const { authVia, scope, keyId: _k, ...developer } = dev;
-  const [summary, signing] = await Promise.all([secretsSummary(env, dev.id), Db.from(env).signingCertificate(dev.id)]);
-  return json({ developer, authVia, scope, termsVersion: TERMS_VERSION, secrets: secretStatus(summary, signing) });
+  // The summary only marks fields as present; the team ID is shown, so it alone is decrypted.
+  const [summary, team, signing] = await Promise.all([secretsSummary(env, dev.id), loadSecrets(env, dev.id, ["appleTeamId"]), Db.from(env).signingCertificate(dev.id)]);
+  return json({ developer, authVia, scope, termsVersion: TERMS_VERSION, secrets: secretStatus({ ...summary, appleTeamId: team.appleTeamId }, signing) });
 }
 
 // POST /api/dev/terms - dashboard only; records acceptance of the current terms.
@@ -162,6 +163,9 @@ export async function updateSecrets(request: Request, env: Env, deps: Deps, dev:
   }
   if (saved.includes("applePrivateKey") && !(await validateAppleKey(next.applePrivateKey!))) {
     throw new HttpError(400, "the Apple private key must be the contents of the .p8 file from App Store Connect (an EC P-256 key)");
+  }
+  if (saved.includes("appleTeamId") && !/^[A-Z0-9]{10}$/.test(next.appleTeamId!)) {
+    throw new HttpError(400, "the Apple team ID is ten capital letters and digits, from Membership details on developer.apple.com");
   }
   if (saved.includes("githubToken") && !/^(github_pat_|ghp_|gho_)[A-Za-z0-9_]{20,}$/.test(next.githubToken!)) {
     throw new HttpError(400, "that does not look like a GitHub token (expected github_pat_... or ghp_...)");

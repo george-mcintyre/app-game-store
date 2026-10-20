@@ -659,7 +659,7 @@ const STEPS = [
 
 function waitCopy(state: string, device: string): string {
   switch (state) {
-    case "awaiting-device": return `Install the small profile your ${device} just downloaded. It takes four taps in Settings:`;
+    case "awaiting-device": return `Your ${device} just downloaded a small profile. Install it in Settings:`;
     case "pending-approval": return `Your ${device} is registered with this page. The developer approves it next; this page updates by itself when they do, so you can close it and come back to the same link.`;
     case "registering": return `Registering your ${device} with Apple.`;
     case "building": return `A fresh build that includes your ${device} is on its way. You can close this page and come back to the same link.`;
@@ -787,6 +787,7 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
           <div class="card pad-l" style="max-width:560px;margin:24px auto">
             <h1 style="font-size:24px" id="wait-title">${installed ? "Installed" : done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : state === "awaiting-device" ? "Install the profile" : "Almost there"}</h1>
             <p class="muted">${installed ? `${install?.version ? `Version ${install.version}` : "The app"} is on your home screen.` : waitCopy(state, device)}</p>
+            ${state === "awaiting-device" ? settingsSteps(enrolmentId, device, appName, profile, pageUrl) : ""}
             ${build && (state === "building" || state === "registering") ? buildRing(build) : ""}
             ${message && state === "failed" ? html`<p class="small faint">${message}</p>` : ""}
             <ol class="timeline">
@@ -797,7 +798,6 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
                 return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${title}</h3><p>${cls === "now" ? "In progress" : cls === "bad" ? "Stopped here" : stepHint(s.key)}</p></div></li>`;
               })}
             </ol>
-            ${state === "awaiting-device" ? settingsSteps(enrolmentId, device, appName, profile, pageUrl) : ""}
             ${done && manifestUrl ? html`<button class="btn block lg ${installed ? "secondary" : ""}" type="button" id="install-now">${installed ? "Install again" : "Install"}</button><div class="install-progress" id="install-progress" hidden></div>` : ""}
             <p class="small center mt"><a href="/l/${linkId}">Back to the app page</a></p>
           </div>

@@ -568,3 +568,6 @@ details.service[open] > summary::before { content: "-"; }
 details.practices { margin: 6px 0 4px; }
 details.practices > summary { cursor: pointer; color: var(--accent); font-size: 14px; }
 h3.ft-category { font-size: 19px; margin-top: 26px; }
+
+/* Project picker for the agent prompts */
+.prompt-app { max-width: 360px; margin: 0 0 10px; }

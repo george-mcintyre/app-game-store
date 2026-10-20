@@ -143,7 +143,7 @@ export function appleRoutes(state: { devices: { id: string; udid: string }[]; pr
             id: "prof-old",
             type: "profiles",
             attributes: { name: "Skull Ad Hoc", uuid: "uuid-old", profileContent: "b64old", expirationDate: "2027-01-01T00:00:00Z" },
-            relationships: { bundleId: { data: [{ type: "bundleIds", id: "bid-1" }] }, certificates: { data: [{ type: "certificates", id: "cert-1" }] } },
+            relationships: { bundleId: { data: { type: "bundleIds", id: "bid-1" } }, certificates: { data: [{ type: "certificates", id: "cert-1" }] } },
           },
         ],
       }),

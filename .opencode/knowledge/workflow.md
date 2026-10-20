@@ -33,6 +33,14 @@ Never derive the repo from the folder name.
   `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET` via `npx wrangler secret put`.
   Developer credentials (Apple key, GitHub token) are entered in the dashboard, never in config.
 
+## Live check
+
+`npm run smoke` checks the public endpoints of https://ourapps.app; with `OURAPPS_API_KEY` set to a
+manage key it walks every endpoint agents.md lists on a throwaway app, compares the answers with
+the documented shapes, and deletes what it made (`scripts/smoke.mjs`; `--base
+http://localhost:8787` for a local run). It fails when agents.md lists an endpoint it did not
+call. Run it after each deploy that touches the API, and before any public release.
+
 ## Deploy
 
 1. `npm run build -w site`.

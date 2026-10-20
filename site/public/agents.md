@@ -181,6 +181,7 @@ PUT /api/dev/me        body: { "slug": "george", "displayName": "George" }   (ma
 PUT /api/dev/secrets   dashboard only; returns 403 for API keys
 POST /api/dev/signing  dashboard only; the browser makes the key and certificate request
 GET /api/dev/audit     -> { "events": [ { "event", "detail", "country", "createdAt" } ] }   (recent security events)
+GET /api/dev/keys      -> { "keys": [ { "id", "developerId", "name", "prefix", "scope", "createdAt", "expiresAt", "lastUsedAt", "revokedAt" } ] }   (creating and revoking keys is dashboard only)
 ```
 
 If a task needs the GitHub token or the Apple key saved or changed, or iPhone signing set up, tell the developer to do it at `/dev/settings`; there is no API path for it by design. `GET /api/dev/me` shows `secrets.signing` (certificate name and expiry) once signing is set up.

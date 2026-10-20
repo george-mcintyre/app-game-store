@@ -6,7 +6,9 @@
 import { readFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
-const base = (args[args.indexOf("--base") + 1] && args.includes("--base") ? args[args.indexOf("--base") + 1] : "https://ourapps.app").replace(/\/$/, "");
+const baseAt = args.indexOf("--base");
+const base = (baseAt >= 0 ? args[baseAt + 1] : "https://ourapps.app").replace(/\/$/, "");
+const local = /^http:\/\/localhost(:\d+)?$/.test(base);
 const key = process.env.OURAPPS_API_KEY ?? "";
 const agentsMd = readFileSync(new URL("../site/public/agents.md", import.meta.url), "utf8");
 
@@ -64,7 +66,8 @@ function documentedAppFields() {
 
 async function publicChecks() {
   const health = await call("GET", "/api/health", { auth: "" });
-  record(health.status === 200 && health.json?.ok === true && health.json?.oauth && health.json?.links && health.json?.secrets, "health reports every secret configured", JSON.stringify(health.json));
+  // Local runs have no GitHub sign-in configured.
+  record(health.status === 200 && health.json?.ok === true && (local || health.json?.oauth) && health.json?.links && health.json?.secrets, "health reports every secret configured", JSON.stringify(health.json));
   for (const path of ["/agents.md", "/contract.md", "/llms.txt", "/free-tiers.md", "/web/install-banner.js", "/reference", "/terms"]) {
     const res = await fetch(base + path);
     record(res.status === 200, `GET ${path}`, res.status === 200 ? "" : String(res.status));
@@ -87,6 +90,13 @@ async function keyedChecks() {
     return;
   }
   expectKeys("me.secrets shape", me.json.secrets, ["apple", "appleSavedAt", "appleTeamId", "appleTeamIdSavedAt", "github", "githubSavedAt", "signing"]);
+  const { slug, displayName } = me.json.developer;
+  const same = await call("PUT", "/api/dev/me", { body: { slug, displayName } });
+  expectStatus("PUT /api/dev/me with the current values", same, 200);
+  record(same.json?.developer?.slug === slug && same.json?.developer?.displayName === displayName, "the profile is unchanged");
+  const devPage = await call("GET", `/api/public/dev/${encodeURIComponent(slug)}`, { auth: "", pattern: "/api/public/dev/:slug" });
+  expectStatus("GET /api/public/dev/:slug", devPage, 200);
+  expectKeys("developer page shape", devPage.json, ["developer", "apps"]);
 
   const list = await call("GET", "/api/dev/apps");
   expectStatus("GET /api/dev/apps", list, 200);
@@ -142,7 +152,25 @@ async function keyedChecks() {
       exercised.add("GET /api/public/links/:id/qr.svg");
       record(qr.status === 200 && (qr.headers.get("content-type") ?? "").includes("svg"), "GET /api/public/links/:id/qr.svg", String(qr.status));
       const latest = await call("GET", L("/api/public/links/:id/latest"), { auth: "", pattern: "/api/public/links/:id/latest" });
-      record([200, 502].includes(latest.status), "GET /api/public/links/:id/latest answers", `status ${latest.status} ${latest.text.slice(0, 120)}`);
+      record(latest.status === 503 && /no release/.test(latest.json?.error ?? ""), "GET /api/public/links/:id/latest says no release without naming the repository", `status ${latest.status} ${latest.text.slice(0, 120)}`);
+      record(!latest.text.includes("ourapps-smoke-test"), "the update check does not leak the repository name");
+
+      const enrolled = await call("POST", "/api/enrol/new", { auth: "", body: { linkId, name: "Smoke check" } });
+      expectStatus("POST /api/enrol/new", enrolled, 201);
+      expectKeys("enrolment shape", enrolled.json, ["enrolmentId", "profileUrl"]);
+      const eid = enrolled.json?.enrolmentId;
+      if (eid) {
+        const config = await fetch(`${base}/api/enrol/${eid}/profile.mobileconfig`);
+        exercised.add("GET /api/enrol/:id/profile.mobileconfig");
+        const body = await config.text();
+        record(config.status === 200 && (config.headers.get("content-type") ?? "").includes("apple-aspen-config") && body.includes("Profile Service"), "GET /api/enrol/:id/profile.mobileconfig is an Apple profile service payload", `${config.status} ${config.headers.get("content-type")}`);
+        const st = await call("GET", `/api/enrol/${eid}/status`, { auth: "", pattern: "/api/enrol/:id/status" });
+        record(st.status === 200 && st.json?.state === "awaiting-device", "GET /api/enrol/:id/status", `${st.status} ${st.text.slice(0, 100)}`);
+        const waiting = await call("GET", "/api/dev/devices");
+        record(waiting.json?.enrolments?.some((e) => e.id === eid && e.state === "awaiting-device"), "the new enrolment shows under devices");
+        const dropped = await call("DELETE", `/api/dev/devices/${eid}`, { pattern: "/api/dev/devices/:id" });
+        expectStatus("DELETE /api/dev/devices/:id", dropped, 200);
+      }
       const renamed = await call("PUT", L("/api/dev/links/:id"), { body: { label: "smoke check renamed" }, pattern: "/api/dev/links/:id" });
       expectStatus("PUT /api/dev/links/:id", renamed, 200);
       record(renamed.json?.link?.label === "smoke check renamed" && renamed.json?.link?.id === linkId, "renaming keeps the address");
@@ -168,6 +196,10 @@ async function keyedChecks() {
     const ready = await call("POST", "/api/build-ready", { token: newToken, body: { app: id, manifestUrl: "https://example.com/manifest.plist", profileUuid: "not-a-profile" } });
     expectStatus("POST /api/build-ready with an unknown profile is a 409", ready, 409);
 
+    // Reads devices and profiles at Apple and stops: the throwaway app has no bundle ID.
+    const profile = await call("POST", P("/api/dev/apps/:id/profile"), { pattern: "/api/dev/apps/:id/profile" });
+    record([409, 502].includes(profile.status) && typeof profile.json?.error === "string", "POST /api/dev/apps/:id/profile without a bundle ID explains why", `${profile.status} ${profile.json?.error}`);
+
     const devices = await call("GET", "/api/dev/devices");
     expectStatus("GET /api/dev/devices", devices, 200);
     record(Array.isArray(devices.json?.enrolments), "enrolments is a list");
@@ -180,6 +212,8 @@ async function keyedChecks() {
 
     const keys = await call("GET", "/api/dev/keys");
     expectStatus("GET /api/dev/keys", keys, 200);
+    const k = keys.json?.keys?.[0];
+    record(Array.isArray(keys.json?.keys) && k && !("keyHash" in k) && "prefix" in k, "keys list prefixes, never hashes");
     const audit = await call("GET", "/api/dev/audit");
     expectStatus("GET /api/dev/audit", audit, 200);
 
@@ -200,8 +234,8 @@ function coverage() {
   const normalise = (e) => e.replace(/:[a-zA-Z]+/g, ":id");
   const done = new Set([...exercised].map(normalise));
   const documented = documentedEndpoints().map(normalise);
-  // Not walked on purpose: they change Apple, GitHub or the developer's own session.
-  const skipped = new Set(["POST /api/dev/apps/:id/profile", "PUT /api/dev/me", "POST /api/enrol/new", "GET /api/enrol/:id/profile.mobileconfig", "POST /api/enrol/:id", "GET /api/enrol/:id/status", "GET /api/public/dev/:slug", "GET /api/health"]);
+  // Not walked on purpose: it needs the signed reply of a real iPhone.
+  const skipped = new Set(["POST /api/enrol/:id"]);
   const notWalked = documented.filter((e) => !done.has(e) && !skipped.has(e));
   record(notWalked.length === 0, "every endpoint agents.md lists was called", notWalked.join(", "));
 }

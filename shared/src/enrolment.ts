@@ -47,4 +47,10 @@ export interface EnrolmentStatus {
   updatedAt: string;
   // While registering or building: seconds since the rebuild was asked for, and how long it should take.
   build?: { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null };
+  // Once ready: the latest install attempt from a share page and the version last installed.
+  install?: { attemptAt: string | null; phase: InstallPhase; version: string | null };
 }
+
+// requested: iOS fetched the manifest for its prompt; downloading: the friend tapped Install;
+// installed: the download finished.
+export type InstallPhase = "none" | "requested" | "downloading" | "installed";

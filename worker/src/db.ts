@@ -85,6 +85,11 @@ export interface EnrolmentRow {
   message: string | null;
   createdAt: string;
   updatedAt: string;
+  // The latest install from a share page: iOS fetched the manifest, then the .ipa began and finished.
+  installAttemptAt?: string | null;
+  installStartedAt?: string | null;
+  installDoneAt?: string | null;
+  installedVersion?: string | null;
 }
 
 export type KeyScope = "read" | "manage";
@@ -334,6 +339,19 @@ export class Db {
       .prepare("UPDATE enrolments SET state = ?, udid = ?, product = ?, apple_device_id = ?, profile_uuid = ?, manifest_url = ?, message = ?, updated_at = ? WHERE id = ?")
       .bind(e.state, e.udid, e.product, e.appleDeviceId, e.profileUuid, e.manifestUrl, e.message, e.updatedAt, e.id)
       .run();
+  }
+
+  // A new attempt clears the progress of the previous one; the installed version stays until replaced.
+  async installAttempt(id: string, at: string): Promise<void> {
+    await this.d1.prepare("UPDATE enrolments SET install_attempt_at = ?, install_started_at = NULL, install_done_at = NULL WHERE id = ?").bind(at, id).run();
+  }
+
+  async installStarted(id: string, at: string): Promise<void> {
+    await this.d1.prepare("UPDATE enrolments SET install_started_at = ? WHERE id = ?").bind(at, id).run();
+  }
+
+  async installDone(id: string, at: string, version: string | null): Promise<void> {
+    await this.d1.prepare("UPDATE enrolments SET install_done_at = ?, installed_version = COALESCE(?, installed_version) WHERE id = ?").bind(at, version, id).run();
   }
 
   async deleteEnrolment(id: string): Promise<void> {

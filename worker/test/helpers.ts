@@ -238,5 +238,11 @@ export async function enrol(env: Env, deps: TestDeps, linkId: string, name: stri
 export async function status(env: Env, deps: TestDeps, id: string, since?: string) {
   const res = await handle(new Request(`${BASE}/api/enrol/${id}/status${since ? `?since=${since}` : ""}`), env, deps);
   expect(res.status).toBe(200);
-  return (await res.json()) as { state: string; manifestUrl?: string; message?: string; build?: { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null } };
+  return (await res.json()) as {
+    state: string;
+    manifestUrl?: string;
+    message?: string;
+    build?: { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null };
+    install?: { attemptAt: string | null; phase: string; version: string | null };
+  };
 }

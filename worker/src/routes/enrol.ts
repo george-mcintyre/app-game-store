@@ -1,5 +1,5 @@
 // The iOS enrolment flow a friend goes through.
-import { isFinal, type EnrolmentStatus } from "@my/store-shared";
+import { isFinal, type EnrolmentStatus, type InstallPhase } from "@my/store-shared";
 import { SAMPLES, expectedSeconds, median } from "../buildtime.js";
 import { randomId } from "../crypto.js";
 import { Db, type EnrolmentRow } from "../db.js";
@@ -7,7 +7,17 @@ import type { Deps, Env } from "../env.js";
 import { dlUrl, transition } from "../flow.js";
 import { HttpError, json, readJson, text } from "../http.js";
 import { enrolmentProfile, parseDeviceReply } from "../mobileconfig.js";
+import { loadSecrets } from "../secrets.js";
+import { loadManifest } from "../upstream.js";
 import { linkActive } from "./public.js";
+
+function installPhase(r: EnrolmentRow): InstallPhase {
+  if (!r.installAttemptAt) return "none";
+  return r.installDoneAt ? "installed" : r.installStartedAt ? "downloading" : "requested";
+}
+
+// The version build-ready reported, kept in the message as "version 1.2.3".
+const builtVersion = (r: EnrolmentRow) => /^version (.+)$/.exec(r.message ?? "")?.[1];
 
 const LONG_POLL_MS = 25_000;
 const POLL_STEP_MS = 2_000;
@@ -90,6 +100,33 @@ export async function enrolStatus(request: Request, env: Env, deps: Deps, id: st
     const elapsed = record.state === "building" ? Math.max(0, Math.round((deps.now().getTime() - Date.parse(record.updatedAt)) / 1000)) : 0;
     status.build = { elapsedSeconds: elapsed, expectedSeconds: expectedSeconds(typical), typicalSeconds: typical };
   }
-  if (record.state === "ready" && record.manifestUrl) status.manifestUrl = await dlUrl(env, deps, { url: record.manifestUrl, kind: "manifest", dev: record.developerId });
+  if (record.state === "ready" && record.manifestUrl) {
+    status.manifestUrl = await dlUrl(env, deps, { url: record.manifestUrl, kind: "manifest", dev: record.developerId, e: record.id, v: builtVersion(record) });
+    status.install = { attemptAt: record.installAttemptAt ?? null, phase: installPhase(record), version: record.installedVersion ?? null };
+  }
   return json(status);
+}
+
+// GET /api/enrol/:id/latest - an install link for the newest release, for a device that is already
+// in the app's profile: updates and reinstalls need no new registration.
+export async function enrolLatest(env: Env, deps: Deps, id: string): Promise<Response> {
+  const db = Db.from(env);
+  const record = await db.enrolmentById(id);
+  if (!record) throw new HttpError(404, "unknown enrolment");
+  if (record.state !== "ready") throw new HttpError(409, "this device is not ready to install yet");
+  const link = await db.linkById(record.linkId);
+  if (!link || !linkActive(link, deps.now())) throw new HttpError(410, "this link is no longer active");
+  const app = await db.appById(record.appId);
+  if (!app) throw new HttpError(404, "unknown app");
+  const secrets = await loadSecrets(env, app.developerId, ["githubToken"]);
+  let manifest: Awaited<ReturnType<typeof loadManifest>>;
+  try {
+    manifest = await loadManifest(env, deps, app, secrets.githubToken);
+  } catch (err) {
+    console.error(`latest for enrolment ${id}: ${err instanceof Error ? err.message : String(err)}`);
+    throw new HttpError(503, "no release of this app is available right now");
+  }
+  const adhoc = manifest.install.ios?.adhoc;
+  if (!adhoc) throw new HttpError(404, "the latest release has no iPhone build");
+  return json({ version: manifest.version, manifestUrl: await dlUrl(env, deps, { url: adhoc, kind: "manifest", dev: app.developerId, e: record.id, v: manifest.version }) });
 }

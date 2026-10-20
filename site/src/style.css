@@ -424,9 +424,12 @@ a.phone:hover { transform: translateY(-3px); }
 .side a.nav.active svg { opacity: 1; }
 .side .spacer { flex: 1; }
 .side .who { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid rgba(255,255,255,.08); margin-top: 8px; }
-.side .who b { display: block; color: #fff; font-size: 14px; }
+.side .who .grow { min-width: 0; }
+/* Name, login and sign out each keep to one line. */
+.side .who b, .side .who span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side .who b { color: #fff; font-size: 14px; }
 .side .who span { font-size: 12px; color: var(--side-muted); }
-.side .signout { background: none; border: 0; color: var(--side-muted); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+.side .signout { background: none; border: 0; color: var(--side-muted); font: inherit; font-size: 12px; cursor: pointer; padding: 0; margin-top: 2px; white-space: nowrap; }
 .side .signout:hover { color: #fff; }
 .side .env-tag { margin: 0 12px; font-size: 11px; color: var(--side-muted); }
 .main { min-width: 0; }

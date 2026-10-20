@@ -571,3 +571,12 @@ h3.ft-category { font-size: 19px; margin-top: 26px; }
 
 /* Project picker for the agent prompts */
 .prompt-app { max-width: 360px; margin: 0 0 10px; }
+
+/* Build progress ring on the wait page */
+.build-ring { display: flex; align-items: center; gap: 16px; margin: 14px 0 6px; padding: 12px 14px; border-radius: var(--r-s); background: var(--surface-2); }
+.build-ring svg { flex: 0 0 auto; transform: rotate(-90deg); }
+.build-ring svg text { transform: rotate(90deg); transform-origin: 50px 50px; font-size: 20px; font-weight: 700; fill: var(--text); }
+.build-ring .track { fill: none; stroke: color-mix(in srgb, var(--accent) 20%, transparent); stroke-width: 9; }
+.build-ring .fill { fill: none; stroke: var(--accent); stroke-width: 9; stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
+.build-ring b { display: block; font-size: 16px; }
+.build-ring p { margin: 4px 0 0; }

@@ -197,7 +197,7 @@ If a task needs the GitHub token or the Apple key saved or changed, or iPhone si
 ## Public and build endpoints (for completeness)
 
 - `GET /api/public/dev/:slug` -> developer name and opted-in apps, details only.
-- `POST /api/enrol/new`, `GET /api/enrol/:id/profile.mobileconfig`, `POST /api/enrol/:id`, `GET /api/enrol/:id/status?since=<state>` drive the iPhone enrolment from the install page.
+- `POST /api/enrol/new`, `GET /api/enrol/:id/profile.mobileconfig`, `POST /api/enrol/:id`, `GET /api/enrol/:id/status?since=<state>` drive the iPhone enrolment from the install page. While a device is `registering` or `building`, the status carries `build: { elapsedSeconds, expectedSeconds, typicalSeconds }`: time since the rebuild was asked for, and the app's usual rebuild time (median of its last five, measured from the request to `/api/build-ready`) plus a tenth, or 20 minutes before the first. The wait page fills a progress ring over that time and holds it near the end until the build is ready.
 - `GET /api/build/:appId/signing` (certificate, private key and latest profile; `HEAD` for the status alone), `GET /api/build/:appId/profile` and `POST /api/build-ready` are called by the repository workflow with `Authorization: Bearer <STORE_BUILD_TOKEN>`; see contract.md.
 - `GET /api/health` -> `{ "ok": true, ... }`.
 

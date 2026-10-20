@@ -3,6 +3,7 @@ import { ApiError, api, whoAmI, type AppDetails, type HistoryEntry, type Install
 import { html, mount, paragraphs, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { notesHtml } from "../notes.js";
+import { buildFraction, timeLeft, usualTime } from "../progress.js";
 import { screenshotSvg } from "../placeholders.js";
 import { appleDeviceName, detectInAppBrowser, detectPlatform, itmsLink, type InAppBrowser, type Platform } from "../platform.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
@@ -583,7 +584,7 @@ function waitCopy(state: string, device: string): string {
     case "awaiting-device": return `Allow the download, then open Settings, tap Profile Downloaded and tap Install. This page updates by itself once your ${device} has reported in. If the page went blank after the download, tap back.`;
     case "pending-approval": return `Your ${device} is registered with this page. The developer approves it next; this page updates by itself when they do, so you can close it and come back to the same link.`;
     case "registering": return `Registering your ${device} with Apple.`;
-    case "building": return `A fresh build that includes your ${device} is on its way. This usually takes 10 to 20 minutes. You can close this page and come back to the same link.`;
+    case "building": return `A fresh build that includes your ${device} is on its way. You can close this page and come back to the same link.`;
     case "ready": return `Tap Install, then tap Install again when your ${device} asks. The icon appears on your home screen.`;
     case "rejected": return `The developer did not approve this ${device}. Get in touch with them if you think that is a mistake.`;
     case "failed": return "Something went wrong on the developer's side and they have been told. Try again later or get in touch with them.";
@@ -591,12 +592,45 @@ function waitCopy(state: string, device: string): string {
   }
 }
 
+type BuildTiming = { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null };
+
+const RING_R = 44;
+const RING_C = 2 * Math.PI * RING_R;
+
+// A ring that fills over the expected build time; the numbers move every second between polls.
+function buildRing(build: BuildTiming): Raw {
+  const f = buildFraction(build.elapsedSeconds, build.expectedSeconds);
+  return html`
+    <div class="build-ring" data-elapsed="${build.elapsedSeconds}" data-expected="${build.expectedSeconds}" data-t0="${performance.now()}">
+      <svg viewBox="0 0 100 100" width="112" height="112" aria-hidden="true">
+        <circle class="track" cx="50" cy="50" r="${RING_R}" />
+        <circle class="fill" cx="50" cy="50" r="${RING_R}" stroke-dasharray="${RING_C.toFixed(2)}" stroke-dashoffset="${(RING_C * (1 - f)).toFixed(2)}" />
+        <text x="50" y="50" text-anchor="middle" dominant-baseline="central">${Math.round(f * 100)}%</text>
+      </svg>
+      <div><b class="left">${timeLeft(build.elapsedSeconds, build.expectedSeconds)}</b><p class="small muted">${usualTime(build.typicalSeconds)}</p></div>
+    </div>`;
+}
+
+function tickRings(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>(".build-ring").forEach((ring) => {
+    const elapsed = Number(ring.dataset.elapsed) + (performance.now() - Number(ring.dataset.t0)) / 1000;
+    const expected = Number(ring.dataset.expected);
+    const f = buildFraction(elapsed, expected);
+    ring.querySelector(".fill")?.setAttribute("stroke-dashoffset", (RING_C * (1 - f)).toFixed(2));
+    const pct = ring.querySelector("text");
+    if (pct) pct.textContent = `${Math.round(f * 100)}%`;
+    const left = ring.querySelector(".left");
+    if (left) left.textContent = timeLeft(elapsed, expected);
+  });
+}
+
 export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: string): Promise<void> {
   setTheme("store", "Almost there");
   const device = detect().device;
   let since: string | undefined;
   let stopped = false;
-  const render = (state: string, manifestUrl?: string, message?: string) => {
+  const ticker = setInterval(() => (stopped ? clearInterval(ticker) : tickRings(root)), 1000);
+  const render = (state: string, manifestUrl?: string, message?: string, build?: BuildTiming) => {
     const idx = STEPS.findIndex((s) => s.states.includes(state));
     const failed = state === "failed" || state === "rejected";
     const done = state === "ready";
@@ -607,6 +641,7 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
           <div class="card pad-l" style="max-width:560px;margin:24px auto">
             <h1 style="font-size:24px">${done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : "Almost there"}</h1>
             <p class="muted">${waitCopy(state, device)}</p>
+            ${build && (state === "building" || state === "registering") ? buildRing(build) : ""}
             ${message && state === "failed" ? html`<p class="small faint">${message}</p>` : ""}
             <ol class="timeline">
               ${STEPS.map((s, i) => {
@@ -628,10 +663,13 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
   const poll = async () => {
     while (!stopped) {
       try {
-        const s = await api<{ state: string; manifestUrl?: string; message?: string }>("GET", `/api/enrol/${enrolmentId}/status${since ? `?since=${since}` : ""}`);
-        render(s.state, s.manifestUrl, s.message);
+        const s = await api<{ state: string; manifestUrl?: string; message?: string; build?: BuildTiming }>("GET", `/api/enrol/${enrolmentId}/status${since ? `?since=${since}` : ""}`);
+        render(s.state, s.manifestUrl, s.message, s.build);
         since = s.state;
-        if (["ready", "rejected", "failed"].includes(s.state)) return;
+        if (["ready", "rejected", "failed"].includes(s.state)) {
+          clearInterval(ticker);
+          return;
+        }
       } catch (err) {
         if (err instanceof ApiError && err.status === 404) return notFound(root, "This enrolment no longer exists.");
         await new Promise((r) => setTimeout(r, 5000));

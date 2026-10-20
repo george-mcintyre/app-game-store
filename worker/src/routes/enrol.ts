@@ -1,5 +1,6 @@
 // The iOS enrolment flow a friend goes through.
 import { isFinal, type EnrolmentStatus } from "@my/store-shared";
+import { SAMPLES, expectedSeconds, median } from "../buildtime.js";
 import { randomId } from "../crypto.js";
 import { Db, type EnrolmentRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
@@ -84,6 +85,11 @@ export async function enrolStatus(request: Request, env: Env, deps: Deps, id: st
     record = (await db.enrolmentById(id)) ?? record;
   }
   const status: EnrolmentStatus = { id: record.id, state: record.state, app: record.appId, linkId: record.linkId, message: record.message ?? undefined, updatedAt: record.updatedAt };
+  if (record.state === "registering" || record.state === "building") {
+    const typical = median(await db.recentBuildSeconds(record.appId, SAMPLES));
+    const elapsed = record.state === "building" ? Math.max(0, Math.round((deps.now().getTime() - Date.parse(record.updatedAt)) / 1000)) : 0;
+    status.build = { elapsedSeconds: elapsed, expectedSeconds: expectedSeconds(typical), typicalSeconds: typical };
+  }
   if (record.state === "ready" && record.manifestUrl) status.manifestUrl = await dlUrl(env, deps, { url: record.manifestUrl, kind: "manifest", dev: record.developerId });
   return json(status);
 }

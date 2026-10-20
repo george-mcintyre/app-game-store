@@ -79,7 +79,7 @@ export async function clearDb(env: Env): Promise<void> {
   const kv = await env.WEBAPP_FILES.list();
   await Promise.all(kv.keys.map((k) => env.WEBAPP_FILES.delete(k.name)));
 
-  for (const table of ["audit_log", "api_keys", "profiles", "enrolments", "links", "apps", "sessions", "signing_certificates", "developer_secrets", "developers"]) {
+  for (const table of ["audit_log", "api_keys", "build_durations", "profiles", "enrolments", "links", "apps", "sessions", "signing_certificates", "developer_secrets", "developers"]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
   }
 }
@@ -238,5 +238,5 @@ export async function enrol(env: Env, deps: TestDeps, linkId: string, name: stri
 export async function status(env: Env, deps: TestDeps, id: string, since?: string) {
   const res = await handle(new Request(`${BASE}/api/enrol/${id}/status${since ? `?since=${since}` : ""}`), env, deps);
   expect(res.status).toBe(200);
-  return (await res.json()) as { state: string; manifestUrl?: string; message?: string };
+  return (await res.json()) as { state: string; manifestUrl?: string; message?: string; build?: { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null } };
 }

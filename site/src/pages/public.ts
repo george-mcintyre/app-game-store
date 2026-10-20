@@ -367,12 +367,40 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
         .then((s) => {
           if (["rejected", "failed"].includes(s.state)) return;
           if (s.state === "ready") return onDevice(root, form, earlier, d.device, data.release?.version ?? null, s.install);
-          form.insertAdjacentHTML("afterbegin", callout("info", html`<p>You started registering this device already. <a href="/l/${linkId}/wait/${earlier}"><b>Carry on where you left off</b></a></p>`).html);
+          registering(root, form, linkId, earlier, d.device, s.state);
         })
         .catch(() => localStorage.removeItem(`enrolment:${linkId}`));
     }
   }
   if (form && !data.linkId) form.onsubmit = (e) => { e.preventDefault(); toast(opts.example ? "Example only: nothing to install" : "Preview only: create a share link to try this"); };
+}
+
+// Sets the Get button at the top of the page and the line beside it.
+function setGet(root: HTMLElement, label: string, caption: string): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-get]").forEach((b) => {
+    b.textContent = label;
+    const c = b.nextElementSibling;
+    if (c instanceof HTMLElement && c.matches("span.small")) c.textContent = caption;
+  });
+}
+
+// A registration this browser started and has not finished: one card saying what happens next,
+// in place of the form.
+function registering(root: HTMLElement, form: HTMLFormElement, linkId: string, enrolmentId: string, device: string, state: string): void {
+  const next =
+    state === "awaiting-device"
+      ? "Next: open Settings, tap Profile Downloaded, then Install."
+      : state === "pending-approval"
+        ? `Waiting for the developer to approve your ${device}.`
+        : `Your copy is being built. This page and the progress page update by themselves.`;
+  const label = state === "awaiting-device" ? "Continue" : "See progress";
+  form.outerHTML = html`
+    <div class="install-card" id="on-device">
+      <h3>${icon("phone", "icon-20")} On this ${device}</h3>
+      <p class="muted small">${next}</p>
+      <a class="btn block lg" href="/l/${linkId}/wait/${enrolmentId}">${label}</a>
+    </div>`.html;
+  setGet(root, label, state === "awaiting-device" ? "Registration started" : state === "pending-approval" ? "Waiting for approval" : "Being built");
 }
 
 // A device this browser registered and the developer approved: install, update or install again
@@ -388,13 +416,18 @@ function onDevice(root: HTMLElement, form: HTMLFormElement, enrolmentId: string,
       <button class="btn block lg ${newer || installed === null ? "" : "secondary"}" type="button" id="install-latest">${label}</button>
       <div class="install-progress" id="install-progress" hidden></div>
     </div>`.html;
-  root.querySelectorAll<HTMLButtonElement>("[data-get]").forEach((b) => (b.textContent = newer ? "Update" : installed !== null ? "Installed" : "Install"));
+  setGet(root, newer ? "Update" : installed !== null ? "Installed" : "Install", newer ? `Version ${latest} is out` : installed !== null ? `On this ${device}` : `Ready for this ${device}`);
   const button = root.querySelector<HTMLButtonElement>("#install-latest")!;
-  wireInstall(root, button, enrolmentId, device, async () => (await api<{ manifestUrl: string }>("GET", `/api/enrol/${enrolmentId}/latest`)).manifestUrl, install?.attemptAt ?? null, () => {
+  // An update installs the newest release; installing again uses the build made for this device.
+  const manifest = newer
+    ? async () => (await api<{ manifestUrl: string }>("GET", `/api/enrol/${enrolmentId}/latest`)).manifestUrl
+    : async () => (await api<{ manifestUrl: string }>("GET", `/api/enrol/${enrolmentId}/status`)).manifestUrl;
+  wireInstall(root, button, enrolmentId, device, manifest, install?.attemptAt ?? null, () => {
     button.textContent = "Install again";
     button.classList.add("secondary");
     button.disabled = false;
-    root.querySelectorAll<HTMLButtonElement>("[data-get]").forEach((b) => (b.textContent = "Installed"));
+    root.querySelector<HTMLElement>("#on-device p")!.textContent = "Installed. Look for the icon on your home screen.";
+    setGet(root, "Installed", `On this ${device}`);
   });
 }
 
@@ -708,7 +741,7 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
               })}
             </ol>
             ${state === "awaiting-device" ? html`<a class="btn block secondary" href="/api/enrol/${enrolmentId}/profile.mobileconfig">Download the profile again</a><p class="tiny faint center mt-s">Settings drops a downloaded profile that is not installed within about 8 minutes. Inside another app's browser, open this page in Safari first.</p>` : ""}
-            ${done && manifestUrl ? html`<button class="btn block lg ${installed ? "secondary" : ""}" type="button" id="install-now">${installed ? "Install again" : "Install"}</button><div class="install-progress" id="install-progress" hidden></div><p class="tiny faint center mt-s">The install link is good for an hour; reload this page for a fresh one.</p>` : ""}
+            ${done && manifestUrl ? html`<button class="btn block lg ${installed ? "secondary" : ""}" type="button" id="install-now">${installed ? "Install again" : "Install"}</button><div class="install-progress" id="install-progress" hidden></div>` : ""}
             <p class="small center mt"><a href="/l/${linkId}">Back to the app page</a></p>
           </div>
         `,
@@ -717,7 +750,9 @@ export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: s
     );
     const button = root.querySelector<HTMLButtonElement>("#install-now");
     if (button && manifestUrl) {
-      wireInstall(root, button, enrolmentId, device, async () => manifestUrl, install?.attemptAt ?? null, (version) => {
+      // A fresh link at tap time, so a page left open for hours still installs.
+      const fresh = async () => (await api<{ manifestUrl?: string }>("GET", `/api/enrol/${enrolmentId}/status`)).manifestUrl ?? manifestUrl;
+      wireInstall(root, button, enrolmentId, device, fresh, install?.attemptAt ?? null, (version) => {
         root.querySelector("#wait-title")!.textContent = "Installed";
         button.textContent = "Install again";
         button.classList.add("secondary");

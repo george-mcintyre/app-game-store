@@ -6,7 +6,7 @@ import type { Deps, Env } from "./env.js";
 import { HttpError } from "./http.js";
 import { linkActive } from "./routes/public.js";
 import { loadSecrets } from "./secrets.js";
-import { fetchUpstream, resolveRelease } from "./upstream.js";
+import { fetchUpstream, loadManifest, resolveRelease } from "./upstream.js";
 
 export const WEB_ZIP_ASSET = /^web\.zip$/i;
 const MiB = 1024 * 1024;
@@ -403,6 +403,15 @@ async function findWebZip(env: Env, deps: Deps, app: AppRow, token: string | und
   return asset.url;
 }
 
+// The web version's new address once a release drops web.zip for one hosted elsewhere, so home
+// screen icons made from a link address still open the app.
+async function movedTo(env: Env, deps: Deps, app: AppRow, token: string | undefined): Promise<string | null> {
+  const pwa = (await loadManifest(env, deps, app, token)).install.pwa;
+  if (!pwa || isBundleUrl(pwa, null)) return null;
+  const target = new URL(pwa);
+  return target.protocol === "https:" && !target.host.endsWith(new URL(env.PUBLIC_ORIGIN).host) ? target.toString() : null;
+}
+
 function plainPage(status: number, title: string, body: string): Response {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>${title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f5f5f7;color:#1d1d1f}main{max-width:420px;padding:32px;text-align:center}h1{font-size:22px;margin:0 0 8px}p{color:#6e6e73;margin:0}</style></head><body><main><h1>${title}</h1><p>${body}</p></main></body></html>`;
   return new Response(html, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
@@ -432,6 +441,10 @@ export async function serveWebApp(request: Request, env: Env, deps: Deps, linkId
     current = await currentTag(env, deps, located.app, secrets.githubToken);
     index = await ensureUnpacked(env, deps, located.app, secrets.githubToken, current);
   } catch (err) {
+    if (err instanceof HttpError && err.status === 404) {
+      const moved = await movedTo(env, deps, located.app, secrets.githubToken).catch(() => null);
+      if (moved) return Response.redirect(new URL(url.pathname.slice(1) + url.search, moved).toString(), 302);
+    }
     // Only deliberate messages reach a public page; others (which can name a private repository) are logged.
     if (err instanceof HttpError) return plainPage(err.status === 404 ? 404 : 502, "The web app is not available", err.message);
     console.error(`web app ${linkId}: ${err instanceof Error ? err.message : String(err)}`);

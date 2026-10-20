@@ -16,7 +16,8 @@ export type AuditEvent =
   | "device-rejected"
   | "app-created"
   | "app-deleted"
-  | "terms-accepted";
+  | "terms-accepted"
+  | "signing-set-up";
 
 export async function audit(request: Request | null, env: Env, deps: Deps, developerId: string, event: AuditEvent, detail = ""): Promise<void> {
   const cf = request ? (request as Request & { cf?: { country?: string } }).cf : undefined;

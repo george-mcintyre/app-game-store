@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { errorResponse, handle } from "../src/index.js";
-import { BASE, GH_TOKEN, api, jsonRes, manifest, appleRoutes, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
+import { BASE, CSR, GH_TOKEN, api, jsonRes, manifest, appleRoutes, applePem, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, rsaPem, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 const UDID_1 = "00008030-000A1B2C3D4E5F67";
 const UDID_2 = "00008030-000F0E0D0C0B0A09";
@@ -416,6 +416,116 @@ describe("approve, rebuild and build-ready", () => {
     expect((await handle(api(null, "POST", "/api/build-ready", { app: "nope" }, auth), env, deps)).status).toBe(404);
     expect((await handle(api(null, "POST", "/api/build-ready", { app: appId }, auth), env, deps)).status).toBe(400);
     expect((await handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://x", profileUuid: "nope" }, auth), env, deps)).status).toBe(409);
+  });
+});
+
+describe("iPhone signing", () => {
+  type SetUp = { signing: { name: string; expirationDate: string } | null; apps: { id: string; name: string; profile: { name: string; devices: number } | null; error: string | null }[] };
+
+  it("creates the certificate, keeps its key encrypted and makes profiles for apps with a bundle ID", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const made = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", bundleId: "com.example.skull" }), env, deps);
+    const { app, buildToken } = (await made.json()) as { app: { id: string }; buildToken: string };
+    await handle(api(cookie, "POST", "/api/dev/apps", { name: "Web only", repo: "o/web" }), env, deps);
+    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [{ id: "dev-1", udid: UDID_1 }], profileCount: 0, noOldProfile: true }) });
+    const d = { ...deps, fetch };
+    const key = await rsaPem();
+
+    const res = await handle(api(cookie, "POST", "/api/dev/signing", { csr: CSR, privateKey: key }), env, d);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as SetUp;
+    expect(body.signing).toMatchObject({ name: "Apple Distribution: Test Person", expirationDate: "2027-10-20T10:00:00.000+00:00" });
+    expect(body.apps).toEqual([
+      { id: app.id, name: "Skull", profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1, createdAt: deps.now().toISOString() }, error: null },
+      { id: expect.any(String), name: "Web only", profile: null, error: "skipped: no iPhone bundle ID" },
+    ]);
+
+    const cert = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/certificates"))!;
+    expect(JSON.parse(cert.body!).data.attributes).toEqual({ certificateType: "DISTRIBUTION", csrContent: CSR.trim() });
+    const bundle = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/bundleIds"))!;
+    expect(JSON.parse(bundle.body!).data.attributes).toEqual({ identifier: "com.example.skull", name: "ourapps Skull", platform: "IOS" });
+    const profile = JSON.parse(calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/profiles"))!.body!).data;
+    expect(profile.attributes).toEqual({ name: "Skull Ad Hoc", profileType: "IOS_APP_ADHOC" });
+    expect(profile.relationships.bundleId.data).toEqual({ type: "bundleIds", id: "bid-new-1" });
+    expect(profile.relationships.certificates.data).toEqual([{ type: "certificates", id: "cert-ours" }]);
+
+    const detail = (await (await handle(api(cookie, "GET", `/api/dev/apps/${app.id}`), env, d)).json()) as { app: { profileName: string; bundleId: string } };
+    expect(detail.app).toMatchObject({ profileName: "Skull Ad Hoc", bundleId: "com.example.skull" });
+    const me = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, d)).json()) as { secrets: { signing: { name: string } | null } };
+    expect(me.secrets.signing?.name).toBe("Apple Distribution: Test Person");
+
+    const blob = (await env.DB.prepare("SELECT blob FROM developer_secrets").first<{ blob: string }>())!.blob;
+    expect(blob).not.toContain("PRIVATE KEY");
+    expect(blob).not.toContain(key.split("\n")[1]);
+
+    const auth = { Authorization: `Bearer ${buildToken}` };
+    const head = await handle(api(null, "HEAD", `/api/build/${app.id}/signing`, undefined, auth), env, d);
+    expect(head.status).toBe(200);
+    const got = await handle(api(null, "GET", `/api/build/${app.id}/signing`, undefined, auth), env, d);
+    expect(got.status).toBe(200);
+    expect(got.headers.get("Cache-Control")).toBe("no-store");
+    expect(await got.json()).toEqual({
+      certificate: { id: "cert-ours", name: "Apple Distribution: Test Person", serialNumber: "5EA1", expirationDate: "2027-10-20T10:00:00.000+00:00", base64: "Q0VSVElGSUNBVEU=" },
+      privateKeyPem: key.trim(),
+      teamId: "TEAM1",
+      profile: { profileName: "Skull Ad Hoc", profileId: "prof-1", uuid: "uuid-1", profileBase64: "b64-1", expirationDate: "2027-10-01T00:00:00Z" },
+    });
+    expect((await handle(api(null, "GET", `/api/build/${app.id}/signing`, undefined, { Authorization: "Bearer wrong" }), env, d)).status).toBe(401);
+  });
+
+  it("approvals then use ourapps' certificate and the app's App ID", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const made = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", bundleId: "com.example.skull" }), env, deps);
+    const { app } = (await made.json()) as { app: { id: string } };
+    const link = (await (await handle(api(cookie, "POST", `/api/dev/apps/${app.id}/links`, {}), env, deps)).json()) as { link: { id: string } };
+    const state = { devices: [] as { id: string; udid: string }[], profileCount: 0, noOldProfile: true, bundleIds: [{ id: "bid-skull", identifier: "com.example.skull" }] };
+    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...appleRoutes(state) });
+    const d = { ...deps, fetch };
+    const setUp = (await (await handle(api(cookie, "POST", "/api/dev/signing", { csr: CSR, privateKey: await rsaPem() }), env, d)).json()) as SetUp;
+    expect(setUp.apps[0].error).toMatch(/at least one iPhone or iPad/);
+
+    const id = await enrol(env, d, link.link.id, "Bob", UDID_1);
+    expect((await handle(api(cookie, "POST", `/api/dev/devices/${id}/approve`), env, d)).status).toBe(200);
+    const profile = JSON.parse(calls.filter((c) => c.method === "POST" && c.url.endsWith("/v1/profiles")).at(-1)!.body!).data;
+    expect(profile.relationships.bundleId.data).toEqual({ type: "bundleIds", id: "bid-skull" });
+    expect(profile.relationships.certificates.data).toEqual([{ type: "certificates", id: "cert-ours" }]);
+    expect(profile.attributes.name).toBe("Skull Ad Hoc");
+    expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/v1/bundleIds"))).toBe(false);
+  });
+
+  it("refreshes one app's profile with a manage key", async () => {
+    await saveAppleSecrets(env, deps, cookie);
+    const made = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", profileName: "Skull Ad Hoc" }), env, deps);
+    const { app } = (await made.json()) as { app: { id: string } };
+    const { key } = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "agent" }), env, deps)).json()) as { key: string };
+    const d = { ...deps, fetch: fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [{ id: "dev-1", udid: UDID_1 }], profileCount: 0 }) }).fetch };
+    const res = await handle(api(null, "POST", `/api/dev/apps/${app.id}/profile`, {}, { Authorization: `Bearer ${key}` }), env, d);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1, createdAt: deps.now().toISOString() } });
+  });
+
+  it("refuses bad input, API keys and missing Apple keys; Settings cannot write the signing key", async () => {
+    const { appId, buildToken } = await createSkull(env, deps, cookie);
+    const auth = { Authorization: `Bearer ${buildToken}` };
+    expect((await handle(api(null, "HEAD", `/api/build/${appId}/signing`, undefined, auth), env, deps)).status).toBe(404);
+    const missing = await handle(api(null, "GET", `/api/build/${appId}/signing`, undefined, auth), env, deps);
+    expect(((await missing.json()) as { error: string }).error).toMatch(/not set up/);
+
+    const key = await rsaPem();
+    const noApple = await handle(api(cookie, "POST", "/api/dev/signing", { csr: CSR, privateKey: key }), env, deps);
+    expect(noApple.status).toBe(409);
+    await saveAppleSecrets(env, deps, cookie);
+    expect((await handle(api(cookie, "POST", "/api/dev/signing", { csr: "nope", privateKey: key }), env, deps)).status).toBe(400);
+    expect((await handle(api(cookie, "POST", "/api/dev/signing", { csr: CSR, privateKey: await applePem() }), env, deps)).status).toBe(400);
+    const { key: apiKey } = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "agent" }), env, deps)).json()) as { key: string };
+    expect((await handle(api(null, "POST", "/api/dev/signing", { csr: CSR, privateKey: key }, { Authorization: `Bearer ${apiKey}` }), env, deps)).status).toBe(403);
+
+    const put = await handle(api(cookie, "PUT", "/api/dev/secrets", { signingKey: key }), env, deps);
+    expect(((await put.json()) as { secrets: { signing: unknown } }).secrets.signing).toBeNull();
+    const fields = await env.DB.prepare("SELECT blob FROM developer_secrets").first<{ blob: string }>();
+    expect(Object.keys(JSON.parse(fields!.blob).fields)).not.toContain("signingKey");
+
+    expect((await handle(api(cookie, "PUT", `/api/dev/apps/${appId}`, { bundleId: "not a bundle id" }), env, deps)).status).toBe(400);
   });
 });
 

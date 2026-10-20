@@ -4,8 +4,10 @@ import { Db, type DeveloperSecrets } from "./db.js";
 import type { Env } from "./env.js";
 import { HttpError } from "./http.js";
 
-export const SECRET_FIELDS = ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken"] as const;
+export const SECRET_FIELDS = ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken", "signingKey"] as const;
 export type SecretField = (typeof SECRET_FIELDS)[number];
+// The fields a developer types in Settings; signingKey is only written by signing setup.
+export const EDITABLE_SECRET_FIELDS = ["appleIssuerId", "appleKeyId", "applePrivateKey", "appleTeamId", "githubToken"] as const satisfies readonly SecretField[];
 
 interface Envelope {
   v: number;

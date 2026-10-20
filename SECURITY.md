@@ -7,9 +7,10 @@ does not cover.
 
 | data | at rest | notes |
 |---|---|---|
-| Apple issuer id, key id, .p8 private key, team id, GitHub token | AES-256-GCM, one ciphertext per field | key derived per developer with HKDF-SHA256 from `MASTER_KEY`; developer id, field name and format version bound as additional authenticated data; random 96-bit nonce per write |
+| Apple issuer id, key id, .p8 private key, team id, GitHub token, signing key | AES-256-GCM, one ciphertext per field | key derived per developer with HKDF-SHA256 from `MASTER_KEY`; developer id, field name and format version bound as additional authenticated data; random 96-bit nonce per write |
 | API keys (`oa_` + 160 random bits) | HMAC-SHA256 keyed hash (`h2:` prefix) | pepper derived from `MASTER_KEY`; only an 11-character prefix is kept for display |
 | Per-app build tokens (192 random bits) | HMAC-SHA256 keyed hash | same pepper scheme, purpose string `build-token` |
+| Apple Distribution certificate (public) | plain, `signing_certificates` | its private key is the `signingKey` field above, made in the developer's browser |
 | Session ids (192 random bits) | HMAC-SHA256 keyed hash | cookie `HttpOnly; Secure; SameSite=Lax`, 30 days, purpose string `session` |
 | Signed download links | HMAC-SHA256 over the payload with `LINK_SECRET` | expire after one hour |
 | Audit log | plain text | event name, short detail, country; never values |
@@ -30,11 +31,16 @@ tokens or sessions, and no way to forge any of them (forging a keyed hash needs 
   console, maximum one year). Keys cannot create or revoke keys. Every key is revocable alone
   or all at once.
 - Decryption is on demand and field-level: install pages decrypt only the GitHub token; the
-  Apple private key is decrypted only while approving a device.
+  Apple private key is decrypted only while setting up signing, making a profile or approving a
+  device; the signing key only when a release workflow presents one of the developer's build
+  tokens at `/api/build/<app>/signing`. A build token therefore lets its holder sign builds that
+  run on the devices in that developer's profiles.
+- The signing key is written only by `POST /api/dev/signing` from a browser session (validated as
+  a 2048-bit RSA PKCS#8 key); `PUT /api/dev/secrets` cannot set it.
 - The Apple key is validated as an EC P-256 PKCS#8 key before it is stored; GitHub tokens must
   match the `github_pat_` or `ghp_` shape.
-- Security events (sign-in, sign-out, credential saves and removals, key creation and
-  revocation, build token rotation, device approvals, app deletion) are written to the audit log
+- Security events (sign-in, sign-out, credential saves and removals, signing setup, key creation
+  and revocation, build token rotation, device approvals, app deletion) are written to the audit log
   and shown under Settings, Security, with "Sign out everywhere" next to them.
 - Every response carries HSTS (preload), a strict Content Security Policy, `nosniff`,
   `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin`, a Referrer-Policy and a
@@ -60,7 +66,9 @@ Rotating `LINK_SECRET` only invalidates download links that are less than an hou
 - GitHub token: revoke it on GitHub, create a new one, paste it under Settings.
 - Apple key: revoke it in App Store Connect, Users and Access, Integrations; generate a new one.
 - API key: revoke it on the Agents page (or revoke all).
-- Build token: rotate it on the app page and update the repository secret.
+- Build token: rotate it on the app page and update the repository secret. If it may have been
+  used, also replace the certificate under Settings and revoke the old one in the Apple developer
+  portal (installed builds signed with it stop opening; publish a new release first).
 - Suspected account takeover: Settings, Sign out everywhere; Agents, Revoke all keys; then
   rotate the two external credentials above.
 

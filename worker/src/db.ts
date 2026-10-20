@@ -19,8 +19,21 @@ export interface DeveloperSecrets {
   applePrivateKey?: string;
   appleTeamId?: string;
   githubToken?: string;
+  // PKCS #8 PEM of ourapps' Apple Distribution certificate for this developer.
+  signingKey?: string;
   // When each field was last saved, keyed by field name.
-  savedAt?: Partial<Record<"appleIssuerId" | "appleKeyId" | "applePrivateKey" | "appleTeamId" | "githubToken", string>>;
+  savedAt?: Partial<Record<"appleIssuerId" | "appleKeyId" | "applePrivateKey" | "appleTeamId" | "githubToken" | "signingKey", string>>;
+}
+
+// The Apple Distribution certificate ourapps created; its private key is the signingKey secret.
+export interface SigningCertificateRow {
+  developerId: string;
+  certificateId: string;
+  name: string;
+  serialNumber: string;
+  certificateBase64: string;
+  expirationDate: string | null;
+  createdAt: string;
 }
 
 export interface AppRow {
@@ -40,6 +53,7 @@ export interface AppRow {
   repo: string;
   manifestUrl: string;
   profileName: string;
+  bundleId: string;
   showOnPage: boolean;
   buildTokenHash: string;
   createdAt: string;
@@ -231,12 +245,12 @@ export class Db {
   async insertApp(app: AppRow): Promise<void> {
     await this.d1
       .prepare(
-        `INSERT INTO apps (id, developer_id, name, tagline, description, whats_new, size, min_os, age_note, privacy_summary, icon_url, screenshots, screenshots_by_platform, repo, manifest_url, profile_name, show_on_page, build_token_hash, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO apps (id, developer_id, name, tagline, description, whats_new, size, min_os, age_note, privacy_summary, icon_url, screenshots, screenshots_by_platform, repo, manifest_url, profile_name, bundle_id, show_on_page, build_token_hash, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         app.id, app.developerId, app.name, app.tagline, app.description, app.whatsNew, app.size, app.minOs, app.ageNote, app.privacySummary,
-        app.iconUrl, JSON.stringify(app.screenshots), JSON.stringify(app.screenshotsByPlatform), app.repo, app.manifestUrl, app.profileName, app.showOnPage ? 1 : 0, app.buildTokenHash, app.createdAt, app.updatedAt,
+        app.iconUrl, JSON.stringify(app.screenshots), JSON.stringify(app.screenshotsByPlatform), app.repo, app.manifestUrl, app.profileName, app.bundleId, app.showOnPage ? 1 : 0, app.buildTokenHash, app.createdAt, app.updatedAt,
       )
       .run();
   }
@@ -244,12 +258,12 @@ export class Db {
   async updateApp(app: AppRow): Promise<void> {
     await this.d1
       .prepare(
-        `UPDATE apps SET name = ?, tagline = ?, description = ?, whats_new = ?, size = ?, min_os = ?, age_note = ?, privacy_summary = ?, icon_url = ?, screenshots = ?, screenshots_by_platform = ?, repo = ?, manifest_url = ?, profile_name = ?, show_on_page = ?, build_token_hash = ?, updated_at = ?
+        `UPDATE apps SET name = ?, tagline = ?, description = ?, whats_new = ?, size = ?, min_os = ?, age_note = ?, privacy_summary = ?, icon_url = ?, screenshots = ?, screenshots_by_platform = ?, repo = ?, manifest_url = ?, profile_name = ?, bundle_id = ?, show_on_page = ?, build_token_hash = ?, updated_at = ?
          WHERE id = ?`,
       )
       .bind(
         app.name, app.tagline, app.description, app.whatsNew, app.size, app.minOs, app.ageNote, app.privacySummary, app.iconUrl, JSON.stringify(app.screenshots), JSON.stringify(app.screenshotsByPlatform),
-        app.repo, app.manifestUrl, app.profileName, app.showOnPage ? 1 : 0, app.buildTokenHash, app.updatedAt, app.id,
+        app.repo, app.manifestUrl, app.profileName, app.bundleId, app.showOnPage ? 1 : 0, app.buildTokenHash, app.updatedAt, app.id,
       )
       .run();
   }
@@ -372,6 +386,23 @@ export class Db {
   async revokeApiKey(id: string, developerId: string, now: string): Promise<boolean> {
     const res = await this.d1.prepare("UPDATE api_keys SET revoked_at = ? WHERE id = ? AND developer_id = ? AND revoked_at IS NULL").bind(now, id, developerId).run();
     return (res.meta.changes ?? 0) > 0;
+  }
+
+  // Signing certificate
+
+  async signingCertificate(developerId: string): Promise<SigningCertificateRow | null> {
+    return row<SigningCertificateRow>(await this.d1.prepare("SELECT * FROM signing_certificates WHERE developer_id = ?").bind(developerId).first());
+  }
+
+  async putSigningCertificate(c: SigningCertificateRow): Promise<void> {
+    await this.d1
+      .prepare(
+        `INSERT INTO signing_certificates (developer_id, certificate_id, name, serial_number, certificate_base64, expiration_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(developer_id) DO UPDATE SET certificate_id = excluded.certificate_id, name = excluded.name, serial_number = excluded.serial_number,
+         certificate_base64 = excluded.certificate_base64, expiration_date = excluded.expiration_date, created_at = excluded.created_at`,
+      )
+      .bind(c.developerId, c.certificateId, c.name, c.serialNumber, c.certificateBase64, c.expirationDate, c.createdAt)
+      .run();
   }
 
   // Profiles

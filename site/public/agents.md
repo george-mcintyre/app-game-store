@@ -43,8 +43,8 @@ https://ourapps.app/free-tiers.md lists services whose free plans fit apps with 
 Tell the developer plainly when a task is theirs; do not try to work around it:
 
 - Signing in with GitHub, and creating the GitHub fine-grained token and the Apple App Store Connect API key (saved at `/dev/settings`; there is no API for credentials).
-- The Apple portal setup per iPhone app: App ID, Apple Distribution certificate (.p12 and password), their own iPhone registered, an Ad Hoc provisioning profile with a chosen name.
-- Providing signing material values (the .p12, keystore and passwords); you may store them with `gh secret set` once handed over.
+- Pressing "Set up iPhone signing" once at `/dev/settings#signing` (it runs by itself when the Apple key is saved). ourapps then creates the Apple Distribution certificate, each app's App ID and Ad Hoc profile; the repository needs no Apple secrets.
+- Providing the Android keystore and its passwords; you may store them with `gh secret set` once handed over.
 - Creating API keys (browser session only).
 - Deciding which iPhones to approve: list the waiting devices and approve only the people they name.
 - Sending share links to people.
@@ -63,23 +63,26 @@ GET  /api/dev/apps
 -> { "apps": [ App & { "releaseIcon": "https://ourapps.app/dl/..." | "" } ] }
 
 POST /api/dev/apps
-body: { "name": "Skull", "repo": "owner/name", "profileName": "Skull Ad Hoc",
+body: { "name": "Skull", "repo": "owner/name", "bundleId": "com.yourname.skull", "profileName": "",
         "tagline": "", "description": "", "whatsNew": "", "privacySummary": "",
         "size": "", "minOs": "", "ageNote": "", "iconUrl": "", "screenshots": [],
         "screenshotsByPlatform": { "iphone": [], "ipad": [], "android": [], "web": [] }, "manifestUrl": "", "showOnPage": false }
 -> 201 { "app": App, "buildToken": "48 hex chars, shown once" }
 
 GET  /api/dev/apps/:id
--> { "app": App, "links": [ShareLink], "profile": { "uuid", "expirationDate", "devices" } | null }
+-> { "app": App, "links": [ShareLink], "profile": Profile | null }
 
 PUT  /api/dev/apps/:id        body: any subset of the POST fields -> { "app": App }
 DELETE /api/dev/apps/:id      -> { "ok": true }   (also deletes its links, devices and profiles)
 POST /api/dev/apps/:id/build-token  -> { "buildToken": "new token, shown once" }  (old token stops working)
+POST /api/dev/apps/:id/profile      -> { "profile": Profile }  (makes the Ad Hoc profile again with every registered device)
 ```
 
-Field rules: `name` required; `repo` must be `owner/name`; `iconUrl`, `manifestUrl` and every screenshot must be https URLs; at most 10 screenshots per list; `screenshotsByPlatform` keys are `iphone`, `ipad`, `android`, `web` (empty lists are dropped); `showOnPage` lists the app, details only, on the developer's public page.
+Profile: `{ "name", "uuid", "expirationDate", "devices", "createdAt" }`. ourapps makes the profile with its own certificate and the App ID for `bundleId` (creating the App ID when missing) once iPhone signing is set up; it needs at least one registered iPhone or iPad. A blank `profileName` becomes "<app name> Ad Hoc".
 
-App object: `{ id, developerId, name, tagline, description, whatsNew, size, minOs, ageNote, privacySummary, iconUrl, screenshots, screenshotsByPlatform, repo, manifestUrl, profileName, showOnPage, createdAt, updatedAt }`.
+Field rules: `name` required; `repo` must be `owner/name`; `bundleId` is the Xcode bundle identifier (`com.yourname.app`), iPhone apps only; `iconUrl`, `manifestUrl` and every screenshot must be https URLs; at most 10 screenshots per list; `screenshotsByPlatform` keys are `iphone`, `ipad`, `android`, `web` (empty lists are dropped); `showOnPage` lists the app, details only, on the developer's public page.
+
+App object: `{ id, developerId, name, tagline, description, whatsNew, size, minOs, ageNote, privacySummary, iconUrl, screenshots, screenshotsByPlatform, repo, manifestUrl, bundleId, profileName, showOnPage, createdAt, updatedAt }`.
 
 After creating an app, store the token and id in the repository at once:
 
@@ -161,7 +164,7 @@ POST /api/dev/devices/:id/reject   -> { "enrolment": {...state: "rejected"} }
 DELETE /api/dev/devices/:id        -> { "ok": true }
 ```
 
-Approve only `pending-approval` or `failed` devices and only when the developer has confirmed the person. Approve registers the device with Apple, recreates the Ad Hoc profile with every enabled device, and sends `repository_dispatch` (`my-store-rebuild`) to the app repository. A 409 means the device has no UDID yet or Apple credentials or the profile name are missing; a 502 carries Apple's or GitHub's message and leaves the device in `failed`.
+Approve only `pending-approval` or `failed` devices and only when the developer has confirmed the person. Approve registers the device with Apple, recreates the Ad Hoc profile with every enabled device, and sends `repository_dispatch` (`my-store-rebuild`) to the app repository. A 409 means the device has no UDID yet or the Apple key is missing; a 502 carries Apple's or GitHub's message and leaves the device in `failed`.
 
 Apple allows 100 iPhones per developer per membership year and does not free a slot when a device is removed.
 
@@ -174,16 +177,17 @@ A developer must accept the current terms (`/terms`) in a browser before `/api/d
 ```
 PUT /api/dev/me        body: { "slug": "george", "displayName": "George" }   (manage scope)
 PUT /api/dev/secrets   dashboard only; returns 403 for API keys
+POST /api/dev/signing  dashboard only; the browser makes the key and certificate request
 GET /api/dev/audit     -> { "events": [ { "event", "detail", "country", "createdAt" } ] }   (recent security events)
 ```
 
-If a task needs the GitHub token or the Apple key saved or changed, tell the developer to do it at `/dev/settings`; there is no API path for it by design.
+If a task needs the GitHub token or the Apple key saved or changed, or iPhone signing set up, tell the developer to do it at `/dev/settings`; there is no API path for it by design. `GET /api/dev/me` shows `secrets.signing` (certificate name and expiry) once signing is set up.
 
 ## Public and build endpoints (for completeness)
 
 - `GET /api/public/dev/:slug` -> developer name and opted-in apps, details only.
 - `POST /api/enrol/new`, `GET /api/enrol/:id/profile.mobileconfig`, `POST /api/enrol/:id`, `GET /api/enrol/:id/status?since=<state>` drive the iPhone enrolment from the install page.
-- `GET /api/build/:appId/profile` and `POST /api/build-ready` are called by the repository workflow with `Authorization: Bearer <STORE_BUILD_TOKEN>`; see contract.md.
+- `GET /api/build/:appId/signing` (certificate, private key and latest profile; `HEAD` for the status alone), `GET /api/build/:appId/profile` and `POST /api/build-ready` are called by the repository workflow with `Authorization: Bearer <STORE_BUILD_TOKEN>`; see contract.md.
 - `GET /api/health` -> `{ "ok": true, ... }`.
 
 ## my-app.json, schema 1

@@ -33,6 +33,7 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 - Routes: `worker/src/index.ts`. Handlers: `worker/src/routes/{public,enrol,build,dev}.ts`.
 - Sign-in and sessions: `worker/src/auth.ts`. Encrypted credentials: `worker/src/secrets.ts`, `worker/src/crypto.ts`.
 - Approve flow (Apple register, profile recreate, dispatch): `worker/src/flow.ts`, `worker/src/apple.ts`, `worker/src/github.ts`.
+- iPhone signing: the browser makes the RSA key and CSR (`site/src/signing.ts`); `POST /api/dev/signing` (`setUpSigning` in `worker/src/routes/dev.ts`) gets an Apple Distribution certificate, stores the key as the `signingKey` secret and the certificate in `signing_certificates` (migration 0006), and makes profiles via `refreshProfile` (`worker/src/flow.ts`) for apps with `bundle_id`; builds fetch everything from `GET|HEAD /api/build/:app/signing` (`worker/src/routes/build.ts`). Settings card and app page card in `site/src/pages/dev.ts`.
 - Schema: `worker/migrations/*.sql`; queries: `worker/src/db.ts`.
 - Enrolment states: `shared/src/enrolment.ts`.
 - Example story and mock install page: `site/src/pages/example.ts` (routes `/example`, `/example/poker-night`).

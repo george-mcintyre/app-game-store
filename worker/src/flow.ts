@@ -55,30 +55,53 @@ export function rebuildPayload(env: Env, app: AppRow, record: EnrolmentRow, prof
   };
 }
 
+export function appleClient(env: Env, deps: Deps, secrets: DeveloperSecrets): AppleClient {
+  if (!appleReady(secrets)) throw new HttpError(409, "add your App Store Connect API key in account settings first");
+  return new AppleClient(env, deps, { issuerId: secrets.appleIssuerId!, keyId: secrets.appleKeyId!, privateKey: secrets.applePrivateKey! });
+}
+
+export const defaultProfileName = (appName: string): string => `${appName.replace(/[^A-Za-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim() || "App"} Ad Hoc`;
+
+// Makes the app's Ad Hoc profile again with every enabled device, using ourapps' certificate and the
+// app's bundle ID when they exist; records it and names it on the app when the name was blank.
+export async function refreshProfile(env: Env, deps: Deps, app: AppRow, apple: AppleClient): Promise<ProfileRow> {
+  const db = Db.from(env);
+  const certificate = await db.signingCertificate(app.developerId);
+  const devices = await apple.listEnabledIosDevices();
+  const name = app.profileName || defaultProfileName(app.name);
+  const created = await apple.recreateAdHocProfile(
+    name,
+    devices.map((d) => d.id),
+    { bundleId: app.bundleId ? await apple.ensureBundleId(app.bundleId, app.name) : undefined, certificateId: certificate?.certificateId },
+  );
+  const profile: ProfileRow = {
+    appId: app.id,
+    profileId: created.id,
+    profileName: name,
+    uuid: created.uuid,
+    profileBase64: created.profileContent,
+    udids: devices.map((d) => d.attributes.udid),
+    expirationDate: created.expirationDate,
+    createdAt: deps.now().toISOString(),
+  };
+  await db.insertProfile(profile);
+  if (!app.profileName) {
+    app.profileName = name;
+    app.updatedAt = profile.createdAt;
+    await db.updateApp(app);
+  }
+  return profile;
+}
+
 // Approve: register with Apple, recreate the profile, ask the app repo to rebuild.
 export async function approveEnrolment(env: Env, deps: Deps, app: AppRow, secrets: DeveloperSecrets, record: EnrolmentRow): Promise<ProfileRow> {
   if (!record.udid) throw new HttpError(409, "device has not sent its UDID yet");
   if (!canTransition(record.state, "registering")) throw new HttpError(409, `cannot approve from state ${record.state}`);
-  if (!appleReady(secrets)) throw new HttpError(409, "add your App Store Connect API key in account settings first");
-  if (!app.profileName) throw new HttpError(409, "set the Ad Hoc profile name on the app first");
-  const db = Db.from(env);
+  const apple = appleClient(env, deps, secrets);
   await transition(env, deps, record, "registering", { message: null });
   try {
-    const apple = new AppleClient(env, deps, { issuerId: secrets.appleIssuerId!, keyId: secrets.appleKeyId!, privateKey: secrets.applePrivateKey! });
     record.appleDeviceId = await apple.registerDevice(record.udid, `${record.name} (${record.product ?? "iPhone"})`);
-    const devices = await apple.listEnabledIosDevices();
-    const created = await apple.recreateAdHocProfile(app.profileName, devices.map((d) => d.id));
-    const profile: ProfileRow = {
-      appId: app.id,
-      profileId: created.id,
-      profileName: app.profileName,
-      uuid: created.uuid,
-      profileBase64: created.profileContent,
-      udids: devices.map((d) => d.attributes.udid),
-      expirationDate: created.expirationDate,
-      createdAt: deps.now().toISOString(),
-    };
-    await db.insertProfile(profile);
+    const profile = await refreshProfile(env, deps, app, apple);
     await dispatchRebuild(env, deps, secrets.githubToken, app.repo, rebuildPayload(env, app, record, profile));
     await transition(env, deps, record, "building", { profileUuid: profile.uuid });
     return profile;

@@ -79,7 +79,7 @@ export async function clearDb(env: Env): Promise<void> {
   const kv = await env.WEBAPP_FILES.list();
   await Promise.all(kv.keys.map((k) => env.WEBAPP_FILES.delete(k.name)));
 
-  for (const table of ["audit_log", "api_keys", "profiles", "enrolments", "links", "apps", "sessions", "developer_secrets", "developers"]) {
+  for (const table of ["audit_log", "api_keys", "profiles", "enrolments", "links", "apps", "sessions", "signing_certificates", "developer_secrets", "developers"]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
   }
 }
@@ -122,8 +122,10 @@ export function githubRoutes() {
   };
 }
 
-// Routes that make Apple accept new devices and recreate one profile.
-export function appleRoutes(state: { devices: { id: string; udid: string }[]; profileCount: number }) {
+// Routes that make Apple accept new devices and recreate one profile. Without `noOldProfile` an
+// existing "Skull Ad Hoc" profile is found; bundle IDs and certificates are created on request.
+export function appleRoutes(state: { devices: { id: string; udid: string }[]; profileCount: number; noOldProfile?: boolean; bundleIds?: { id: string; identifier: string }[] }) {
+  const bundleIds = state.bundleIds ?? (state.bundleIds = []);
   return {
     [`GET ${apple("/v1/devices")}`]: (call: Call) => {
       const udid = new URL(call.url).searchParams.get("filter[udid]");
@@ -138,14 +140,16 @@ export function appleRoutes(state: { devices: { id: string; udid: string }[]; pr
     },
     [`GET ${apple("/v1/profiles")}`]: () =>
       jsonRes({
-        data: [
-          {
-            id: "prof-old",
-            type: "profiles",
-            attributes: { name: "Skull Ad Hoc", uuid: "uuid-old", profileContent: "b64old", expirationDate: "2027-01-01T00:00:00Z" },
-            relationships: { bundleId: { data: { type: "bundleIds", id: "bid-1" } }, certificates: { data: [{ type: "certificates", id: "cert-1" }] } },
-          },
-        ],
+        data: state.noOldProfile
+          ? []
+          : [
+              {
+                id: "prof-old",
+                type: "profiles",
+                attributes: { name: "Skull Ad Hoc", uuid: "uuid-old", profileContent: "b64old", expirationDate: "2027-01-01T00:00:00Z" },
+                relationships: { bundleId: { data: { type: "bundleIds", id: "bid-1" } }, certificates: { data: [{ type: "certificates", id: "cert-1" }] } },
+              },
+            ],
       }),
     [`DELETE ${apple("/v1/profiles/prof-old")}`]: () => new Response(null, { status: 204 }),
     [`POST ${apple("/v1/profiles")}`]: () => {
@@ -153,8 +157,27 @@ export function appleRoutes(state: { devices: { id: string; udid: string }[]; pr
       const n = state.profileCount;
       return jsonRes({ data: { id: `prof-${n}`, type: "profiles", attributes: { uuid: `uuid-${n}`, profileContent: `b64-${n}`, expirationDate: "2027-10-01T00:00:00Z" } } }, 201);
     },
+    // A prefix match comes back too, as Apple's filter may return it.
+    [`GET ${apple("/v1/bundleIds")}`]: () => jsonRes({ data: [{ id: "bid-tests", type: "bundleIds", attributes: { identifier: "com.example.skull.tests" } }, ...bundleIds.map((b) => ({ id: b.id, type: "bundleIds", attributes: { identifier: b.identifier } }))] }),
+    [`POST ${apple("/v1/bundleIds")}`]: (call: Call) => {
+      const b = { id: `bid-new-${bundleIds.length + 1}`, identifier: JSON.parse(call.body!).data.attributes.identifier };
+      bundleIds.push(b);
+      return jsonRes({ data: { id: b.id, type: "bundleIds", attributes: { identifier: b.identifier } } }, 201);
+    },
+    [`POST ${apple("/v1/certificates")}`]: () =>
+      jsonRes({ data: { id: "cert-ours", type: "certificates", attributes: { name: "Apple Distribution: Test Person", serialNumber: "5EA1", certificateContent: "Q0VSVElGSUNBVEU=", expirationDate: "2027-10-20T10:00:00.000+00:00" } } }, 201),
   };
 }
+
+export async function rsaPem(): Promise<string> {
+  const pair = (await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"])) as CryptoKeyPair;
+  const der = new Uint8Array((await crypto.subtle.exportKey("pkcs8", pair.privateKey)) as ArrayBuffer);
+  let s = "";
+  for (const b of der) s += String.fromCharCode(b);
+  return `-----BEGIN PRIVATE KEY-----\n${btoa(s).match(/.{1,64}/g)!.join("\n")}\n-----END PRIVATE KEY-----\n`;
+}
+
+export const CSR = "-----BEGIN CERTIFICATE REQUEST-----\nMIIBVzCBwQIBADAYMRYwFAYDVQQDDA1vdXJhcHBzIHRlc3Q=\n-----END CERTIFICATE REQUEST-----\n";
 
 export const deviceReply = (udid: string) =>
   new TextEncoder().encode(

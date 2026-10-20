@@ -65,9 +65,9 @@ generated from the prompts in `docs/diagram-prompts.md`.
 ## Who does what
 
 Only a few steps need a human: signing in with GitHub, creating the GitHub token and the Apple
-App Store Connect key, the one-time Apple portal setup per iPhone app (App ID, distribution
-certificate, Ad Hoc profile), creating an API key for the agent, approving iPhones by name, and
-sending links to people. Everything else (registering the app, the release workflow, releases,
+App Store Connect key (saving it sets up iPhone signing: ourapps creates the distribution
+certificate, App IDs and Ad Hoc profiles), the Android keystore, creating an API key for the
+agent, approving iPhones by name, and sending links to people. Everything else (registering the app, the release workflow, releases,
 share links, checks) is done by a coding agent with the prompts on `/dev/agents`. The guide's
 TL;DR at `/dev/guide#tldr` is the definitive list.
 
@@ -76,18 +76,19 @@ TL;DR at `/dev/guide#tldr` is the definitive list.
 1. Sign in with GitHub at `/dev`.
 2. Settings: paste your App Store Connect API key (issuer id, key id, `.p8` contents), your
    Apple team id, and a GitHub fine-grained token with Contents read and write on the app's
-   repository. They are stored encrypted per account.
-3. Create the Ad Hoc provisioning profile once in the Apple developer portal (any name).
-4. Add the app: name, repository `owner/name`, that profile name, and the App Store style
-   details (tagline, description, screenshots, privacy summary). Copy the build token
-   shown once into the repository secret `STORE_BUILD_TOKEN`.
-5. Make the repository follow `CONTRACT.md`: publish releases with `my-app.json` and
-   `CHANGELOG.md` (its sections become the revision history friends see), listen for
-   `my-store-rebuild`, call `/api/build-ready`.
-6. Create a share link for the app and send it, or show the QR code.
+   repository. They are stored encrypted per account. Saving the Apple key sets up iPhone
+   signing (Settings, iPhone signing).
+3. Add the app: name, repository `owner/name`, the iPhone bundle ID, and the App Store style
+   details (tagline, description, screenshots, privacy summary). Copy the build token and app id
+   shown once into the repository secrets `STORE_BUILD_TOKEN` and `STORE_APP_ID`. ourapps makes
+   the app's Ad Hoc profile once a device is registered.
+4. Make the repository follow `CONTRACT.md`: publish releases with `my-app.json` and
+   `CHANGELOG.md` (its sections become the revision history friends see), fetch signing from
+   `/api/build/<app>/signing`, listen for `my-store-rebuild`, call `/api/build-ready`.
+5. Create a share link for the app and send it, or show the QR code.
 
 The in-app guide at `/dev/guide` covers all of this with exact clicks, including how to create
-the Apple key, the GitHub token and the Ad Hoc profile.
+the Apple key and the GitHub token.
 
 ## Share
 

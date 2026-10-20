@@ -3,7 +3,7 @@ import { finishLogin, logout, logoutEverywhere, oauthConfigured, requireDevelope
 import { defaultDeps, type Deps, type Env } from "./env.js";
 import { randomId } from "./crypto.js";
 import { HttpError, json } from "./http.js";
-import { buildProfile, buildReady } from "./routes/build.js";
+import { buildProfile, buildReady, buildSigning } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
 import { enrolCallback, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
@@ -90,6 +90,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
 
   if (p[0] === "build-ready" && m === "POST") return buildReady(request, env, deps);
   if (p[0] === "build" && p.length === 3 && p[2] === "profile" && m === "GET") return buildProfile(request, env, p[1]);
+  if (p[0] === "build" && p.length === 3 && p[2] === "signing" && (m === "GET" || m === "HEAD")) return buildSigning(request, env, p[1]);
 
   if (p[0] === "dev") {
     const me = await requireDeveloper(request, env, deps);
@@ -99,6 +100,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     if (p[1] === "me" && m === "DELETE") return dev.deleteAccount(request, env, me);
     if (p[1] === "me" && m === "PUT") return dev.updateMe(request, env, me);
     if (p[1] === "secrets" && m === "PUT") return dev.updateSecrets(request, env, deps, me);
+    if (p[1] === "signing" && p.length === 2 && m === "POST") return dev.setUpSigning(request, env, deps, me);
     if (p[1] === "apps") {
       if (p.length === 2 && m === "GET") return dev.listApps(env, deps, me);
       if (p.length === 2 && m === "POST") return dev.createApp(request, env, deps, me);
@@ -109,6 +111,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
       if (p.length === 4 && p[3] === "release" && m === "GET") return dev.releaseStatus(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "preview" && m === "GET") return dev.previewApp(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "links" && m === "POST") return dev.createLink(request, env, deps, me, p[2]);
+      if (p.length === 4 && p[3] === "profile" && m === "POST") return dev.refreshAppProfile(env, deps, me, p[2]);
     }
     if (p[1] === "links" && p.length === 4 && p[3] === "revoke" && m === "POST") return dev.revokeLink(env, deps, me, p[2], false);
     if (p[1] === "links" && p.length === 3 && m === "DELETE") return dev.revokeLink(env, deps, me, p[2], true);

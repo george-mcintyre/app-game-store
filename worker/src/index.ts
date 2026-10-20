@@ -5,7 +5,7 @@ import { randomId } from "./crypto.js";
 import { HttpError, json } from "./http.js";
 import { buildProfile, buildReady, buildSigning } from "./routes/build.js";
 import * as dev from "./routes/dev.js";
-import { enrolCallback, enrolLatest, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
+import { PROFILE_TYPE, enrolCallback, enrolLatest, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
 import { serveWebApp, webAppLinkId } from "./webapp.js";
 
@@ -45,6 +45,8 @@ export async function handle(request: Request, env: Env, deps: Deps = defaultDep
     res = errorResponse(request, err);
   }
   res = new Response(res.body, res);
+  // Registration profiles go to iOS Settings as they are; page headers have no meaning there.
+  if (res.headers.get("Content-Type") === PROFILE_TYPE) return res;
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!res.headers.has(k)) res.headers.set(k, v);
   return res;
 }
@@ -83,7 +85,11 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
 
   if (p[0] === "enrol") {
     if (p[1] === "new" && m === "POST") return enrolNew(request, env, deps);
-    if (p.length === 3 && p[2] === "profile.mobileconfig" && m === "GET") return enrolProfile(request, env, deps, p[1]);
+    // Some download managers ask with HEAD first; it gets the same answer without the body.
+    if (p.length === 3 && p[2] === "profile.mobileconfig" && (m === "GET" || m === "HEAD")) {
+      const res = await enrolProfile(request, env, deps, p[1]);
+      return m === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+    }
     if (p.length === 2 && m === "POST") return enrolCallback(request, env, deps, p[1]);
     if (p.length === 3 && p[2] === "status" && m === "GET") return enrolStatus(request, env, deps, p[1]);
     if (p.length === 3 && p[2] === "latest" && m === "GET") return enrolLatest(env, deps, p[1]);

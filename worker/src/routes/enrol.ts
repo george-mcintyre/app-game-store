@@ -67,11 +67,12 @@ export async function enrolProfile(request: Request, env: Env, deps: Deps, id: s
     organisation: dev?.displayName ?? "ourapps",
     uuid: crypto.randomUUID(),
   });
-  return new Response(body, {
-    status: 200,
-    headers: { "Content-Type": "application/x-apple-aspen-config", "Content-Disposition": `attachment; filename="install.mobileconfig"`, "Cache-Control": "no-store" },
-  });
+  // The content type alone makes Safari hand the profile to Settings; older iOS versions fail on
+  // an attachment download, so the response carries nothing else.
+  return new Response(body, { status: 200, headers: { "Content-Type": PROFILE_TYPE, "Cache-Control": "no-store" } });
 }
+
+export const PROFILE_TYPE = "application/x-apple-aspen-config";
 
 // POST /api/enrol/:id - the device posts its attributes, then Safari is sent to the wait page.
 export async function enrolCallback(request: Request, env: Env, deps: Deps, id: string): Promise<Response> {

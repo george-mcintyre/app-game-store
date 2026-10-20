@@ -260,6 +260,10 @@ describe("enrolment", () => {
     expect(profileUrl).toBe(`${BASE}/api/enrol/${enrolmentId}/profile.mobileconfig`);
     const profile = await handle(new Request(profileUrl), env, deps);
     expect(profile.headers.get("Content-Type")).toBe("application/x-apple-aspen-config");
+    // Nothing but the type: older iOS Safari fails on attachments, and page headers mean nothing to Settings.
+    expect(profile.headers.get("Content-Disposition")).toBeNull();
+    expect(profile.headers.get("Content-Security-Policy")).toBeNull();
+    expect(profile.headers.get("Cross-Origin-Opener-Policy")).toBeNull();
     const text = await profile.text();
     expect(text).toContain("<string>Profile Service</string>");
     expect(text).toContain(`<string>${BASE}/api/enrol/${enrolmentId}</string>`);

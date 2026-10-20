@@ -110,7 +110,7 @@ Use this after every publish. Typical errors and what fixes them:
 | error contains | fix |
 |---|---|
 | `needs a GitHub token` | the developer saves a token at /dev/settings (you cannot) |
-| `no published release found` | publish a non-draft, non-pre-release release |
+| `no published release found` | publish the release (create it as a draft, upload every asset with my-app.json last, then publish; never a pre-release) |
 | `has no asset named my-app.json` | upload the file with exactly that name |
 | `is invalid:` | the field named in the message; see schema below |
 

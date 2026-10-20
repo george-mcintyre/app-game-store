@@ -106,7 +106,7 @@ function sections(origin: string, slug: string): Section[] {
         <p>This is how the console creates the certificate your iPhone builds are signed with, registers your friends' iPhones with Apple and rebuilds the signing profile. You need a paid Apple Developer Program membership (the same one you need to run your app on any iPhone for more than a week).</p>
         <ol class="steps">
           <li>Open <a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noopener">App Store Connect, Users and Access, Integrations, App Store Connect API</a>. If you have never used it, tap <b>Request Access</b> first.</li>
-          <li>Under <b>Team Keys</b>, tap the plus. Name: <b>ourapps</b>. Access: <b>Admin</b>. Devices and provisioning profiles are only editable with Admin, which is why the lower roles do not work.</li>
+          <li>Under <b>Team Keys</b>, tap the plus. Name: <b>ourapps</b>. Access: <b>Admin</b>. Certificates, devices and provisioning profiles are only editable with Admin, which is why the lower roles do not work.</li>
           <li>Tap <b>Download API Key</b>. You get a <code>.p8</code> file exactly once; keep it somewhere safe.</li>
           <li>Copy the <b>Issuer ID</b> (top of the page) and the key's <b>Key ID</b>.</li>
           <li>In <a href="/dev/settings#credentials">Settings</a> paste Issuer ID, Key ID and the full contents of the .p8 file (including the BEGIN and END lines). Save.</li>
@@ -302,8 +302,8 @@ startButton.onclick = async () => {
         <h3>What Approve does</h3>
         <ol class="steps">
           <li>Registers the device with Apple under the friend's name (or finds it if it was registered before).</li>
-          <li>Deletes and recreates the Ad Hoc profile with every enabled iPhone on your team. Apple profiles cannot be edited, only replaced; the name stays the same.</li>
-          <li>Sends <code>my-store-rebuild</code> to the repository with the profile id and the new device. The workflow downloads the profile from the console with its build token.</li>
+          <li>Deletes and recreates the Ad Hoc profile with every enabled iPhone and iPad on your team. Apple profiles cannot be edited, only replaced; the name stays the same.</li>
+          <li>Sends <code>my-store-rebuild</code> to the repository with the profile id and the new device. The workflow fetches the certificate, its key and the new profile from the console with its build token.</li>
           <li>When the workflow publishes and calls <code>/api/build-ready</code>, the console marks ready every waiting device whose number is inside that profile. A device approved after the workflow had already fetched the profile is not in that build, so the console sends one more rebuild for it automatically.</li>
         </ol>
         ${callout("warn", html`<p><b>100 iPhones and, separately, 100 iPads per membership year, across all your apps.</b> Apple counts devices on your account, not per app, and counts registrations rather than current devices: removing a device does not give the slot back until your membership renews. Approve people, not experiments, and register your own test phones once.</p>`)}
@@ -321,7 +321,7 @@ startButton.onclick = async () => {
           <tr><td>You</td><td>Bump the version, push a tag. The workflow publishes a release and the share link serves the new version at once. Existing iPhones need no approval; the signing profile already contains them.</td></tr>
           <tr><td>Friend on iPhone</td><td>Taps Update (in the app, or Get on the same share link), then Install on Apple's prompt. The app is replaced in place; settings and data stay. No new registration, no device slot used.</td></tr>
           <tr><td>Friend on Android</td><td>Taps Update, then Install when the phone asks. Data stays as long as the signing key is the same.</td></tr>
-          <tr><td>Friend on a web app</td><td>Nothing. The page refreshes itself.</td></tr>
+          <tr><td>Friend on a web app</td><td>Nothing. The next time the app opens it loads the new version, unless the app's own service worker keeps an old copy.</td></tr>
         </table>
         <ul class="bullets">
           <li><b>Version numbers must go up:</b> Android <code>versionCode</code> and iOS <code>CFBundleVersion</code>, or the phone refuses the update as "older".</li>
@@ -424,7 +424,7 @@ suspend fun checkForUpdate(context: Context) {
         <h3 id="security-credentials">Your credentials</h3>
         <table class="table">
           <tr><th>What</th><th>How it is stored</th><th>When it is decrypted</th></tr>
-          <tr><td>App Store Connect key (issuer id, key id, .p8), Apple team id</td><td>AES-256-GCM, one ciphertext per field, under a key derived for your account alone (HKDF from the master secret), with your account id and the field name bound in as authenticated data so a ciphertext cannot be moved between accounts or fields</td><td>Only while approving a device, inside one request</td></tr>
+          <tr><td>App Store Connect key (issuer id, key id, .p8), Apple team id</td><td>AES-256-GCM, one ciphertext per field, under a key derived for your account alone (HKDF from the master secret), with your account id and the field name bound in as authenticated data so a ciphertext cannot be moved between accounts or fields</td><td>Only while setting up signing, making a profile or approving a device, inside one request</td></tr>
           <tr><td>GitHub token</td><td>Same scheme</td><td>Only when reading a release or sending a rebuild request</td></tr>
           <tr><td>Private key of the Apple Distribution certificate ourapps created</td><td>Same scheme; the key is made in your browser</td><td>Only when an app's release workflow presents that app's build token</td></tr>
           <tr><td>API keys, build tokens, sign-in sessions</td><td>Keyed hashes (HMAC-SHA256 with a pepper derived from the master secret); the key itself is shown to you once and never stored</td><td>Never; a presented key is hashed and compared</td></tr>
@@ -469,6 +469,7 @@ suspend fun checkForUpdate(context: Context) {
           <li>Give the GitHub token the narrowest scope: Contents on the app repositories only, with an expiry.</li>
           <li>Create one API key per agent or machine, with an expiry, and revoke it when the job is done.</li>
           <li>Approve iPhones you recognise by name. Each approval registers a device on your Apple account for the membership year.</li>
+          <li>Keep build tokens and the Cloudflare token in repository secrets only. A build token lets its holder fetch your iPhone signing key; a Cloudflare token can replace any Worker on its account.</li>
           <li>Check Settings, Security now and then. Anything you do not recognise: sign out everywhere, revoke keys, and replace the GitHub token and Apple key at their sources.</li>
         </ul>
         <p class="small muted">Full technical statement, including the rotation procedure and what is not covered: <a href="https://github.com/george-mcintyre/ourapps/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a> in the source repository. Found a security problem? <a href="https://github.com/george-mcintyre/ourapps/security/advisories/new" target="_blank" rel="noopener">Report it privately</a>.</p>
@@ -487,6 +488,9 @@ suspend fun checkForUpdate(context: Context) {
           <tr><td>Approve fails with a GitHub 404 on dispatches</td><td>The token cannot write to that repository. Edit the token on GitHub: add the repository, Contents read and write.</td></tr>
           <tr><td>Friend stuck on "Building" for over an hour</td><td>Open the repository's Actions tab. The workflow failed or did not call build-ready; its logs say why. Fix and re-run the workflow; it can call build-ready again.</td></tr>
           <tr><td>build-ready returns 409</td><td>The workflow sent a profileUuid the console did not create, usually a cached profile. Fetch the signing material fresh on every run.</td></tr>
+          <tr><td>Release fails at the web deploy with "register a workers.dev subdomain"</td><td>The Cloudflare account has no workers.dev subdomain yet. Workers &amp; Pages, choose one, then run the release again. Renaming it later moves every web app's address.</td></tr>
+          <tr><td>Web app opens but cannot reach its server</td><td>The server does not allow the web app's address. Add the exact address, for example <code>https://skull-web.yourname.workers.dev</code>, to the server's CORS list.</td></tr>
+          <tr><td>Install page says the release cannot be read for a minute after a release</td><td>The release went public before <code>my-app.json</code> was uploaded. Create releases as drafts and publish them after every file is in.</td></tr>
           <tr><td>iPhone says "Untrusted Developer"</td><td>The build used a Development profile. Use the Ad Hoc profile from the console; no trust step exists for Ad Hoc.</td></tr>
           <tr><td>iPhone says "Unable to Verify App" or the app will not open</td><td>The profile expired or the device is not in it. Approve the device again, which recreates the profile and rebuilds.</td></tr>
           <tr><td>Nothing happens when tapping Install on iPhone</td><td>The page is inside another app's browser (Gmail, Instagram). Open in Safari. WhatsApp and Messages are fine.</td></tr>

@@ -4,7 +4,7 @@ ourapps.app is a private installer: developers register apps they built for frie
 
 Base URL: `https://ourapps.app`. All request and response bodies are JSON. Errors are `{"error": "message"}` with a 4xx or 5xx status.
 
-Related: the repository contract at `https://ourapps.app/contract.md` describes what an app's GitHub repository must publish and the two calls its workflow makes.
+Related: the repository contract at `https://ourapps.app/contract.md` describes what an app's GitHub repository must publish and the calls its workflow makes.
 
 ## Authentication
 
@@ -64,7 +64,7 @@ GET  /api/dev/apps
 -> { "apps": [ App & { "releaseIcon": "https://ourapps.app/dl/..." | "" } ] }
 
 POST /api/dev/apps
-body: { "name": "Skull", "repo": "owner/name", "bundleId": "com.yourname.skull", "profileName": "",
+body: { "name": "Poker Night", "repo": "owner/name", "bundleId": "com.yourname.pokernight", "profileName": "",
         "tagline": "", "description": "", "whatsNew": "", "privacySummary": "",
         "size": "", "minOs": "", "ageNote": "", "iconUrl": "", "screenshots": [],
         "screenshotsByPlatform": { "iphone": [], "ipad": [], "android": [], "web": [] }, "manifestUrl": "", "showOnPage": false }
@@ -98,7 +98,7 @@ gh secret set STORE_APP_ID --body "<app.id>" --repo owner/name
 GET /api/dev/apps/:id/release
 -> { "ok": true, "githubToken": true, "appleKey": true,
      "web": { "hosting": "own", "url": "https://poker-night-web.you.workers.dev/", "ok": true, "status": 200 } | { "hosting": "ourapps", ... } | null,
-     "tag": "v0.1.1", "publishedAt": "...", "assets": ["my-app.json", "icon.png", "skull.apk"],
+     "tag": "v0.1.1", "publishedAt": "...", "assets": ["my-app.json", "icon.png", "poker-night.apk"],
      "manifestUrl": "https://api.github.com/repos/.../assets/123", "version": "0.1.1",
      "install": { "ios": false, "android": true, "pwa": false }, "screenshots": 3,
      "profile": { "uuid", "expirationDate", "devices" } | null, "errors": [] }
@@ -199,23 +199,23 @@ Published as a release asset named `my-app.json`:
 ```json
 {
   "schema": 1,
-  "id": "skull",
-  "name": "Skull",
+  "id": "poker-night",
+  "name": "Poker Night",
   "version": "0.1.1",
-  "description": "Skull-style bluffing card game for 3 to 6 friends.",
+  "description": "Texas hold'em for the Thursday table, 3 to 9 players.",
   "icon": "https://api.github.com/repos/owner/name/releases/assets/1",
   "minPlayers": 3,
-  "maxPlayers": 6,
+  "maxPlayers": 9,
   "screenshots": ["https://api.github.com/repos/owner/name/releases/assets/2"],
   "install": {
     "pwa": null,
     "android": { "apk": "https://api.github.com/repos/owner/name/releases/assets/3" },
-    "ios": { "bundleId": "com.example.skull", "adhoc": "https://api.github.com/repos/owner/name/releases/assets/4", "testflight": null, "devices": ["iphone", "ipad"] }
+    "ios": { "bundleId": "com.example.pokernight", "adhoc": "https://api.github.com/repos/owner/name/releases/assets/4", "testflight": null, "devices": ["iphone", "ipad"] }
   }
 }
 ```
 
-`install.pwa`: the https address of the web version, normally the developer's own Cloudflare deploy (`https://<app>-web.<subdomain>.workers.dev/`), opened as is; its build carries a manifest, the Apple home screen tags and a copy of https://ourapps.app/web/install-banner.js (contract.md "Web apps"). A release-asset URL whose asset is named exactly `web.zip` is a bundle the store serves at `https://<linkId>.ourapps.app/`, kept for apps that already ship one. The install page, `/api/public/links/:id` and `/latest` report the served address, never the GitHub one; the dashboard preview reports null because no link exists yet. Served HTML gets an injected "add to home screen" banner (`/__ourapps/install.js`) and, when missing, a standalone manifest, Apple home screen tags and an icon link, so the app installs to the home screen with one tap and keeps its camera and microphone grants. When writing a web app for this, request `getUserMedia` from a tap handler and reuse the stream.
+`install.pwa`: the https address of the web version, normally the developer's own Cloudflare deploy (`https://<app>-web.<subdomain>.workers.dev/`), opened as is; its build carries a manifest, the Apple home screen tags and a copy of https://ourapps.app/web/install-banner.js (contract.md "Web apps"). A release-asset URL whose asset is named exactly `web.zip` is a bundle the store serves at `https://<linkId>.ourapps.app/`, kept for apps that already ship one. The install page, `/api/public/links/:id` and `/latest` report the served address, never the GitHub one; the dashboard preview reports null because no link exists yet. For `web.zip` apps the store injects the same "add to home screen" banner (`/__ourapps/install.js`) into served HTML and, when missing, a standalone manifest, Apple home screen tags and an icon link. Either way the app installs to the home screen with one tap and keeps its camera and microphone grants. When writing a web app for this, request `getUserMedia` from a tap handler and reuse the stream.
 
 Rules: `schema` must be 1; `id` lowercase slug; `name`, `version`, `description` non-empty; `icon` https; `minPlayers` and `maxPlayers` integers of at least 1 with min <= max; `screenshots` optional list of https URLs; optional `screenshotsByPlatform` object with keys `iphone`, `ipad`, `android`, `web`, each a list of https URLs (empty lists allowed, unknown keys rejected); `install` must name all three keys, at least one not null; `ios` needs `adhoc` or `testflight`; optional `ios.devices` lists `"iphone"` and/or `"ipad"` (display only: the page says which devices the build is for and warns on the other, never blocks). Release-asset API URLs are fetched with the developer's GitHub token and re-served to phones through signed links; any other https URL is used as is.
 

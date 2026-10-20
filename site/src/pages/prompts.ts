@@ -4,7 +4,7 @@ export function AGENT_REPO_PROMPT(v: { repo: string; appId: string; bundleId: st
   return `You are working inside the GitHub repository ${v.repo}. Set it up to publish "${v.name}" through ourapps.app, a private installer that puts apps built for friends onto their phones.
 
 Read these two documents first and follow them exactly:
-- https://ourapps.app/contract.md  (what the repository must publish and the two calls it must make)
+- https://ourapps.app/contract.md  (what the repository must publish and the calls its workflow makes)
 - https://ourapps.app/agents.md    (API reference and the my-app.json schema)
 
 Facts for this repository:

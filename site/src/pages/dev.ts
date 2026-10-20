@@ -867,8 +867,10 @@ export async function agents(root: HTMLElement): Promise<void> {
   } catch (err) {
     return failed(root, me, err);
   }
+  const repoPromptFor = (a: DevApp | undefined) => AGENT_REPO_PROMPT({ repo: a?.repo || "<owner>/<name>", appId: a?.id || "<STORE_APP_ID>", bundleId: a?.bundleId || "<bundle id>", name: a?.name || "<app name>" });
+  const filledFor = (a: DevApp | undefined) => (a ? `(filled in for ${a.name})` : "(placeholders for a new app)");
   const first = apps[0];
-  const repoPrompt = AGENT_REPO_PROMPT({ repo: first?.repo || "<owner>/<name>", appId: first?.id || "<STORE_APP_ID>", bundleId: first?.bundleId || "<bundle id>", name: first?.name || "<app name>" });
+  const repoPrompt = repoPromptFor(first);
   const storePrompt = AGENT_STORE_PROMPT();
 
   mountShell(
@@ -876,7 +878,7 @@ export async function agents(root: HTMLElement): Promise<void> {
     me,
     "Agents and API",
     html`
-      ${callout("info", html`<p><b>Everything the console does is an API, and the prompts below explain it all to an agent.</b> What stays with you: signing in, creating the GitHub token and the Apple key, the Apple portal setup for iPhone apps, creating an API key here, approving iPhones by name, and sending links to people. The <a href="/dev/guide#tldr">TL;DR in the guide</a> lists exactly those. Full reference: <a href="/agents.md">ourapps.app/agents.md</a>; repository contract: <a href="/contract.md">ourapps.app/contract.md</a>.</p>`)}
+      ${callout("info", html`<p><b>Everything the console does is an API, and the prompts below explain it all to an agent.</b> What stays with you: signing in, creating the GitHub token, the Apple key and, for web apps, the Cloudflare token, creating an API key here, approving iPhones by name, and sending links to people. The <a href="/dev/guide#tldr">TL;DR in the guide</a> lists exactly those. Full reference: <a href="/agents.md">ourapps.app/agents.md</a>; repository contract: <a href="/contract.md">ourapps.app/contract.md</a>.</p>`)}
 
       <div class="grid-2 mt">
         <div class="card">
@@ -915,11 +917,14 @@ export async function agents(root: HTMLElement): Promise<void> {
       </div>
 
       <div class="section-title"><h2>Prompts for your agents</h2></div>
+      ${apps.length > 0
+        ? html`<div class="field prompt-app"><label for="prompt-app">Project</label><select id="prompt-app">${apps.map((a) => html`<option value="${a.id}">${a.name}</option>`)}<option value="">A new app (placeholders)</option></select></div>`
+        : ""}
       <p class="muted small">Copy, fill in the angle brackets if any remain, and paste into your coding agent. The first one works inside the app repository; the second one drives this console through the API.</p>
       <div class="card">
-        <h3>1. Set up the app repository ${first ? html`<span class="faint small">(filled in for ${first.name})</span>` : ""}</h3>
+        <h3>1. Set up the app repository <span class="faint small" id="prompt-for">${filledFor(first)}</span></h3>
         <p class="small muted">Give this to an agent running inside the repository (Claude Code, Codex, Cursor, opencode). It creates the release workflow, my-app.json and the rebuild hook the contract asks for.</p>
-        <div class="prompt-box"><button class="btn sm secondary" data-copy="${repoPrompt}">${icon("copy")} Copy</button><pre>${repoPrompt}</pre></div>
+        <div class="prompt-box" id="repo-prompt"><button class="btn sm secondary" data-copy="${repoPrompt}">${icon("copy")} Copy</button><pre>${repoPrompt}</pre></div>
       </div>
       <div class="card">
         <h3>2. Manage the console through the API</h3>
@@ -929,6 +934,16 @@ export async function agents(root: HTMLElement): Promise<void> {
     `,
     { sub: "Let a coding agent do the repository work and drive this console for you." },
   );
+
+  // The repository prompt follows the chosen project; Copy reads the attribute when clicked.
+  root.querySelector<HTMLSelectElement>("#prompt-app")?.addEventListener("change", (e) => {
+    const chosen = apps.find((a) => a.id === (e.target as HTMLSelectElement).value);
+    const text = repoPromptFor(chosen);
+    const box = root.querySelector<HTMLElement>("#repo-prompt")!;
+    box.querySelector("pre")!.textContent = text;
+    box.querySelector<HTMLButtonElement>("[data-copy]")!.dataset.copy = text;
+    root.querySelector("#prompt-for")!.textContent = filledFor(chosen);
+  });
 
   const form = root.querySelector<HTMLFormElement>("#key-form")!;
   form.onsubmit = async (e) => {

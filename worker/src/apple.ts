@@ -46,10 +46,19 @@ interface Resource<A = Record<string, unknown>> {
 }
 
 export class AppleClient {
+  // One token serves every call in a request, keeping CPU time inside the Workers free plan.
+  private token: { value: string; until: number } | null = null;
+
   constructor(private env: Env, private deps: Deps, private creds: AppleCredentials) {}
 
+  private async bearer(): Promise<string> {
+    const now = this.deps.now();
+    if (!this.token || now.getTime() > this.token.until) this.token = { value: await makeToken(this.creds, now), until: now.getTime() + 5 * 60_000 };
+    return this.token.value;
+  }
+
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = await makeToken(this.creds, this.deps.now());
+    const token = await this.bearer();
     const res = await this.deps.fetch(`${this.env.APPLE_API_BASE}${path}`, {
       method,
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },

@@ -12,20 +12,11 @@ and regenerate or touch up in an editor when a label is wrong.
 
 ## Status
 
-| file | state on 2026-10-20 |
-|---|---|
-| `architecture.png` | to regenerate: shows ourapps as the web host and `web.zip`; now web apps sit on the developer's Cloudflare account and ourapps signs iPhone builds |
-| `offline.png` | to regenerate: lists `web.zip` in the release |
-| `web-cloudflare.png` | new: replaces `web-bundle.png`, which showed ourapps serving `web.zip` |
-| `web-link.png` | current |
-| `unity-web.png` | to regenerate: shows `web.zip`, pre-compressed `.br` files and ourapps as the host |
-| `realtime.png` | to regenerate: lists "web client host" under ourapps |
-| `cross-platform.png` | to regenerate: builds `web.zip` |
-| `iphone-sequence.png` | to regenerate: step 9 now fetches certificate, key and profile |
-
-After replacing `unity-web.png`, delete the sentence "The diagram shows the older web.zip path..."
-from the `topo-unity` summary in `site/src/pages/reference.ts`, and delete `web-bundle.png` and
-`web-bundle.webp` once `web-cloudflare.png` is in place.
+All eight are current. `web-link.png` was made on 2026-10-18 at 1672 by 941; the other seven
+were regenerated on 2026-10-20 at 2560 by 1440 for web apps on the developer's own Cloudflare
+account and iPhone signing by ourapps, and checked for spelling and technical accuracy. The
+`architecture.png` arrow from "iPhone enrolment" to Apple lacks its "register device" label.
+The PNGs are the masters; the site serves the WebP copies.
 
 ## Shared style (already included in every prompt below)
 

@@ -3,7 +3,8 @@ import { finishLogin, logout, logoutEverywhere, oauthConfigured, requireDevelope
 import { defaultDeps, type Deps, type Env } from "./env.js";
 import { randomId } from "./crypto.js";
 import { HttpError, json } from "./http.js";
-import { buildProfile, buildReady, buildSigning } from "./routes/build.js";
+import { buildProfile, buildReady, buildSigning, buildTestflight } from "./routes/build.js";
+import { tickTestflight } from "./testflight.js";
 import * as dev from "./routes/dev.js";
 import { PROFILE_TYPE, enrolCallback, enrolLatest, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
@@ -98,6 +99,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
   if (p[0] === "build-ready" && m === "POST") return buildReady(request, env, deps);
   if (p[0] === "build" && p.length === 3 && p[2] === "profile" && m === "GET") return buildProfile(request, env, p[1]);
   if (p[0] === "build" && p.length === 3 && p[2] === "signing" && (m === "GET" || m === "HEAD")) return buildSigning(request, env, p[1]);
+  if (p[0] === "build" && p.length === 4 && p[2] === "testflight" && (p[3] === "upload" || p[3] === "commit") && m === "POST") return buildTestflight(request, env, deps, p[1], p[3]);
 
   if (p[0] === "dev") {
     const me = await requireDeveloper(request, env, deps);
@@ -108,6 +110,7 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     if (p[1] === "me" && m === "PUT") return dev.updateMe(request, env, me);
     if (p[1] === "secrets" && m === "PUT") return dev.updateSecrets(request, env, deps, me);
     if (p[1] === "signing" && p.length === 2 && m === "POST") return dev.setUpSigning(request, env, deps, me);
+    if (p[1] === "review-contact" && p.length === 2 && m === "PUT") return dev.updateReviewContact(request, env, me);
     if (p[1] === "apps") {
       if (p.length === 2 && m === "GET") return dev.listApps(env, deps, me);
       if (p.length === 2 && m === "POST") return dev.createApp(request, env, deps, me);
@@ -119,6 +122,8 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
       if (p.length === 4 && p[3] === "preview" && m === "GET") return dev.previewApp(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "links" && m === "POST") return dev.createLink(request, env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "profile" && m === "POST") return dev.refreshAppProfile(env, deps, me, p[2]);
+      if (p.length === 4 && p[3] === "testflight" && m === "GET") return dev.testflightStatus(env, me, p[2]);
+      if (p.length === 4 && p[3] === "testflight" && m === "POST") return dev.setUpAppTestflight(env, deps, me, p[2]);
     }
     if (p[1] === "links" && p.length === 4 && p[3] === "revoke" && m === "POST") return dev.revokeLink(env, deps, me, p[2], false);
     if (p[1] === "links" && p.length === 3 && m === "DELETE") return dev.revokeLink(env, deps, me, p[2], true);
@@ -142,4 +147,6 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
 
 export default {
   fetch: (request: Request, env: Env) => handle(request, env),
+  // Every ten minutes: TestFlight builds into the friends' group and fresh builds before expiry.
+  scheduled: (_event: ScheduledController, env: Env, ctx: ExecutionContext) => ctx.waitUntil(tickTestflight(env, defaultDeps)),
 } satisfies ExportedHandler<Env>;

@@ -11,6 +11,11 @@ export interface Developer {
   createdAt: string;
   termsAcceptedVersion: string | null;
   termsAcceptedAt: string | null;
+  // Who Apple's TestFlight beta review contacts.
+  reviewFirstName?: string | null;
+  reviewLastName?: string | null;
+  reviewEmail?: string | null;
+  reviewPhone?: string | null;
 }
 
 export interface DeveloperSecrets {
@@ -55,6 +60,14 @@ export interface AppRow {
   profileName: string;
   bundleId: string;
   showOnPage: boolean;
+  // TestFlight: the App Store Connect app, its external group and public link, and the App Store profile.
+  ascAppId?: string | null;
+  betaGroupId?: string | null;
+  testflightUrl?: string | null;
+  storeProfileId?: string | null;
+  storeProfileUuid?: string | null;
+  storeProfileName?: string | null;
+  storeProfileBase64?: string | null;
   buildTokenHash: string;
   createdAt: string;
   updatedAt: string;
@@ -117,6 +130,25 @@ export interface AuditRow {
   detail: string;
   country: string | null;
   createdAt: string;
+}
+
+// uploading: reserved at Apple; uploaded: bytes sent; processing: Apple is processing; distributed: in the
+// beta group and sent for beta review; needs-compliance: the build lacks an export compliance answer.
+export type TestflightState = "uploading" | "uploaded" | "processing" | "distributed" | "needs-compliance" | "failed";
+
+export interface TestflightBuildRow {
+  id: number;
+  appId: string;
+  version: string;
+  buildNumber: string;
+  uploadId: string | null;
+  uploadFileId: string | null;
+  buildId: string | null;
+  whatsNew: string | null;
+  state: TestflightState;
+  message: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProfileRow {
@@ -411,6 +443,50 @@ export class Db {
   async revokeApiKey(id: string, developerId: string, now: string): Promise<boolean> {
     const res = await this.d1.prepare("UPDATE api_keys SET revoked_at = ? WHERE id = ? AND developer_id = ? AND revoked_at IS NULL").bind(now, id, developerId).run();
     return (res.meta.changes ?? 0) > 0;
+  }
+
+  // TestFlight
+
+  async setReviewContact(id: string, c: { firstName: string; lastName: string; email: string; phone: string }): Promise<void> {
+    await this.d1.prepare("UPDATE developers SET review_first_name = ?, review_last_name = ?, review_email = ?, review_phone = ? WHERE id = ?").bind(c.firstName, c.lastName, c.email, c.phone, id).run();
+  }
+
+  async setAppTestflight(app: AppRow): Promise<void> {
+    await this.d1
+      .prepare("UPDATE apps SET asc_app_id = ?, beta_group_id = ?, testflight_url = ?, store_profile_id = ?, store_profile_uuid = ?, store_profile_name = ?, store_profile_base64 = ? WHERE id = ?")
+      .bind(app.ascAppId ?? null, app.betaGroupId ?? null, app.testflightUrl ?? null, app.storeProfileId ?? null, app.storeProfileUuid ?? null, app.storeProfileName ?? null, app.storeProfileBase64 ?? null, app.id)
+      .run();
+  }
+
+  async appsWithTestflight(): Promise<AppRow[]> {
+    const res = await this.d1.prepare("SELECT * FROM apps WHERE asc_app_id IS NOT NULL").all<Raw>();
+    return res.results.map((r) => row<AppRow>(r, appConvert)!);
+  }
+
+  async insertTestflightBuild(b: Omit<TestflightBuildRow, "id">): Promise<number> {
+    const res = await this.d1
+      .prepare("INSERT INTO testflight_builds (app_id, version, build_number, upload_id, upload_file_id, build_id, whats_new, state, message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(b.appId, b.version, b.buildNumber, b.uploadId, b.uploadFileId, b.buildId, b.whatsNew, b.state, b.message, b.createdAt, b.updatedAt)
+      .run();
+    return Number(res.meta.last_row_id);
+  }
+
+  async testflightBuild(appId: string, fileId: string): Promise<TestflightBuildRow | null> {
+    return row<TestflightBuildRow>(await this.d1.prepare("SELECT * FROM testflight_builds WHERE app_id = ? AND upload_file_id = ?").bind(appId, fileId).first());
+  }
+
+  async testflightBuilds(appId: string, limit = 5): Promise<TestflightBuildRow[]> {
+    const res = await this.d1.prepare("SELECT * FROM testflight_builds WHERE app_id = ? ORDER BY id DESC LIMIT ?").bind(appId, limit).all<Raw>();
+    return res.results.map((r) => row<TestflightBuildRow>(r)!);
+  }
+
+  async pendingTestflightBuilds(): Promise<TestflightBuildRow[]> {
+    const res = await this.d1.prepare("SELECT * FROM testflight_builds WHERE state IN ('uploaded', 'processing', 'needs-compliance') ORDER BY id LIMIT 20").all<Raw>();
+    return res.results.map((r) => row<TestflightBuildRow>(r)!);
+  }
+
+  async updateTestflightBuild(b: TestflightBuildRow): Promise<void> {
+    await this.d1.prepare("UPDATE testflight_builds SET build_id = ?, whats_new = ?, state = ?, message = ?, updated_at = ? WHERE id = ?").bind(b.buildId, b.whatsNew, b.state, b.message, b.updatedAt, b.id).run();
   }
 
   // Build durations

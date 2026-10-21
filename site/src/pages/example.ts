@@ -100,16 +100,16 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <p class="small muted">The audience is private and non-commercial, which lowers the stakes to those of a private joke, but it is still your responsibility: use photos you took or were given, and keep anything you borrowed inside the circle. The moment the app is for strangers, swap in art you own.</p>
 
           <h2>Test a real app with real people</h2>
-          <p>The same mechanism carries serious projects. Before an app ever meets an app store review you can put it on up to 100 iPhones and 100 iPads a year and as many Android phones as you like: real phones, real friends, real feedback, no 90-day TestFlight expiry dance. Family beta, club pilot, the first ten customers who happen to be mates.</p>
+          <p>The same mechanism carries serious projects. Before an app ever meets an App Store listing you can put it on up to 10,000 iPhones and iPads through TestFlight, which ourapps keeps fresh for you, and on as many Android phones as you like: real phones, real friends, real feedback. Family beta, club pilot, the first ten customers who happen to be mates.</p>
 
           <h2>How it got built: an agent and an evening</h2>
-          <p>Describe the table to a coding agent (Claude Code, Codex, Cursor, opencode): who sits where, the three blind structures, the four rules, the slang. It writes the app. Paste the ourapps prompt from the console and it writes the release workflow too, including the hook that rebuilds for each new iPhone. You spend the evening on the house rules and the help text, which is the part only you can do.</p>
+          <p>Describe the table to a coding agent (Claude Code, Codex, Cursor, opencode): who sits where, the three blind structures, the four rules, the slang. It writes the app. Paste the ourapps prompt from the console and it writes the release workflow too, including the TestFlight upload. You spend the evening on the house rules and the help text, which is the part only you can do.</p>
 
           <h2>How ourapps helps</h2>
           <ol class="steps">
             <li><b>Add the app.</b> Name, icon, a few lines, the GitHub repository. Blank fields get placeholders, so the page looks finished from day one.</li>
             <li><b>Create a share link.</b> One for the table, labelled "Thursday". It has a QR code for the fridge.</li>
-            <li><b>Friends tap.</b> Android downloads and installs. iPhones register in one tap; you approve them in the console and the app rebuilds itself to include them. Their page turns into an Install button.</li>
+            <li><b>Friends tap.</b> Android downloads and installs. iPhones get Apple's free TestFlight app, open the invitation on the page, and tap Install.</li>
             <li><b>Ship changes from the same link.</b> Push a tag, the release updates, the link serves the new version.</li>
           </ol>
 
@@ -118,10 +118,10 @@ export async function examplePage(root: HTMLElement): Promise<void> {
             <div class="card">
               <h3>${icon("phone", "icon-20")} iPhone</h3>
               <ul>
-                <li><b>100 iPhones and 100 iPads per year, across all your apps.</b> Apple counts devices on your developer account, not per app. Eight friends on three apps use eight slots, not twenty four.</li>
-                <li>Removing a device does not free its slot until the membership year renews, so approve people, not experiments.</li>
-                <li>Each build stops opening a year after its signing profile was made. Ship a build before then; friends tap Update.</li>
-                <li>Past 100 people: TestFlight (10,000 testers, builds expire after 90 days) or the App Store.</li>
+                <li><b>Through TestFlight:</b> friends need Apple's free TestFlight app; up to 10,000 people per app.</li>
+                <li>Apple's beta review checks the first build of each version, usually within a day. It is lighter than App Store review, but Apple's rules still apply.</li>
+                <li>Each build lasts 90 days. ourapps asks your repository for a fresh build before then, so friends keep the app.</li>
+                <li>Needs the Apple Developer Program, 99 US dollars a year.</li>
               </ul>
             </div>
             <div class="card">
@@ -139,8 +139,8 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <h2>How updates happen</h2>
           <p><b>Nothing updates behind anyone's back.</b> There is no store running in the background, so an installed copy stays as it is until the friend taps Update. What that takes:</p>
           <div class="compare">
-            <div class="card"><h3>For your friends</h3><ul><li><b>iPhone:</b> one tap on Update (in the app, or on the same share link), one tap on Install. Settings and saved data stay; no new registration, no slot used.</li><li><b>Android:</b> tap Update, tap Install when the phone asks. Data stays as long as you signed with the same key.</li><li><b>Web app:</b> nothing; it refreshes itself.</li></ul></div>
-            <div class="card"><h3>For you</h3><ul><li>Push a tag. The workflow publishes a release; the share link serves it at once.</li><li>Existing iPhones need no approval; the profile already includes them. Only new phones go through the approval flow.</li><li>Bump the version numbers (Android versionCode, iOS CFBundleVersion) or phones will refuse the update.</li><li>Do not change the Android signing key, ever.</li></ul></div>
+            <div class="card"><h3>For your friends</h3><ul><li><b>iPhone:</b> TestFlight installs the new version, by itself when automatic updates are on. Settings and saved data stay.</li><li><b>Android:</b> tap Update, tap Install when the phone asks. Data stays as long as you signed with the same key.</li><li><b>Web app:</b> nothing; it refreshes itself.</li></ul></div>
+            <div class="card"><h3>For you</h3><ul><li>Push a tag. The workflow publishes a release; the share link serves it at once.</li><li>ourapps uploads the iPhone build to TestFlight and sends it to your friends once Apple has processed it.</li><li>Bump the version numbers (Android versionCode, iOS CFBundleVersion) or phones will refuse the update.</li><li>Do not change the Android signing key, ever.</li></ul></div>
           </div>
 
           <h2>Setting up auto-update</h2>
@@ -163,7 +163,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <p>The <a href="/dev/guide#updates">guide</a> has the Swift and Kotlin snippets, and the agent prompt asks your coding agent to add the check for you.</p>
 
           <h2>And the path to the real store later</h2>
-          <p>When Poker Night is ready for strangers, nothing is thrown away. The same code and the same release workflow sign with an App Store profile instead of the Ad Hoc one; the private photos make way for art you own; a privacy policy gets written; the build goes to TestFlight and then to review. Your friends keep installing from their link the whole time, and afterwards too, if you like.</p>
+          <p>When Poker Night is ready for strangers, nothing is thrown away. The same code and the same release workflow already sign for the App Store and upload to TestFlight; the private photos make way for art you own, a privacy policy gets written, and the build goes to App Store review. Your friends keep installing from their link the whole time, and afterwards too, if you like.</p>
 
           <div class="card pad-l mt center">
             <h2 style="margin-top:0">Your Poker Night is something else</h2>

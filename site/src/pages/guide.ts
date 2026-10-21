@@ -27,13 +27,13 @@ function sections(origin: string, slug: string): Section[] {
         </ol>
         <h3>You, once per app</h3>
         <ol class="steps">
-          <li><b>iPhone apps: nothing in the Apple portal.</b> The app needs its iPhone bundle ID, which the agent sets when it registers the app. ourapps creates the App ID, the Ad Hoc profile and the certificate it signs with, and the repository holds no Apple secrets. <a href="/dev/guide#apple-setup">What it does</a>.</li>
+          <li><b>iPhone apps: nothing in the Apple portal, one step in App Store Connect.</b> The app needs its iPhone bundle ID, which the agent sets when it registers the app. ourapps creates the App ID, the profile and the certificate it signs with, and the repository holds no Apple secrets. Add the app once in App Store Connect and press <b>Set up TestFlight</b> on its page. <a href="/dev/guide#devices">How</a>.</li>
           <li><b>Android apps: put the signing keystore into the repository</b>, with its passwords. The agent can run <code>gh secret set</code> for you if you hand it the values, but the values come from you.</li>
           <li><b>Web apps: add the two Cloudflare secrets</b> (<code>CLOUDFLARE_API_TOKEN</code>, <code>CLOUDFLARE_ACCOUNT_ID</code>) to the repository, the same way.</li>
         </ol>
         <h3>You, as things happen</h3>
         <ol class="steps">
-          <li><b>Approve each new iPhone</b> under <a href="/dev/devices">Devices</a>, or tell your agent to approve by name. This is a judgement call because each approval uses one of your 100 yearly device slots.</li>
+          <li><b>Answer Apple if a build waits</b> on the app's page: the first build of each new version goes through Apple's beta review, usually within a day.</li>
           <li><b>Send the share link</b> to the person. The agent can create it and give you the URL and QR code; the message to your friend is yours.</li>
           <li><b>Before the yearly expiry</b> (shown on each app's Latest release card), ship a build and ask friends to tap Update. The agent can cut the release.</li>
           <li><b>Approve the release notes</b> for each version in <code>CHANGELOG.md</code>. An agent drafts them from the commits; they are shown to your friends as the revision history, so the final words are yours. <a href="/dev/guide#release-notes">How</a>.</li>
@@ -41,7 +41,7 @@ function sections(origin: string, slug: string): Section[] {
         <h3>Everything else: hand it to an agent</h3>
         <ul class="bullets">
           <li>Registering the app with its listing text, icon and screenshots (<code>POST /api/dev/apps</code>).</li>
-          <li>Writing the release workflow, my-app.json, the rebuild hook and the in-app update check in the repository (prompt 1).</li>
+          <li>Writing the release workflow, my-app.json, the TestFlight upload and the in-app update check in the repository (prompt 1).</li>
           <li>Storing <code>STORE_BUILD_TOKEN</code> and <code>STORE_APP_ID</code> as repository secrets.</li>
           <li>Cutting releases, checking <code>/release</code> status and fixing what it reports.</li>
           <li>Creating, labelling, revoking share links; listing waiting devices; approving the ones you name (prompt 2).</li>
@@ -57,7 +57,7 @@ function sections(origin: string, slug: string): Section[] {
         <p>ourapps puts apps you build onto the phones of people you know, without the App Store or Google Play. You add an app in this console, create a share link, and send it. Your friend taps the link and gets an install page that looks like the store they already use.</p>
         <div class="grid-2">
           <div class="card flat"><h3>${icon("android", "icon-20")} Android</h3><p>The page offers a direct download of your signed APK and walks the friend through the one-time "allow from this source" prompt. Nothing else is needed.</p></div>
-          <div class="card flat"><h3>${icon("phone", "icon-20")} iPhone</h3><p>Apple only runs an app on iPhones whose device number is in the app's signing profile. The page registers the friend's iPhone, you approve it, the console registers it with Apple and asks your repository to rebuild, and the page turns into an Install button. This is Apple's Ad Hoc distribution; no review, no TestFlight, 100 iPhones and 100 iPads per year. iPads work the same way.</p></div>
+          <div class="card flat"><h3>${icon("phone", "icon-20")} iPhone and iPad</h3><p>Friends install through Apple's free TestFlight app from an invitation on the install page: no registration, no approvals, nothing to change on their phone. ourapps signs each build, uploads it to TestFlight and sends it to your friends; Apple reviews the first build of each version, and ourapps asks for a fresh build before the 90-day expiry.</p></div>
           <div class="card flat"><h3>${icon("globe", "icon-20")} Web apps</h3><p>Your repository deploys the built site to your own free Cloudflare account, which serves plain files without a request limit. The install page opens it, and the app offers a one-tap add to the home screen. Details in the <a href="/reference#web">reference</a>.</p></div>
           <div class="card flat"><h3>${icon("lock", "icon-20")} Private by design</h3><p>No search, no listing, no index. Install pages live at random addresses, the app files are served through links that expire after an hour, and a share link can be revoked at any time.</p></div>
         </div>
@@ -103,7 +103,7 @@ function sections(origin: string, slug: string): Section[] {
         ${callout("info", html`<p>When you add a new app repository later, edit the token on GitHub and add the repository to it. The console does not need a new token.</p>`)}
 
         <h3 id="apple-key">App Store Connect API key (iPhone apps)</h3>
-        <p>This is how the console creates the certificate your iPhone builds are signed with, registers your friends' iPhones with Apple and rebuilds the signing profile. You need a paid Apple Developer Program membership (the same one you need to run your app on any iPhone for more than a week).</p>
+        <p>This is how the console creates the certificate your iPhone builds are signed with, its profiles, and puts builds on TestFlight. You need a paid Apple Developer Program membership (99 US dollars a year).</p>
         <ol class="steps">
           <li>Open <a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noopener">App Store Connect, Users and Access, Integrations, App Store Connect API</a>. If you have never used it, tap <b>Request Access</b> first.</li>
           <li>Under <b>Team Keys</b>, tap the plus. Name: <b>ourapps</b>. Access: <b>Admin</b>. Certificates, devices and provisioning profiles are only editable with Admin, which is why the lower roles do not work.</li>
@@ -117,10 +117,10 @@ function sections(origin: string, slug: string): Section[] {
         <p>Saving the App Store Connect key sets up iPhone signing by itself; <b>Set up iPhone signing</b> under <a href="/dev/settings#signing">Settings</a> runs it again. Nothing is done by hand in the Apple developer portal:</p>
         <ol class="steps">
           <li>Your browser makes a private key and a certificate request. ourapps asks Apple for an <b>Apple Distribution</b> certificate with it and keeps the key encrypted like your credentials.</li>
-          <li>For each app with an <b>iPhone bundle ID</b>, ourapps finds or creates the App ID and makes an <b>Ad Hoc</b> profile named after the app, holding every iPhone and iPad registered on your account. Each approval makes it again with the new device.</li>
+          <li>For each app with an <b>iPhone bundle ID</b>, ourapps finds or creates the App ID. <b>Set up TestFlight</b> on the app's page makes its <b>App Store</b> profile.</li>
           <li>The release workflow fetches certificate, key and profile with the app's build token from <code>/api/build/&lt;app&gt;/signing</code>, so the repository holds no Apple secrets. The <a href="/contract.md">contract</a> shows the exact commands.</li>
         </ol>
-        ${callout("info", html`<p>Apple makes an Ad Hoc profile only once at least one device is registered. On a new Apple account, open your own share link on your iPhone and approve it; that registers the device and makes the profile.</p>`)}
+        ${callout("info", html`<p>TestFlight needs the app added once in App Store Connect; the app's page lists the exact values. See <a href="#devices">step 6</a>.</p>`)}
         <p class="small muted">The certificate lasts a year: replace it under Settings before then and publish a release. Replacing leaves the old certificate valid until it expires or you revoke it in the developer portal, so installed apps keep working.</p>
 
         <h3 id="cloudflare">Cloudflare account (web apps)</h3>
@@ -161,8 +161,8 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
           <tr><td>Size, compatibility, age</td><td>Facts strip and Information</td><td>Compatibility is free text, for example "iOS 17 or later".</td></tr>
           <tr><td>Screenshots</td><td>Preview carousel, per version</td><td>A general list plus optional lists for iPhone, iPad, Android and Web, one URL per line, in their own proportions. A version without its own list shows the general one; a single list is shown for every version. Blank lists fall back to my-app.json (<code>screenshots</code> and <code>screenshotsByPlatform</code>), then to generated previews. On a phone or tablet the page shows the matching version; on a computer, a tab per version.</td></tr>
           <tr><td>Repository</td><td>Not shown</td><td><code>owner/name</code>. The console reads the latest release here.</td></tr>
-          <tr><td>iPhone bundle ID</td><td>Not shown</td><td>The bundle identifier in your Xcode project. ourapps creates the App ID and the Ad Hoc profile for it.</td></tr>
-          <tr><td>Ad Hoc profile name</td><td>Not shown</td><td>Optional; blank becomes the app's name followed by "Ad Hoc".</td></tr>
+          <tr><td>iPhone bundle ID</td><td>Not shown</td><td>The bundle identifier in your Xcode project. ourapps creates the App ID and the profiles for it.</td></tr>
+          <tr><td>Ad Hoc profile name</td><td>Not shown</td><td>Only for the Ad Hoc route (Developer Mode); leave blank.</td></tr>
           <tr><td>Show on my public page</td><td>Your /${slug} page</td><td>Details only, never install links. Off by default.</td></tr>
         </table>
         <p>On <b>Create</b>, the console shows the app's <b>build token</b> once, together with the app id. Put both into the repository as Actions secrets straight away:</p>
@@ -182,10 +182,10 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
         ${callout("info", html`<p><b>For your information.</b> Prompt 1 on <a href="/dev/agents">Agents and API</a>, pasted into a coding agent inside the repository, writes everything in this section. What remains for you is the Android signing keystore.</p>`)}
         <p>The console never looks at your source code. It reads one file, <code>my-app.json</code>, from the latest GitHub Release of the repository, and follows the URLs inside it. Your repository therefore needs a release workflow that:</p>
         <ol class="steps">
-          <li>Builds the signed APK and, for iPhone apps, the Ad Hoc signed <code>.ipa</code>.</li>
+          <li>Builds the signed APK and, for iPhone apps, an <code>.ipa</code> signed for the App Store, which it uploads to TestFlight through ourapps.</li>
           <li>Creates a GitHub Release as a draft, uploads <code>icon.png</code>, screenshots, the <code>.apk</code>, for iPhone <code>manifest.plist</code> plus the <code>.ipa</code>, and <code>my-app.json</code> last, then publishes it. A release that goes public before its files are in makes install pages fail until <code>my-app.json</code> arrives.</li>
           <li>Writes every URL inside my-app.json and manifest.plist as a release-asset API URL (<code>https://api.github.com/repos/owner/name/releases/assets/123</code>). Private repositories work this way and nothing is guessable; the console turns them into short-lived links for the phone.</li>
-          <li>For iPhone apps: fetches the certificate, its key and the profile from the console with the build token, and also runs on the <code>my-store-rebuild</code> event, after which it calls <code>/api/build-ready</code>. The <a href="/contract.md">contract</a> spells out every field.</li>
+          <li>For iPhone apps: fetches the certificate, its key and the App Store profile from the console with the build token, uploads the build through ourapps, and also runs on the <code>my-store-release</code> event ourapps sends before a TestFlight build expires. The <a href="/contract.md">contract</a> spells out every step.</li>
         </ol>
         ${callout("info", html`<p><b>Let an agent do it.</b> On <a href="/dev/agents">Agents and API</a> there is a prompt, pre-filled for your app, that you paste into a coding agent working inside the repository. It writes the workflow, my-app.json generation and the rebuild hook to the contract.</p>`)}
         <h3>What my-app.json looks like</h3>
@@ -202,7 +202,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
   "install": {
     "pwa": null,
     "android": { "apk": "https://api.github.com/repos/you/skull/releases/assets/645774607" },
-    "ios": { "bundleId": "com.you.skull", "adhoc": "https://api.github.com/repos/you/skull/releases/assets/645774612", "testflight": null }
+    "ios": { "bundleId": "com.you.skull", "adhoc": null, "testflight": "https://testflight.apple.com/join/AbCd1234" }
   }
 }</code></pre>
         <p>Use <code>null</code> for platforms you do not ship. <code>minPlayers</code> and <code>maxPlayers</code> are 1 for anything that is not a game.</p>
@@ -280,54 +280,54 @@ startButton.onclick = async () => {
         <h3>What the friend sees</h3>
         <div class="grid-2">
           <div class="card flat"><h3>On Android</h3><ol class="steps small"><li>Taps <b>Get</b>; the APK downloads.</li><li>Taps the download; Android asks to allow installs from Chrome, once.</li><li>Taps Install. Play Protect may say it has not seen this developer before; "Install anyway" continues.</li></ol></div>
-          <div class="card flat"><h3>On iPhone</h3><ol class="steps small"><li>Taps <b>Get</b>, types their name, taps <b>Register this iPhone</b>.</li><li>Opens Settings, Profile Downloaded, Install. The page switches to a progress view.</li><li>You approve in Devices; the page shows "Building" then "Install". One tap, the icon appears.</li></ol></div>
+          <div class="card flat"><h3>On iPhone</h3><ol class="steps small"><li>Taps <b>Get</b>, then <b>Get TestFlight</b> if they do not have Apple's TestFlight app.</li><li>Taps <b>Open the invitation</b>; TestFlight opens.</li><li>Taps <b>Accept</b>, then <b>Install</b>. The icon appears; TestFlight keeps it up to date.</li></ol></div>
         </div>
         <p>On a computer the page shows the QR code and asks them to open it on their phone.</p>
       `,
     },
     {
       id: "devices",
-      title: "6. Approve iPhones (you decide, agent can execute)",
+      title: "6. iPhone and iPad through TestFlight (ourapps does the work)",
       body: html`
-        <p>Every iPhone that registers through one of your links shows up in <a href="/dev/devices">Devices</a> with the name the friend typed, the phone model and its state. The overview page also counts the ones waiting for you. An agent can list who is waiting and approve the ones you name; the decision stays yours because each approval spends one of the 100 yearly slots.</p>
-        <table class="table">
-          <tr><th>State</th><th>Meaning</th><th>You</th></tr>
-          <tr><td>awaiting device</td><td>Tapped Register, has not installed the profile yet</td><td>Nothing; remove if abandoned</td></tr>
-          <tr><td>pending approval</td><td>The iPhone sent its device number</td><td><b>Approve</b> or Reject</td></tr>
-          <tr><td>registering</td><td>Talking to Apple</td><td>Wait</td></tr>
-          <tr><td>building</td><td>Apple accepted it; the repository was asked to rebuild</td><td>Wait for the workflow (10 to 20 minutes on a macOS runner). The friend's page shows a progress ring timed from this app's recent builds.</td></tr>
-          <tr><td>ready</td><td>The friend's page shows Install</td><td>Done</td></tr>
-          <tr><td>failed</td><td>Apple or GitHub refused; the message says why</td><td>Fix the cause, Approve again</td></tr>
-        </table>
-        <h3>What Approve does</h3>
+        <p>Friends install iPhone and iPad apps through Apple's free TestFlight app, from an invitation link ourapps shows on the install page. Nothing on their phone changes: no profile, no Developer Mode, no device registration, and nothing for you to approve.</p>
+        <h3>Once per app</h3>
         <ol class="steps">
-          <li>Registers the device with Apple under the friend's name (or finds it if it was registered before).</li>
-          <li>Deletes and recreates the Ad Hoc profile with every enabled iPhone and iPad on your team. Apple profiles cannot be edited, only replaced; the name stays the same.</li>
-          <li>Sends <code>my-store-rebuild</code> to the repository with the profile id and the new device. The workflow fetches the certificate, its key and the new profile from the console with its build token.</li>
-          <li>When the workflow publishes and calls <code>/api/build-ready</code>, the console marks ready every waiting device whose number is inside that profile. A device approved after the workflow had already fetched the profile is not in that build, so the console sends one more rebuild for it automatically.</li>
+          <li>Add the app in <a href="https://appstoreconnect.apple.com/apps" target="_blank" rel="noopener">App Store Connect</a>: the plus, <b>New App</b>, platform <b>iOS</b>, the app's name and its <b>iPhone bundle ID</b>, any SKU. Apple has no way for ourapps to do this step.</li>
+          <li>Save the <a href="/dev/settings#review-contact">TestFlight review contact</a> in Settings, once for all apps.</li>
+          <li>On the app's page press <b>Set up TestFlight</b>. ourapps makes the App Store profile, a beta group with a public invitation link, and fills in what Apple's beta review needs.</li>
         </ol>
-        ${callout("warn", html`<p><b>100 iPhones and, separately, 100 iPads per membership year, across all your apps.</b> Apple counts devices on your account, not per app, and counts registrations rather than current devices: removing a device does not give the slot back until your membership renews. Approve people, not experiments, and register your own test phones once.</p>`)}
-        <p><b>Approve your own iPhone first.</b> Open your share link on your phone like a friend would; you will see every screen they see and catch problems before anyone else does.</p>
+        <h3>Every release</h3>
+        <table class="table">
+          <tr><th>State on the app page</th><th>Meaning</th></tr>
+          <tr><td>uploading</td><td>The workflow is sending the build to Apple through ourapps</td></tr>
+          <tr><td>with Apple, processing</td><td>Apple is processing the build, usually 5 to 30 minutes</td></tr>
+          <tr><td>needs an answer</td><td>Apple wants the export compliance answer: set <code>ITSAppUsesNonExemptEncryption</code> in Info.plist, or answer it for the build in App Store Connect</td></tr>
+          <tr><td>sent to friends</td><td>In the friends' group and with Apple's beta review if the version is new; friends get it once approved, usually within a day</td></tr>
+        </table>
+        ${callout("info", html`<p><b>Builds last 90 days.</b> ourapps checks every ten minutes and asks the repository for a fresh build (<code>my-store-release</code>) two weeks before the newest one expires, so friends keep the app without you doing anything. The invitation link appears once Apple has approved the first build.</p>`)}
+        <p class="small muted">Apple's beta review is lighter than App Store review, but Apple's rules apply. Up to 10,000 people per app can join through the link.</p>
+        <h3>Ad Hoc, for phones in Developer Mode</h3>
+        <p class="small muted">The older route registered each friend's iPhone and built a copy for it. Since iOS 16 such builds only open with Developer Mode switched on, so ourapps no longer offers it to friends. <a href="/dev/devices">Devices</a> still lists phones registered that way.</p>
       `,
     },
     {
       id: "updates",
-      title: "7. Updates, auto-update and the yearly re-sign (agent does the work)",
+      title: "7. Updates and auto-update (agent does the work)",
       sub: [{ id: "auto-update", title: "Auto-update" }],
       body: html`
-        <p><b>Nothing updates on its own.</b> There is no store app running in the background on your friends' phones, so an installed copy stays as it is until someone taps Update. Here is what each side does.</p>
+        <p><b>Android and web do not update on their own, iPhone does.</b> TestFlight installs new iPhone builds itself; Android has no store in the background, so an installed copy stays as it is until someone taps Update. Here is what each side does.</p>
         <table class="table">
           <tr><th>Who</th><th>What happens</th></tr>
-          <tr><td>You</td><td>Bump the version, push a tag. The workflow publishes a release and the share link serves the new version at once. Existing iPhones need no approval; the signing profile already contains them.</td></tr>
-          <tr><td>Friend on iPhone</td><td>Taps Update (in the app, or Get on the same share link), then Install on Apple's prompt. The app is replaced in place; settings and data stay. No new registration, no device slot used.</td></tr>
+          <tr><td>You</td><td>Bump the version, push a tag. The workflow publishes a release and uploads the iPhone build to TestFlight; the share link serves the new version at once.</td></tr>
+          <tr><td>Friend on iPhone</td><td>Nothing, with TestFlight's automatic updates on; otherwise one tap on Update in TestFlight. Settings and data stay.</td></tr>
           <tr><td>Friend on Android</td><td>Taps Update, then Install when the phone asks. Data stays as long as the signing key is the same.</td></tr>
           <tr><td>Friend on a web app</td><td>Nothing. The next time the app opens it loads the new version, unless the app's own service worker keeps an old copy.</td></tr>
         </table>
         <ul class="bullets">
           <li><b>Version numbers must go up:</b> Android <code>versionCode</code> and iOS <code>CFBundleVersion</code>, or the phone refuses the update as "older".</li>
           <li><b>Never change the Android signing key.</b> A different key means uninstall and reinstall, with data loss.</li>
-          <li><b>iPhone builds expire</b> one year after their provisioning profile was created; after that the app will not open. The app's Latest release card shows the date. Ship a build before then and ask friends to tap Update. Approving any device recreates the profile with a fresh year.</li>
-          <li><b>Removing someone:</b> revoke their link. Installed copies keep working until the profile expires; there is no remote uninstall, same as any app.</li>
+          <li><b>TestFlight builds expire</b> 90 days after upload. ourapps asks the repository for a fresh build two weeks before, so this needs nothing from you; the app's page shows each build's state.</li>
+          <li><b>Removing someone:</b> revoke their link. Installed copies keep working; TestFlight testers can be removed in App Store Connect. There is no remote uninstall, same as any app.</li>
         </ul>
 
         <h3 id="auto-update">Auto-update: let the app check for itself</h3>
@@ -337,7 +337,8 @@ startButton.onclick = async () => {
 {
   "name": "Skull",
   "version": "0.1.2",
-  "ios":     { "installUrl": "itms-services://?action=download-manifest&url=https%3A%2F%2Fourapps.app%2Fdl%2F...", "manifestUrl": "https://ourapps.app/dl/...", "bundleId": "com.you.skull" },
+  "ios":     null,
+  "testflightUrl": "https://testflight.apple.com/join/AbCd1234",
   "android": { "apkUrl": "https://ourapps.app/dl/..." },
   "pwa": null,
   "linksExpireAt": "2026-10-16T11:00:00.000Z"
@@ -345,12 +346,12 @@ startButton.onclick = async () => {
         <ol class="steps">
           <li>Create a share link labelled <b>In-app updates</b> and never revoke it (revoking it stops update checks for everyone who has the app). Put its id in the app.</li>
           <li>On launch, fetch <code>/latest</code>. Compare <code>version</code> with the running version. Do this quietly; a failed fetch means no update, not an error.</li>
-          <li>If newer, show one button. iPhone: open <code>ios.installUrl</code>; iOS shows its own Install prompt and replaces the app. Android: open <code>android.apkUrl</code> in the browser; the phone downloads and asks to install.</li>
+          <li>If newer, show one button. Android: open <code>android.apkUrl</code> in the browser; the phone downloads and asks to install. iPhone apps from TestFlight need no button: TestFlight updates them, and <code>testflightUrl</code> opens TestFlight if you want one.</li>
           <li>Fetch right before opening the link, because the signed links inside are good for an hour.</li>
         </ol>
         <p class="small muted">The agent prompt on <a href="/dev/agents">Agents and API</a> asks your coding agent to add this check.</p>
         <h3>Swift (iOS)</h3>
-        <pre><code>struct Latest: Decodable { let version: String; let ios: IOS?; struct IOS: Decodable { let installUrl: String } }
+        <pre><code>struct Latest: Decodable { let version: String; let testflightUrl: String? }
 
 func checkForUpdate() async {
     guard let url = URL(string: "https://ourapps.app/api/public/links/LINK_ID/latest"),
@@ -358,7 +359,7 @@ func checkForUpdate() async {
           let latest = try? JSONDecoder().decode(Latest.self, from: data),
           let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String,
           latest.version.compare(current, options: .numeric) == .orderedDescending,
-          let install = latest.ios.flatMap({ URL(string: $0.installUrl) }) else { return }
+          let install = latest.testflightUrl.flatMap({ URL(string: $0) }) else { return }
     // Show your own "Update to \(latest.version)" button, then:
     await UIApplication.shared.open(install)
 }</code></pre>
@@ -448,7 +449,7 @@ suspend fun checkForUpdate(context: Context) {
 
         <h3 id="security-devices">Your friends' iPhones</h3>
         <ul class="bullets">
-          <li>What is recorded: the name the friend typed, the device identifier (UDID) and model their iPhone reported, the share link used, and the state of the request. Nothing else: no contacts, no location, no account.</li>
+          <li>TestFlight installs go between the friend and Apple; ourapps records nothing about them. For the older Ad Hoc route only: the name the friend typed, the device identifier (UDID) and model their iPhone reported, the share link used, and the state of the request. Nothing else: no contacts, no location, no account.</li>
           <li>Who sees it: you, under Devices. It is sent to Apple, under your developer account, only when you approve the device. It is never shown on any public page, never listed by any API without your session or key, and deleted when you remove the record or delete the app.</li>
           <li>How it gets there: the enrolment profile is a standard Apple "profile service" payload asking for UDID, product and OS version only. It installs no configuration, no certificates and no management on the phone, and removes itself. The friend sees it as "Unsigned" because it is served over HTTPS and not separately signed; that is expected.</li>
           <li>The app a friend installs is signed for their device by your repository's workflow, with the certificate ourapps created on your Apple account and hands only to that workflow.</li>
@@ -468,7 +469,7 @@ suspend fun checkForUpdate(context: Context) {
           <li>Protect your GitHub account and your Apple account with two-factor sign-in; this service can only be as safe as the sign-in in front of it.</li>
           <li>Give the GitHub token the narrowest scope: Contents on the app repositories only, with an expiry.</li>
           <li>Create one API key per agent or machine, with an expiry, and revoke it when the job is done.</li>
-          <li>Approve iPhones you recognise by name. Each approval registers a device on your Apple account for the membership year.</li>
+          <li>Only for the older Ad Hoc route: approve iPhones you recognise by name. Each approval registers a device on your Apple account for the membership year.</li>
           <li>Keep build tokens and the Cloudflare token in repository secrets only. A build token lets its holder fetch your iPhone signing key; a Cloudflare token can replace any Worker on its account.</li>
           <li>Check Settings, Security now and then. Anything you do not recognise: sign out everywhere, revoke keys, and replace the GitHub token and Apple key at their sources.</li>
         </ul>
@@ -483,16 +484,16 @@ suspend fun checkForUpdate(context: Context) {
           <tr><th>Symptom</th><th>Cause and fix</th></tr>
           <tr><td>No icon or version in the console, yellow notice about a GitHub token</td><td>No token saved, or the repository is not selected on it. Settings, GitHub token.</td></tr>
           <tr><td>Latest release says "no asset named my-app.json"</td><td>The workflow uploaded it under another name or to a pre-release. Names are exact; the latest non-draft, non-pre-release is used.</td></tr>
-          <tr><td>Approve fails with "profile ... not found"</td><td>iPhone signing is not set up, or the app has no iPhone bundle ID. Settings, then the app's page.</td></tr>
-          <tr><td>Approve fails with "device limit reached"</td><td>100 registrations this membership year. Wait for renewal.</td></tr>
-          <tr><td>Approve fails with a GitHub 404 on dispatches</td><td>The token cannot write to that repository. Edit the token on GitHub: add the repository, Contents read and write.</td></tr>
+          <tr><td>Set up TestFlight says App Store Connect has no app</td><td>Add the app once in App Store Connect with the same bundle ID (New App, platform iOS), then press Set up TestFlight again.</td></tr>
+          <tr><td>A fresh-build request fails with a GitHub 404</td><td>The token cannot write to that repository. Edit the token on GitHub: add the repository, Contents read and write.</td></tr>
           <tr><td>Friend stuck on "Building" for over an hour</td><td>Open the repository's Actions tab. The workflow failed or did not call build-ready; its logs say why. Fix and re-run the workflow; it can call build-ready again.</td></tr>
           <tr><td>build-ready returns 409</td><td>The workflow sent a profileUuid the console did not create, usually a cached profile. Fetch the signing material fresh on every run.</td></tr>
           <tr><td>Release fails at the web deploy with "register a workers.dev subdomain"</td><td>The Cloudflare account has no workers.dev subdomain yet. Workers &amp; Pages, choose one, then run the release again. Renaming it later moves every web app's address.</td></tr>
           <tr><td>Web app opens but cannot reach its server</td><td>The server does not allow the web app's address. Add the exact address, for example <code>https://skull-web.yourname.workers.dev</code>, to the server's CORS list.</td></tr>
           <tr><td>Install page says the release cannot be read for a minute after a release</td><td>The release went public before <code>my-app.json</code> was uploaded. Create releases as drafts and publish them after every file is in.</td></tr>
-          <tr><td>iPhone says "Untrusted Developer"</td><td>The build used a Development profile. Use the Ad Hoc profile from the console; no trust step exists for Ad Hoc.</td></tr>
-          <tr><td>iPhone says "Unable to Verify App" or the app will not open</td><td>The profile expired or the device is not in it. Approve the device again, which recreates the profile and rebuilds.</td></tr>
+          <tr><td>The TestFlight invitation says it is not accepting testers</td><td>Apple has not approved a build yet. The app page shows the latest build's state.</td></tr>
+          <tr><td>A build stays at "needs an answer"</td><td>Set <code>ITSAppUsesNonExemptEncryption</code> in Info.plist, or answer export compliance for that build in App Store Connect; ourapps carries on by itself.</td></tr>
+          <tr><td>An Ad Hoc app says "Developer Mode required"</td><td>Ad Hoc builds need Developer Mode since iOS 16. Put the app on TestFlight instead (step 6).</td></tr>
           <tr><td>Nothing happens when tapping Install on iPhone</td><td>The page is inside another app's browser (Gmail, Instagram). Open in Safari. WhatsApp and Messages are fine.</td></tr>
           <tr><td>Android says "App not installed"</td><td>An older build signed with a different key is installed. Uninstall it first, or keep the signing key stable.</td></tr>
           <tr><td>Play Protect blocks the install</td><td>Tap More details, Install anyway. If there is no such button, the device policy forbids unknown sources (work phones).</td></tr>
@@ -504,7 +505,7 @@ suspend fun checkForUpdate(context: Context) {
       title: "11. Limits and costs",
       body: html`
         <ul class="bullets">
-          <li><b>Apple Developer Program:</b> 99 US dollars a year. <b>100 iPhones and, separately, 100 iPads per membership year across all your apps</b>, counted per device: eight friends on three apps use eight slots. Slots do not come back when a device is removed. Ad Hoc profiles last one year. Past 100 people, TestFlight takes 10,000 testers with 90-day builds, and the App Store has no limit.</li>
+          <li><b>Apple Developer Program:</b> 99 US dollars a year. <b>TestFlight:</b> up to 10,000 people per app through the public link; each build lasts 90 days and ourapps asks for a fresh one before then; Apple reviews the first build of each version.</li>
           <li><b>Android and web:</b> no device limit and no account. Google is phasing in developer verification for installs on certified phones from 2026, with a free small-distribution tier planned.</li>
           <li><b>Share links:</b> unlimited, and they only expire when you set a date.</li>
           <li><b>GitHub:</b> free. Releases are free storage; private repositories get 2,000 Actions minutes a month, and macOS minutes count ten times. A lean iOS job takes 8 to 15 minutes, so budget roughly 15 iPhone builds a month on the free tier, or run iOS builds on your own Mac.</li>

@@ -3,9 +3,10 @@
 Nobody browses here. A developer sends a friend a link or a QR code; the friend taps it and
 the app lands on their home screen. No App Store, no Google Play, no accounts for friends.
 
-- iPhone: Apple Ad Hoc over-the-air. The friend registers their phone once (a small
-  profile), the developer approves it, the app's repository builds a copy that includes
-  that phone, and the friend taps Install.
+- iPhone and iPad: Apple's TestFlight. The friend gets Apple's free TestFlight app, opens the
+  invitation on the install page and taps Install. ourapps signs each build, the workflow uploads
+  it through ourapps, and ourapps sends it to the friends' group and asks for a fresh build before
+  the 90-day expiry.
 - Android: a direct APK download with a one-time walkthrough of the "allow from this
   source" and Play Protect prompts.
 - Web apps: an "add to home screen" walkthrough when the app lists a web version.
@@ -72,8 +73,8 @@ endpoint in agents.md on a throwaway app and cleans up (`scripts/smoke.mjs`).
 
 Only a few steps need a human: signing in with GitHub, creating the GitHub token and the Apple
 App Store Connect key (saving it sets up iPhone signing: ourapps creates the distribution
-certificate, App IDs and Ad Hoc profiles), the Android keystore, creating an API key for the
-agent, approving iPhones by name, and sending links to people. Everything else (registering the app, the release workflow, releases,
+certificate and App IDs), the TestFlight review contact, adding each iPhone app once in App Store
+Connect, the Android keystore, creating an API key for the agent, and sending links to people. Everything else (registering the app, the release workflow, releases,
 share links, checks) is done by a coding agent with the prompts on `/dev/agents`. The guide's
 TL;DR at `/dev/guide#tldr` is the definitive list.
 
@@ -86,8 +87,8 @@ TL;DR at `/dev/guide#tldr` is the definitive list.
    signing (Settings, iPhone signing).
 3. Add the app: name, repository `owner/name`, the iPhone bundle ID, and the App Store style
    details (tagline, description, screenshots, privacy summary). Copy the build token and app id
-   shown once into the repository secrets `STORE_BUILD_TOKEN` and `STORE_APP_ID`. ourapps makes
-   the app's Ad Hoc profile once a device is registered.
+   shown once into the repository secrets `STORE_BUILD_TOKEN` and `STORE_APP_ID`. For iPhone,
+   add the app once in App Store Connect and press Set up TestFlight on its page.
 4. Make the repository follow `CONTRACT.md`: publish releases with `my-app.json` and
    `CHANGELOG.md` (its sections become the revision history friends see), fetch signing from
    `/api/build/<app>/signing`, listen for `my-store-rebuild`, call `/api/build-ready`.
@@ -108,14 +109,12 @@ links, and is marked noindex.
 
 ## Limits you must know
 
-- Apple registers at most 100 iPhones per developer per membership year, across all of
-  that developer's apps. Removing a device does not free the slot until renewal. Approve
-  devices for people, not for tests. Android and web apps have no device limit.
-- Nothing auto-updates. Friends tap Update; an app can offer it by polling
+- TestFlight: up to 10,000 people per app; Apple's beta review checks the first build of each
+  version; builds last 90 days and ourapps asks the repository for a fresh one before then.
+- Ad Hoc builds (the older route) only open with Developer Mode switched on since iOS 16, so
+  ourapps no longer offers them to friends.
+- Android does not auto-update. Friends tap Update; an app can offer it by polling
   `/api/public/links/<id>/latest` (see the guide, "Auto-update").
-- Ad Hoc builds stop launching when the provisioning profile expires, one year after it is
-  created. Before that date, rebuild and publish a new release; friends install the update
-  from the same link. The app page in the dashboard shows the current expiry.
 - Install links for the APK and the manifest are signed and last one hour; the install
   page makes fresh ones every time it loads.
 

@@ -1,5 +1,5 @@
 import { SCREENSHOT_PLATFORMS, type ScreenshotPlatform } from "@my/store-shared";
-import { ApiError, api, type ApiKey, type AuditEvent, type DevApp, type Enrolment, type Me, type ProfileSummary, type ReleaseStatus, type SecretStatus, type ShareLink, type SigningSetUp } from "../api.js";
+import { ApiError, api, type ApiKey, type AuditEvent, type DevApp, type Enrolment, type Me, type ProfileSummary, type ReleaseStatus, type SecretStatus, type ShareLink, type SigningSetUp, type TestflightStatus } from "../api.js";
 import { html, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
@@ -51,7 +51,8 @@ export async function dashboard(root: HTMLElement): Promise<void> {
         ? [{ done: webReleases.every((r) => r?.web?.hosting === "own" && r.web.ok), title: "Host web apps on your own Cloudflare account", why: "Free and without a request limit; ourapps links to the address. A token in the app's repository lets its workflow deploy.", href: "/dev/guide#cloudflare", cta: "Guide", optional: true }]
         : []),
       { done: activeLinks > 0, title: "Create a share link", why: "Each link is private, has a QR code and can be revoked.", href: apps[0] ? `/dev/apps/${apps[0].id}/links` : "/dev/apps", cta: "Links" },
-      { done: ready > 0, title: "Get the first iPhone installed", why: needsIos ? "Approve the device when it appears; the console does the rest." : "Not needed for Android or web apps.", href: "/dev/devices", cta: "Devices", optional: !needsIos },
+      { done: Boolean(me.reviewContact), title: "Add the TestFlight review contact", why: needsIos ? "Apple's beta review needs a name, email and phone before friends can install." : "Only needed for iPhone apps.", href: "/dev/settings#review-contact", cta: "Settings", optional: !needsIos },
+      { done: apps.some((a) => a.ascAppId), title: "Put an iPhone app on TestFlight", why: needsIos ? "Friends install iPhone apps through Apple's TestFlight app; no settings to change on their phones." : "Not needed for Android or web apps.", href: apps[0] ? `/dev/apps/${apps[0].id}#testflight` : "/dev/apps", cta: "App page", optional: !needsIos },
     ];
     const required = steps.filter((s) => !s.optional);
     const doneCount = required.filter((s) => s.done).length;
@@ -227,7 +228,7 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
     me,
     isNew ? "New app" : app.name ?? "App",
     html`
-      ${!isNew ? html`<div id="release-card">${releaseCardSkeleton()}</div><div id="signing-card">${signingCard(me, app as DevApp, profile)}</div>` : ""}
+      ${!isNew ? html`<div id="release-card">${releaseCardSkeleton()}</div><div id="testflight-card"></div><div id="signing-card">${signingCard(me, app as DevApp, profile)}</div>` : ""}
       <form id="app-form" class="card mt">
         ${SECTIONS.map((s) => html`<div class="form-section"><div class="about"><h3>${s.title}</h3><p>${s.about}</p></div><div>${s.fields.map(field)}</div></div>`)}
         <div class="form-section">
@@ -306,6 +307,7 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
   });
 
   wireSigningCard(root, me, app as DevApp);
+  if (appId) void loadTestflightCard(root, me, app as DevApp);
   if (appId) {
     const fresh = sessionStorage.getItem(`buildToken:${appId}`);
     if (fresh) {
@@ -328,14 +330,14 @@ function signingCard(me: Me, app: DevApp, profile: ProfileSummary | null): Raw {
   return html`
     <div class="card mt">
       <div class="row wrap">
-        <h2 class="grow">iPhone signing</h2>
-        ${profile ? pill(`${profile.devices} device${profile.devices === 1 ? "" : "s"}`, "ok", true) : pill("no profile yet", missing ? "warn" : "accent")}
+        <h2 class="grow">Ad Hoc profile <span class="faint small">for iPhones in Developer Mode</span></h2>
+        ${profile ? pill(`${profile.devices} device${profile.devices === 1 ? "" : "s"}`, "ok", true) : pill("no profile", "accent")}
         ${me.secrets.apple ? html`<button class="btn sm secondary" type="button" id="profile-refresh">${icon("refresh")} ${profile ? "Make profile again" : "Make profile"}</button>` : ""}
       </div>
       ${profile
         ? html`<dl class="kv mt-s"><dt>Profile</dt><dd>${profile.name}</dd><dt>Devices</dt><dd>${profile.devices}</dd><dt>Expires</dt><dd>${fmtDate(profile.expirationDate)}</dd>${profile.createdAt ? html`<dt>Made</dt><dd>${fmtDate(profile.createdAt, true)}</dd>` : ""}</dl>`
         : ""}
-      <p class="small muted">${missing ?? "ourapps makes the profile again whenever you approve a device. The release workflow fetches it with the certificate from /api/build/<app>/signing."}</p>
+      <p class="small muted">${missing ?? "Only for devices registered through the old Ad Hoc route, which needs Developer Mode on the phone. Friends install through TestFlight above."}</p>
       <div id="profile-result"></div>
     </div>`;
 }
@@ -352,6 +354,69 @@ function wireSigningCard(root: HTMLElement, me: Me, app: DevApp): void {
       toast("Profile made");
     } catch (err) {
       showError(root, err, "#profile-result");
+      button.disabled = false;
+    }
+  };
+}
+
+const TF_STATE: Record<string, [string, "ok" | "warn" | "bad" | "accent"]> = {
+  uploading: ["uploading", "accent"],
+  uploaded: ["with Apple", "accent"],
+  processing: ["Apple is processing it", "accent"],
+  distributed: ["sent to friends", "ok"],
+  "needs-compliance": ["needs an answer", "warn"],
+  failed: ["failed", "bad"],
+};
+
+// TestFlight: what is missing, the friends' invitation link and the latest uploads.
+function testflightCard(me: Me, app: DevApp, t: TestflightStatus): Raw {
+  const todo: Raw[] = [];
+  if (!app.bundleId) todo.push(html`<li>Enter the <b>iPhone bundle ID</b> below and save.</li>`);
+  if (!me.secrets.apple) todo.push(html`<li>Save your App Store Connect key in <a href="/dev/settings#credentials">Settings</a>.</li>`);
+  else if (!me.secrets.signing) todo.push(html`<li>Set up iPhone signing in <a href="/dev/settings#signing">Settings</a>.</li>`);
+  if (!t.contact) todo.push(html`<li>Add the <a href="/dev/settings#review-contact">TestFlight review contact</a> in Settings.</li>`);
+  if (!t.setUp) {
+    todo.push(html`<li>Add the app once in <a href="https://appstoreconnect.apple.com/apps" target="_blank" rel="noopener">App Store Connect</a>: the plus, <b>New App</b>, platform <b>iOS</b>, name <b>${app.name}</b>, bundle ID <b>${app.bundleId || "the one above"}</b>, any SKU. Apple has no way for ourapps to do this step.</li>`);
+  }
+  return html`
+    <div class="card mt">
+      <a id="testflight"></a>
+      <div class="row wrap">
+        <h2 class="grow">TestFlight <span class="faint small">how friends install on iPhone and iPad</span></h2>
+        ${t.setUp ? (t.url ? pill("invitation ready", "ok", true) : pill("waiting for Apple's first review", "accent")) : pill("not set up", "warn")}
+        <button class="btn sm ${t.setUp ? "secondary" : ""}" type="button" id="testflight-run">${t.setUp ? "Update" : "Set up TestFlight"}</button>
+      </div>
+      ${todo.length > 0 ? html`<ol class="steps small mt-s">${todo}</ol>` : ""}
+      ${t.setUp
+        ? html`<dl class="kv mt-s"><dt>Invitation</dt><dd>${t.url ? html`<a href="${t.url}" target="_blank" rel="noopener">${t.url}</a>` : "appears once Apple approves the first build"}</dd><dt>Profile</dt><dd>${t.profile ?? ""}</dd></dl>
+          ${t.builds.length > 0 ? html`<table class="table small mt-s">${t.builds.map((b) => html`<tr><td>${b.version} (${b.buildNumber})</td><td>${pill(TF_STATE[b.state]?.[0] ?? b.state, TF_STATE[b.state]?.[1] ?? "accent")}</td><td class="faint">${b.message ?? ""} ${fmtDate(b.updatedAt, true)}</td></tr>`)}</table>` : html`<p class="small muted">No build uploaded yet. The release workflow uploads each iPhone build through ourapps; ourapps sends it to friends once Apple has processed it.</p>`}`
+        : html`<p class="small muted">Friends install through Apple's free TestFlight app: no device registration, no approvals, no settings to change. Apple reviews the first build of each version, usually within a day. Each build lasts 90 days; ourapps asks the repository for a fresh one before then.</p>`}
+      <div id="testflight-result"></div>
+    </div>`;
+}
+
+async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promise<void> {
+  const box = root.querySelector<HTMLElement>("#testflight-card");
+  if (!box) return;
+  let t: TestflightStatus;
+  try {
+    t = await api<TestflightStatus>("GET", `/api/dev/apps/${app.id}/testflight`);
+  } catch (err) {
+    box.innerHTML = errorBox(err).html;
+    return;
+  }
+  box.innerHTML = testflightCard(me, app, t).html;
+  if (location.hash === "#testflight") box.scrollIntoView();
+  const button = box.querySelector<HTMLButtonElement>("#testflight-run")!;
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      t = await api<TestflightStatus>("POST", `/api/dev/apps/${app.id}/testflight`);
+      box.innerHTML = testflightCard(me, { ...app, ascAppId: "set" }, t).html;
+      toast("TestFlight is set up");
+      void loadTestflightCard(root, me, { ...app, ascAppId: "set" });
+    } catch (err) {
+      showError(root, err, "#testflight-result");
       button.disabled = false;
     }
   };
@@ -592,7 +657,7 @@ export async function devices(root: HTMLElement): Promise<void> {
       "Devices",
       html`
         ${callout("info", html`<p><b>How approval works.</b> Approving sends the device to Apple, recreates the Ad Hoc profile with every registered device, and asks the app's repository to rebuild. Apple allows 100 iPhones and, separately, 100 iPads per membership year, and does not give a slot back when you remove a device, so approve people, not tests.</p>`)}
-        ${!me.secrets.apple ? callout("warn", html`<p>No App Store Connect key is saved, so approvals will fail. <a href="/dev/settings#credentials">Add it in Settings</a>.</p>`) : ""}
+        ${callout("info", html`<p>Friends now install iPhone and iPad apps through TestFlight, which needs no registration here. This page lists devices registered through the old Ad Hoc route, whose apps only open with Developer Mode switched on.</p>`)}
         ${enrolments.length === 0 ? html`<div class="card mt">${emptyState("devices", "No devices yet", "When a friend taps Register on an install page, their iPhone or iPad appears here.")}</div>` : ""}
         ${groups.filter(([, , list]) => list.length > 0).map(([title, , list]) => html`
           <div class="section-title"><h2>${title}</h2><span class="muted small">${list.length}</span></div>
@@ -764,6 +829,22 @@ export async function settings(root: HTMLElement, note = "", signingNote?: { res
         ${me.secrets.apple ? html`<div class="form-actions"><button class="btn ${me.secrets.signing ? "secondary" : ""}" type="button" id="signing-run">${me.secrets.signing ? "Replace certificate" : "Set up iPhone signing"}</button></div>` : ""}
       </div>
 
+      <form id="review-form" class="card mt">
+        <a id="review-contact"></a>
+        <div class="row wrap"><h2 class="grow">TestFlight review contact</h2>${me.reviewContact ? pill("saved", "ok", true) : pill("not saved", "warn")}</div>
+        <p class="small muted">Apple reviews the first build of each version before friends can install it through TestFlight, and asks for someone to contact. ourapps sends these details to Apple for each app you put on TestFlight.</p>
+        <div class="row wrap">
+          <div class="field grow"><label>First name</label><input type="text" name="firstName" value="${me.reviewContact?.firstName ?? ""}" maxlength="60" required /></div>
+          <div class="field grow"><label>Last name</label><input type="text" name="lastName" value="${me.reviewContact?.lastName ?? ""}" maxlength="60" required /></div>
+        </div>
+        <div class="row wrap">
+          <div class="field grow"><label>Email</label><input type="email" name="email" value="${me.reviewContact?.email ?? ""}" maxlength="120" required /></div>
+          <div class="field grow"><label>Phone, with country code</label><input type="tel" name="phone" value="${me.reviewContact?.phone ?? ""}" maxlength="40" placeholder="+44 7700 900123" required /></div>
+        </div>
+        <div id="review-error"></div>
+        <div class="form-actions"><button class="btn" type="submit">Save contact</button></div>
+      </form>
+
       <div class="card mt">
         <a id="security"></a>
         <div class="row wrap"><h2 class="grow">Security</h2><button class="btn sm danger" id="logout-all">Sign out everywhere</button></div>
@@ -793,7 +874,19 @@ export async function settings(root: HTMLElement, note = "", signingNote?: { res
     location.href = "/";
   };
   if (signingNote) root.querySelector("#signing")?.scrollIntoView();
-  else if (["#credentials", "#security", "#signing"].includes(location.hash)) root.querySelector(location.hash)?.scrollIntoView();
+  else if (["#credentials", "#security", "#signing", "#review-contact"].includes(location.hash)) root.querySelector(location.hash)?.scrollIntoView();
+  const reviewForm = root.querySelector<HTMLFormElement>("#review-form")!;
+  reviewForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(reviewForm);
+    try {
+      await api("PUT", "/api/dev/review-contact", { firstName: fd.get("firstName"), lastName: fd.get("lastName"), email: fd.get("email"), phone: fd.get("phone") });
+      toast("Review contact saved");
+      await settings(root);
+    } catch (err) {
+      showError(root, err, "#review-error");
+    }
+  };
 
   const meForm = root.querySelector<HTMLFormElement>("#me-form")!;
   meForm.onsubmit = async (e) => {

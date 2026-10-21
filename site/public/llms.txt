@@ -1,6 +1,6 @@
 # ourapps.app
 
-> Private installer for apps people build for friends and family. Developers sign in with GitHub, register apps, create share links; friends install from the links on iPhone and iPad (Apple Ad Hoc, signed by ourapps), Android (APK) or as web apps, without any store.
+> Private installer for apps people build for friends and family. Developers sign in with GitHub, register apps, create share links; friends install from the links on iPhone and iPad (through Apple's TestFlight, signed and uploaded by ourapps), Android (APK) or as web apps, without an App Store listing.
 
 - [API reference for agents](https://ourapps.app/agents.md): every endpoint, auth with `Authorization: Bearer oa_...`, workflows.
 - [Technical reference](https://ourapps.app/reference): supported app types, where every part runs, web app hosting on the developer's own Cloudflare account, engines and frameworks.

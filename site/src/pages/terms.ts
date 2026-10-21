@@ -26,7 +26,7 @@ export function termsBody(): Raw {
         <tr><th>Data</th><th>Why we hold it</th><th>Where it goes</th></tr>
         <tr><td>GitHub id, login, display name</td><td>To identify your account when you sign in; sign-in reads your public profile only</td><td>Display name and page address are shown to friends on install pages</td></tr>
         <tr><td>GitHub token (encrypted)</td><td>To read release assets from your repositories and to send rebuild requests to them</td><td>Sent only to api.github.com, only for repositories you named</td></tr>
-        <tr><td>App Store Connect API key and team id (encrypted)</td><td>To create your iPhone signing certificate, App IDs and Ad Hoc provisioning profiles, and to register friends' iPhones, on your behalf</td><td>Sent only to api.appstoreconnect.apple.com, when you set up signing, make a profile or approve a device</td></tr>
+        <tr><td>App Store Connect API key and team id (encrypted)</td><td>To create your iPhone signing certificate, App IDs and provisioning profiles, to upload builds to TestFlight and send them to your friends, and to register devices for Ad Hoc builds, on your behalf</td><td>Sent only to api.appstoreconnect.apple.com, when you set up signing, make a profile or approve a device</td></tr>
         <tr><td>Private key of the Apple Distribution certificate the service creates for you (encrypted), with the certificate</td><td>So your apps' release workflows can sign iPhone builds without Apple secrets in the repositories</td><td>Given only to a release workflow that presents one of your apps' build tokens</td></tr>
         <tr><td>App listings (name, text, image addresses, repository name, profile name)</td><td>To build install pages and read releases</td><td>Shown to whoever holds a share link; details only on your public page when you switch it on</td></tr>
         <tr><td>Share links</td><td>To let friends reach an install page and to let you revoke access</td><td>Known to whoever you send them to</td></tr>
@@ -36,13 +36,13 @@ export function termsBody(): Raw {
       <p>We do not sell, share or analyse this information for any purpose other than running the service for you. No advertising, no analytics, no tracking of friends. Level N Ltd staff do not read your credentials; they are encrypted with a key that exists only in the service's secret store, and the service decrypts a field only at the moment it is needed.</p>
 
       <h2>4. What we hold about your friends</h2>
-      <p>When a friend registers an iPhone through your link, the service records the name they typed, the device identifier (UDID) and model their iPhone reports, the share link used, and the state of the request. This exists so that you can approve the device and Apple can sign a build for it. It is shown only to you, sent only to Apple under your developer account, and deleted when you remove the record or delete the app. Android and web installs record nothing about the friend. Install pages set no cookies and carry no analytics.</p>
+      <p>Friends who install through TestFlight deal with Apple directly; the service records nothing about them. When a friend registers an iPhone for an Ad Hoc build through your link, the service records the name they typed, the device identifier (UDID) and model their iPhone reports, the share link used, and the state of the request. This exists so that you can approve the device and Apple can sign a build for it. It is shown only to you, sent only to Apple under your developer account, and deleted when you remove the record or delete the app. Android and web installs record nothing about the friend. Install pages set no cookies and carry no analytics.</p>
 
       <h2>5. Your responsibilities</h2>
       <ul class="bullets">
         <li>You are responsible for the apps you share: what they do, what they collect, and that you have the right to the code, the images and the names in them. Write the privacy summary on each app honestly; friends rely on it.</li>
         <li>Share links are private by obscurity. Send them to people you mean to, and revoke them when you change your mind.</li>
-        <li>Apple's and Google's developer agreements apply to you, not to us. In particular, Apple's Ad Hoc distribution is for people you know and allows 100 devices per membership year.</li>
+        <li>Apple's and Google's developer agreements apply to you, not to us. In particular, TestFlight builds go through Apple's beta review, and Ad Hoc distribution is for people you know and allows 100 devices per membership year.</li>
         <li>Keep your GitHub and Apple accounts secure; the service can only be as safe as the sign-in in front of it.</li>
         <li>Do not use the service to distribute anything unlawful, deceptive or harmful, or to reach people who did not ask for it.</li>
       </ul>

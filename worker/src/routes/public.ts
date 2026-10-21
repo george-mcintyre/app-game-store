@@ -57,6 +57,9 @@ export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Deve
     const release = await resolveRelease(env, deps, app, secrets.githubToken);
     manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
     if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = linkId ? webAppUrl(env, linkId) : null;
+    // The public link ourapps made wins over one written into my-app.json.
+    // Once TestFlight is set up, ourapps' public link (null until Apple approves the first build) wins.
+    if (manifest.install.ios && app.ascAppId) manifest.install.ios.testflight = app.testflightUrl ?? null;
     manifest.icon = await sign(manifest.icon);
     manifest.screenshots = await signAll(manifest.screenshots ?? []);
   } catch (err) {
@@ -126,11 +129,14 @@ export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<
     throw new HttpError(503, "no release of this app is available right now");
   }
   if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = webAppUrl(env, linkId);
+  if (manifest.install.ios && app.ascAppId) manifest.install.ios.testflight = app.testflightUrl ?? null;
   const adhoc = manifest.install.ios?.adhoc ?? null;
   return json({
     name: app.name || manifest.name,
     version: manifest.version,
     ios: adhoc ? { installUrl: `itms-services://?action=download-manifest&url=${encodeURIComponent(adhoc)}`, manifestUrl: adhoc, bundleId: manifest.install.ios!.bundleId } : null,
+    // TestFlight installs and updates in Apple's TestFlight app; an app can open this link.
+    testflightUrl: manifest.install.ios?.testflight ?? null,
     android: manifest.install.android ? { apkUrl: manifest.install.android.apk } : null,
     pwa: manifest.install.pwa,
     linksExpireAt: new Date((Math.floor(deps.now().getTime() / 1000) + 60 * 60) * 1000).toISOString(),

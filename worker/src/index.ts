@@ -3,10 +3,9 @@ import { finishLogin, logout, logoutEverywhere, oauthConfigured, requireDevelope
 import { defaultDeps, type Deps, type Env } from "./env.js";
 import { randomId } from "./crypto.js";
 import { HttpError, json } from "./http.js";
-import { buildProfile, buildReady, buildSigning, buildTestflight } from "./routes/build.js";
+import { buildSigning, buildTestflight } from "./routes/build.js";
 import { tickTestflight } from "./testflight.js";
 import * as dev from "./routes/dev.js";
-import { PROFILE_TYPE, enrolCallback, enrolLatest, enrolNew, enrolProfile, enrolStatus } from "./routes/enrol.js";
 import { devPage, linkLatest, linkPage, linkQr, serveArtefact } from "./routes/public.js";
 import { serveWebApp, webAppLinkId } from "./webapp.js";
 
@@ -46,8 +45,6 @@ export async function handle(request: Request, env: Env, deps: Deps = defaultDep
     res = errorResponse(request, err);
   }
   res = new Response(res.body, res);
-  // Registration profiles go to iOS Settings as they are; page headers have no meaning there.
-  if (res.headers.get("Content-Type") === PROFILE_TYPE) return res;
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) if (!res.headers.has(k)) res.headers.set(k, v);
   return res;
 }
@@ -84,20 +81,6 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
     if (p[1] === "links" && p.length === 4 && p[3] === "latest" && m === "GET") return linkLatest(env, deps, p[2]);
   }
 
-  if (p[0] === "enrol") {
-    if (p[1] === "new" && m === "POST") return enrolNew(request, env, deps);
-    // Some download managers ask with HEAD first; it gets the same answer without the body.
-    if (p.length === 3 && p[2] === "profile.mobileconfig" && (m === "GET" || m === "HEAD")) {
-      const res = await enrolProfile(request, env, deps, p[1]);
-      return m === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
-    }
-    if (p.length === 2 && m === "POST") return enrolCallback(request, env, deps, p[1]);
-    if (p.length === 3 && p[2] === "status" && m === "GET") return enrolStatus(request, env, deps, p[1]);
-    if (p.length === 3 && p[2] === "latest" && m === "GET") return enrolLatest(env, deps, p[1]);
-  }
-
-  if (p[0] === "build-ready" && m === "POST") return buildReady(request, env, deps);
-  if (p[0] === "build" && p.length === 3 && p[2] === "profile" && m === "GET") return buildProfile(request, env, p[1]);
   if (p[0] === "build" && p.length === 3 && p[2] === "signing" && (m === "GET" || m === "HEAD")) return buildSigning(request, env, p[1]);
   if (p[0] === "build" && p.length === 4 && p[2] === "testflight" && (p[3] === "upload" || p[3] === "commit") && m === "POST") return buildTestflight(request, env, deps, p[1], p[3]);
 
@@ -121,7 +104,6 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
       if (p.length === 4 && p[3] === "release" && m === "GET") return dev.releaseStatus(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "preview" && m === "GET") return dev.previewApp(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "links" && m === "POST") return dev.createLink(request, env, deps, me, p[2]);
-      if (p.length === 4 && p[3] === "profile" && m === "POST") return dev.refreshAppProfile(env, deps, me, p[2]);
       if (p.length === 4 && p[3] === "testflight" && m === "GET") return dev.testflightStatus(env, me, p[2]);
       if (p.length === 4 && p[3] === "testflight" && m === "POST") return dev.setUpAppTestflight(env, deps, me, p[2]);
     }
@@ -135,12 +117,6 @@ async function route(request: Request, env: Env, deps: Deps): Promise<Response> 
       if (p.length === 3 && m === "DELETE") return dev.revokeKey(request, env, deps, me, p[2]);
     }
     if (p[1] === "audit" && p.length === 2 && m === "GET") return dev.auditLog(env, me);
-    if (p[1] === "devices") {
-      if (p.length === 2 && m === "GET") return dev.listDevices(env, me);
-      if (p.length === 4 && p[3] === "approve" && m === "POST") return dev.approveDevice(request, env, deps, me, p[2]);
-      if (p.length === 4 && p[3] === "reject" && m === "POST") return dev.rejectDevice(request, env, deps, me, p[2]);
-      if (p.length === 3 && m === "DELETE") return dev.removeDevice(env, me, p[2]);
-    }
   }
   throw new HttpError(404, "not found");
 }

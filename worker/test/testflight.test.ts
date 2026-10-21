@@ -21,7 +21,7 @@ beforeEach(async () => {
 function storeRoutes(state: { storeApp: boolean; build?: { processingState: string; usesNonExemptEncryption: boolean | null } }) {
   const groups: { id: string; name: string; publicLink: string | null }[] = [];
   return {
-    ...appleRoutes({ devices: [], profileCount: 0, noOldProfile: true, bundleIds: [{ id: "bid-skull", identifier: "com.example.skull" }] }),
+    ...appleRoutes({ noOldProfile: true, bundleIds: [{ id: "bid-skull", identifier: "com.example.skull" }] }),
     [`GET ${apple("/v1/apps")}`]: () => jsonRes({ data: state.storeApp ? [{ id: "asc-1", type: "apps", attributes: { bundleId: "com.example.skull", name: "Skull" } }] : [] }),
     [`GET ${apple("/v1/apps/asc-1/betaGroups")}`]: () => jsonRes({ data: groups.map((g) => ({ id: g.id, type: "betaGroups", attributes: { name: g.name, isInternalGroup: false, publicLinkEnabled: true, publicLink: g.publicLink } })) }),
     [`POST ${apple("/v1/betaGroups")}`]: (c: Call) => {
@@ -57,31 +57,40 @@ async function readyApp(routes: ReturnType<typeof storeRoutes>) {
 }
 
 describe("TestFlight", () => {
-  it("needs the review contact and the App Store Connect app before it sets anything up", async () => {
+  it("names the developer's next step, and what to type into App Store Connect", async () => {
+    type View = { setUp: boolean; needs: string | null; storeApp: { name: string; otherName: string; bundleId: string; sku: string } | null };
     const routes = storeRoutes({ storeApp: false });
-    const { appId } = await readyApp(routes);
+    const made = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull" }), env, deps);
+    const { app } = (await made.json()) as { app: { id: string } };
     const d = { ...deps, fetch: fakeFetch(routes).fetch };
-    const noContact = await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d);
-    expect(noContact.status).toBe(409);
-    expect(((await noContact.json()) as { error: string }).error).toMatch(/beta review/);
+    const view = async (method = "GET") => (await (await handle(api(cookie, method, `/api/dev/apps/${app.id}/testflight`), env, d)).json()) as View;
+    expect(await view()).toMatchObject({ setUp: false, needs: "bundle-id", storeApp: null });
+    await handle(api(cookie, "PUT", `/api/dev/apps/${app.id}`, { bundleId: "com.example.skull" }), env, d);
+    expect((await view()).needs).toBe("apple-key");
+    await saveAppleSecrets(env, deps, cookie);
+    expect((await view()).needs).toBe("signing");
+    await handle(api(cookie, "POST", "/api/dev/signing", { csr: CSR, privateKey: await rsaPem() }), env, d);
+    expect((await view()).needs).toBe("review-contact");
+    expect((await view("POST")).needs).toBe("review-contact");
     expect((await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "nope", phone: "+44 7700 900123" }), env, d)).status).toBe(400);
     expect((await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "g@example.com", phone: "+44 7700 900123" }), env, d)).status).toBe(200);
-    const noStoreApp = await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d);
-    expect(noStoreApp.status).toBe(409);
-    expect(((await noStoreApp.json()) as { error: string }).error).toMatch(/New App.*com\.example\.skull/);
+    // Nothing is left that ourapps can check without Apple; the POST finds no App Store Connect app.
+    expect((await view()).needs).toBeNull();
+    const posted = await view("POST");
+    expect(posted).toMatchObject({ setUp: false, needs: "store-app", storeApp: { name: "Skull", otherName: "Skull by George", bundleId: "com.example.skull", sku: "skull" } });
   });
 
   it("sets up the profile, group and public link, brokers the upload and distributes the processed build", async () => {
     const state: Parameters<typeof storeRoutes>[0] = { storeApp: true };
     const routes = storeRoutes(state);
     const { appId, buildToken, linkId } = await readyApp(routes);
-    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...routes, "GET api.github.com/repos/o/skull/releases/assets/1": () => jsonRes({ ...manifest, install: { ...manifest.install, ios: { bundleId: "com.example.skull", adhoc: null, testflight: "https://testflight.apple.com/join/OLD" } } }) });
+    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...routes, "GET api.github.com/repos/o/skull/releases/assets/1": () => jsonRes({ ...manifest, install: { ...manifest.install, ios: { bundleId: "com.example.skull", testflight: "https://testflight.apple.com/join/OLD" } } }) });
     const d = { ...deps, fetch };
     await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "g@example.com", phone: "+44 7700 900123" }), env, d);
 
     const set = await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d);
     expect(set.status).toBe(200);
-    expect(await set.json()).toMatchObject({ setUp: true, url: "https://testflight.apple.com/join/AbCd1234", profile: "Skull App Store", contact: true, builds: [] });
+    expect(await set.json()).toMatchObject({ setUp: true, needs: null, storeApp: null, url: "https://testflight.apple.com/join/AbCd1234", profile: "Skull App Store", contact: true, builds: [] });
     const storeProfile = JSON.parse(calls.filter((c) => c.method === "POST" && c.url.endsWith("/v1/profiles")).at(-1)!.body!).data;
     expect(storeProfile.attributes).toEqual({ name: "Skull App Store", profileType: "IOS_APP_STORE" });
     expect(storeProfile.relationships.devices).toBeUndefined();
@@ -94,7 +103,8 @@ describe("TestFlight", () => {
 
     const auth = { Authorization: `Bearer ${buildToken}` };
     const signing = (await (await handle(api(null, "GET", `/api/build/${appId}/signing`, undefined, auth), env, d)).json()) as Record<string, unknown>;
-    expect(signing).toMatchObject({ storeProfile: { profileName: "Skull App Store" }, testflight: { url: "https://testflight.apple.com/join/AbCd1234" }, profile: null });
+    expect(signing).toMatchObject({ storeProfile: { profileName: "Skull App Store" }, testflight: { url: "https://testflight.apple.com/join/AbCd1234" } });
+    expect(signing).not.toHaveProperty("profile");
 
     expect((await handle(api(null, "POST", `/api/build/${appId}/testflight/upload`, { version: "1.0" }, auth), env, d)).status).toBe(400);
     const up = await handle(api(null, "POST", `/api/build/${appId}/testflight/upload`, { version: "1.0", buildNumber: "7", fileName: "skull.ipa", fileSize: 9, whatsNew: "Rematch button" }, auth), env, d);

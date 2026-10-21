@@ -18,8 +18,9 @@ export interface AppManifest {
   install: {
     pwa: string | null;
     android: { apk: string } | null;
+    // testflight is the public invitation link, null until Apple approves the first build.
     // devices is display only: which Apple devices the build targets; absent makes no claim.
-    ios: { bundleId: string; adhoc: string | null; testflight: string | null; devices?: IosDevice[] } | null;
+    ios: { bundleId: string; testflight: string | null; devices?: IosDevice[] } | null;
   };
 }
 
@@ -93,9 +94,7 @@ export function validateManifest(input: unknown): ManifestResult {
     if (!isRecord(ios)) errors.push("install.ios must be an object or null");
     else {
       if (typeof ios.bundleId !== "string" || ios.bundleId === "") errors.push("install.ios.bundleId must be a string");
-      if (ios.adhoc !== null && !isHttpsUrl(ios.adhoc)) errors.push("install.ios.adhoc must be an https URL or null");
-      if (ios.testflight !== null && !isHttpsUrl(ios.testflight)) errors.push("install.ios.testflight must be an https URL or null");
-      if (ios.adhoc === null && ios.testflight === null) errors.push("install.ios needs adhoc or testflight");
+      if (ios.testflight !== null && ios.testflight !== undefined && !isHttpsUrl(ios.testflight)) errors.push("install.ios.testflight must be an https URL or null");
       if (ios.devices !== undefined) {
         const d = ios.devices;
         const valid = Array.isArray(d) && d.length > 0 && d.every((x) => (IOS_DEVICES as readonly unknown[]).includes(x)) && new Set(d).size === d.length;
@@ -107,5 +106,13 @@ export function validateManifest(input: unknown): ManifestResult {
   if (pwa === undefined || android === undefined || ios === undefined) errors.push("install must name pwa, android and ios (null when absent)");
 
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, manifest: input as unknown as AppManifest };
+  // install keeps only the fields above, so nothing else a release carries reaches an install page.
+  const manifest = input as unknown as AppManifest;
+  const iosIn = ios as Record<string, unknown> | null;
+  manifest.install = {
+    pwa: pwa as string | null,
+    android: android === null ? null : { apk: (android as { apk: string }).apk },
+    ios: iosIn === null ? null : { bundleId: iosIn.bundleId as string, testflight: (iosIn.testflight as string | null | undefined) ?? null, ...(iosIn.devices ? { devices: iosIn.devices as IosDevice[] } : {}) },
+  };
+  return { ok: true, manifest };
 }

@@ -3,7 +3,7 @@ import { SCREENSHOT_PLATFORMS, type ScreenshotSets } from "@my/store-shared";
 import { renderSVG } from "uqr";
 import { Db, type AppRow, type Developer, type LinkRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
-import { dlUrl, rewriteManifestUrls, signManifestLinks } from "../flow.js";
+import { dlUrl, signManifestLinks } from "../flow.js";
 import { loadHistory } from "../history.js";
 import { HttpError, json } from "../http.js";
 import { verifyLink } from "../links.js";
@@ -130,12 +130,10 @@ export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<
   }
   if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = webAppUrl(env, linkId);
   if (manifest.install.ios && app.ascAppId) manifest.install.ios.testflight = app.testflightUrl ?? null;
-  const adhoc = manifest.install.ios?.adhoc ?? null;
   return json({
     name: app.name || manifest.name,
     version: manifest.version,
-    ios: adhoc ? { installUrl: `itms-services://?action=download-manifest&url=${encodeURIComponent(adhoc)}`, manifestUrl: adhoc, bundleId: manifest.install.ios!.bundleId } : null,
-    // TestFlight installs and updates in Apple's TestFlight app; an app can open this link.
+    // TestFlight installs and updates iPhone apps; an app can open this link.
     testflightUrl: manifest.install.ios?.testflight ?? null,
     android: manifest.install.android ? { apkUrl: manifest.install.android.apk } : null,
     pwa: manifest.install.pwa,
@@ -150,7 +148,7 @@ export async function linkQr(env: Env, deps: Deps, linkId: string): Promise<Resp
   return new Response(svg, { status: 200, headers: { "Content-Type": "image/svg+xml", "Cache-Control": "private, max-age=3600" } });
 }
 
-// GET /dl/:token - stream an artefact behind a signed link; manifests get their .ipa links re-signed.
+// GET /dl/:token - stream an APK or an icon behind a signed link.
 export async function serveArtefact(env: Env, deps: Deps, token: string): Promise<Response> {
   if (!env.LINK_SECRET) throw new HttpError(503, "LINK_SECRET is not configured");
   const link = await verifyLink(env.LINK_SECRET, token, deps.now());
@@ -158,39 +156,11 @@ export async function serveArtefact(env: Env, deps: Deps, token: string): Promis
   const secrets = await loadSecrets(env, link.dev, ["githubToken"]);
   const upstream = await fetchUpstream(env, deps, link.url, secrets.githubToken);
   if (!upstream.ok) throw new HttpError(502, `upstream returned ${upstream.status}`);
-  const db = Db.from(env);
-  if (link.kind === "manifest") {
-    // iOS fetches the manifest to show its Install prompt: the start of an install attempt.
-    if (link.e) await db.installAttempt(link.e, deps.now().toISOString());
-    const plist = await upstream.text();
-    const rewritten = await rewriteManifestUrls(plist, (u) => dlUrl(env, deps, { url: u, kind: "ipa", dev: link.dev, e: link.e, v: link.v }));
-    return new Response(rewritten, { status: 200, headers: { "Content-Type": "text/xml", "Cache-Control": "no-store" } });
-  }
   if (link.kind === "icon") {
     return new Response(upstream.body, { status: 200, headers: { "Content-Type": upstream.headers.get("Content-Type") ?? "image/png", "Cache-Control": "private, max-age=3600" } });
   }
-  const type = link.kind === "apk" ? "application/vnd.android.package-archive" : "application/octet-stream";
-  const name = link.kind === "apk" ? "app.apk" : "app.ipa";
-  let body = upstream.body;
-  // iOS downloads the .ipa only after the friend taps Install; the end of the download is as close
-  // to "installed" as a web page can know.
-  if (link.kind === "ipa" && link.e && body) {
-    const id = link.e;
-    await db.installStarted(id, deps.now().toISOString());
-    body = body.pipeThrough(
-      new TransformStream({
-        async flush() {
-          try {
-            await db.installDone(id, deps.now().toISOString(), link.v ?? null);
-          } catch (err) {
-            console.error(`install ${id}: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        },
-      }),
-    );
-  }
-  return new Response(body, {
+  return new Response(upstream.body, {
     status: 200,
-    headers: { "Content-Type": type, "Content-Disposition": `attachment; filename="${name}"`, "Cache-Control": "no-store" },
+    headers: { "Content-Type": "application/vnd.android.package-archive", "Content-Disposition": `attachment; filename="app.apk"`, "Cache-Control": "no-store" },
   });
 }

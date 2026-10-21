@@ -6,7 +6,7 @@ import type { Deps, Env } from "./env.js";
 import { appleClient } from "./flow.js";
 import { dispatchEvent } from "./github.js";
 import { HttpError } from "./http.js";
-import { loadSecrets } from "./secrets.js";
+import { appleReady, loadSecrets, secretsSummary } from "./secrets.js";
 
 export const BETA_GROUP = "Friends (ourapps)";
 // A build stops working 90 days after upload; a new one is asked for this long before.
@@ -20,24 +20,46 @@ export function reviewContact(dev: Developer): { firstName: string; lastName: st
   return { firstName: dev.reviewFirstName, lastName: dev.reviewLastName, email: dev.reviewEmail, phone: dev.reviewPhone };
 }
 
-// Everything ourapps can do for TestFlight; the App Store Connect app itself the developer adds once.
-export async function setUpTestflight(env: Env, deps: Deps, dev: Developer, app: AppRow): Promise<AppRow> {
+// What stops TestFlight being set up, in the order the developer meets it. "store-app" is only known
+// after asking Apple: the app record in App Store Connect, which Apple lets no one create through its API.
+export type TestflightNeed = "bundle-id" | "apple-key" | "signing" | "review-contact" | "store-app";
+
+export async function localNeed(env: Env, dev: Developer, app: AppRow): Promise<TestflightNeed | null> {
+  if (!app.bundleId) return "bundle-id";
+  const summary = await secretsSummary(env, dev.id);
+  if (!appleReady(summary)) return "apple-key";
+  if (!summary.signingKey || !(await Db.from(env).signingCertificate(dev.id))) return "signing";
+  if (!reviewContact(dev)) return "review-contact";
+  return null;
+}
+
+// What to type into App Store Connect's New App form: a name of 2 to 30 characters, unique on the App
+// Store, so a second choice with the developer's name is offered for when the first is taken.
+export function storeAppForm(app: AppRow, dev: Developer): { name: string; otherName: string; bundleId: string; sku: string } {
+  const first = dev.displayName.trim().split(/\s+/)[0] || dev.githubLogin;
+  const otherName = `${app.name} by ${first}`.slice(0, 30);
+  return {
+    name: app.name.trim().length >= 2 ? app.name.slice(0, 30) : otherName,
+    otherName,
+    bundleId: app.bundleId,
+    sku: app.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "app",
+  };
+}
+
+// Everything ourapps can do for TestFlight. Returns the next step only the developer can take, or null
+// once the App Store profile, the friends' group and its public link exist.
+export async function setUpTestflight(env: Env, deps: Deps, dev: Developer, app: AppRow): Promise<TestflightNeed | null> {
+  const need = await localNeed(env, dev, app);
+  if (need) return need;
   const db = Db.from(env);
-  if (!app.bundleId) throw new HttpError(409, "give the app its iPhone bundle ID first");
-  const contact = reviewContact(dev);
-  if (!contact) throw new HttpError(409, "add the contact Apple's beta review uses (name, email, phone) under Settings first");
-  const certificate = await db.signingCertificate(dev.id);
-  if (!certificate) throw new HttpError(409, "set up iPhone signing under Settings first");
+  const contact = reviewContact(dev)!;
+  const certificate = (await db.signingCertificate(dev.id))!;
   const apple = appleClient(env, deps, await loadSecrets(env, dev.id, ["appleIssuerId", "appleKeyId", "applePrivateKey"]));
   try {
-    const store = await apple.findStoreApp(app.bundleId);
-    if (!store) {
-      throw new HttpError(
-        409,
-        `App Store Connect has no app with bundle ID ${app.bundleId}. Add it once: App Store Connect, Apps, the plus, New App, platform iOS, name ${app.name}, bundle ID ${app.bundleId}, any SKU. Then set up TestFlight again.`,
-      );
-    }
+    // Registered first, so the bundle ID is in App Store Connect's list when the developer adds the app.
     const bundleRes = await apple.ensureBundleId(app.bundleId, app.name);
+    const store = await apple.findStoreApp(app.bundleId);
+    if (!store) return "store-app";
     const profile = await apple.ensureStoreProfile(storeProfileName(app.name), bundleRes, certificate.certificateId);
     const group = await apple.ensureBetaGroup(store.id, BETA_GROUP);
     await apple.setBetaReviewDetails(store.id, contact, "Shared privately with friends and family through ourapps.app. No sign-in is needed to use the app.");
@@ -52,11 +74,19 @@ export async function setUpTestflight(env: Env, deps: Deps, dev: Developer, app:
       storeProfileBase64: profile.profileContent,
     });
     await db.setAppTestflight(app);
-    return app;
+    return null;
   } catch (err) {
     if (err instanceof HttpError) throw err;
     throw new HttpError(502, err instanceof Error ? err.message : String(err));
   }
+}
+
+// After a new certificate, an app already on TestFlight gets its App Store profile made again with it.
+export async function renewStoreProfile(env: Env, apple: AppleClient, app: AppRow, certificateId: string): Promise<void> {
+  const bundleRes = await apple.ensureBundleId(app.bundleId, app.name);
+  const profile = await apple.ensureStoreProfile(storeProfileName(app.name), bundleRes, certificateId);
+  Object.assign(app, { storeProfileId: profile.id, storeProfileUuid: profile.uuid, storeProfileName: storeProfileName(app.name), storeProfileBase64: profile.profileContent });
+  await Db.from(env).setAppTestflight(app);
 }
 
 // The workflow's upload: ourapps reserves it at Apple and returns where to send the bytes.

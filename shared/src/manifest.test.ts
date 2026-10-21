@@ -13,7 +13,7 @@ const valid = {
   install: {
     pwa: null,
     android: { apk: "https://example.com/skull.apk" },
-    ios: { bundleId: "com.georgemcintyre.skull", adhoc: "https://example.com/ios/manifest.plist", testflight: null },
+    ios: { bundleId: "com.georgemcintyre.skull", testflight: "https://testflight.apple.com/join/AbCd1234" },
   },
 };
 
@@ -75,10 +75,17 @@ describe("validateManifest", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("requires ios to have adhoc or testflight", () => {
-    const result = validateManifest(withPatch({ install: { pwa: null, android: null, ios: { bundleId: "a.b", adhoc: null, testflight: null } } }));
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.errors).toContain("install.ios needs adhoc or testflight");
+  it("accepts ios before the TestFlight link exists, and rejects a link that is not https", () => {
+    expect(validateManifest(withPatch({ install: { pwa: null, android: null, ios: { bundleId: "a.b", testflight: null } } })).ok).toBe(true);
+    const bad = validateManifest(withPatch({ install: { pwa: null, android: null, ios: { bundleId: "a.b", testflight: "http://x" } } }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.errors).toContain("install.ios.testflight must be an https URL or null");
+  });
+
+  it("passes on only the install fields it knows", () => {
+    const result = validateManifest(withPatch({ install: { pwa: null, android: { apk: "https://x/a.apk", extra: 1 }, ios: { bundleId: "a.b", adhoc: "https://api.github.com/repos/o/r/releases/assets/3", devices: ["iphone"] } } }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.manifest.install).toEqual({ pwa: null, android: { apk: "https://x/a.apk" }, ios: { bundleId: "a.b", testflight: null, devices: ["iphone"] } });
   });
 
   it("accepts optional screenshots and rejects bad ones", () => {
@@ -91,7 +98,7 @@ describe("validateManifest", () => {
   });
 
   it("accepts an optional ios.devices list and rejects bad ones", () => {
-    const ios = (devices: unknown) => withPatch({ install: { pwa: null, android: null, ios: { bundleId: "a.b", adhoc: "https://x/m.plist", testflight: null, devices } } });
+    const ios = (devices: unknown) => withPatch({ install: { pwa: null, android: null, ios: { bundleId: "a.b", testflight: "https://testflight.apple.com/join/x", devices } } });
     expect(validateManifest(ios(["iphone", "ipad"])).ok).toBe(true);
     expect(validateManifest(ios(["ipad"])).ok).toBe(true);
     for (const bad of [[], ["watch"], ["iphone", "iphone"], "iphone"]) {

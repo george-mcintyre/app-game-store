@@ -1,4 +1,4 @@
-// App Store Connect API: ES256 tokens, device registration, Ad Hoc profile recreation.
+// App Store Connect API: ES256 tokens, the signing certificate, App IDs, profiles and TestFlight.
 import type { Deps, Env } from "./env.js";
 
 export interface AppleCredentials {
@@ -41,7 +41,7 @@ interface Resource<A = Record<string, unknown>> {
   id: string;
   type: string;
   attributes: A;
-  // To-one relationships (bundleId) carry one object; to-many (certificates, devices) an array.
+  // To-one relationships (bundleId) carry one object; to-many (certificates) an array.
   relationships?: Record<string, { data?: Linkage | Linkage[] }>;
 }
 
@@ -73,34 +73,6 @@ export class AppleClient {
     return json;
   }
 
-  async findDevice(udid: string): Promise<Resource | null> {
-    const res = await this.call<{ data: Resource[] }>("GET", `/v1/devices?filter[udid]=${encodeURIComponent(udid)}&limit=1`);
-    return res.data[0] ?? null;
-  }
-
-  // Returns the Apple device id, registering the device when it is new.
-  async registerDevice(udid: string, name: string): Promise<string> {
-    const existing = await this.findDevice(udid);
-    if (existing) return existing.id;
-    const res = await this.call<{ data: Resource }>("POST", "/v1/devices", {
-      data: { type: "devices", attributes: { name: name.slice(0, 50), udid, platform: "IOS" } },
-    });
-    return res.data.id;
-  }
-
-  // Every enabled iOS-platform device (iPhone, iPad, iPod touch), following Apple's pages of 200.
-  async listEnabledIosDevices(): Promise<Resource<{ udid: string }>[]> {
-    const out: Resource<{ udid: string }>[] = [];
-    let path: string | null = "/v1/devices?filter[platform]=IOS&filter[status]=ENABLED&limit=200";
-    for (let page = 0; path !== null && page < 10; page++) {
-      const res: { data: Resource<{ udid: string }>[]; links?: { next?: string } } = await this.call("GET", path);
-      out.push(...res.data);
-      const next = res.links?.next;
-      path = next && next.startsWith(this.env.APPLE_API_BASE) ? next.slice(this.env.APPLE_API_BASE.length) : null;
-    }
-    return out;
-  }
-
   // Exact name match; Apple's name filter is not guaranteed to be exact.
   async findProfileByName(name: string): Promise<Resource<{ name: string; uuid: string; profileContent: string; expirationDate: string }> | null> {
     const res = await this.call<{ data: Resource<{ name: string; uuid: string; profileContent: string; expirationDate: string }>[] }>(
@@ -108,39 +80,6 @@ export class AppleClient {
       `/v1/profiles?filter[name]=${encodeURIComponent(name)}&include=bundleId,certificates&limit=200`,
     );
     return res.data.find((p) => p.attributes.name === name) ?? null;
-  }
-
-  // Profiles are immutable: delete any profile of that name and create it again. The bundle id and
-  // certificate come from `use` when given, else from the profile being replaced.
-  async recreateAdHocProfile(
-    name: string,
-    deviceIds: string[],
-    use: { bundleId?: string; certificateId?: string } = {},
-  ): Promise<{ id: string; uuid: string; profileContent: string; expirationDate: string }> {
-    if (deviceIds.length === 0) throw new Error("Apple makes an Ad Hoc profile only once at least one iPhone or iPad is registered; it is made when you approve the first device");
-    const old = await this.findProfileByName(name);
-    const bundleId = use.bundleId ?? asList(old?.relationships?.bundleId?.data)[0]?.id;
-    const certificates = use.certificateId ? [use.certificateId] : asList(old?.relationships?.certificates?.data).map((c) => c.id);
-    if (!bundleId || certificates.length === 0) {
-      throw new Error(
-        old
-          ? `Apple profile "${name}" has no bundle id or certificates in its relationships`
-          : `Apple profile "${name}" not found; set up iPhone signing in Settings and give the app its bundle ID`,
-      );
-    }
-    if (old) await this.call("DELETE", `/v1/profiles/${old.id}`);
-    const res = await this.call<{ data: Resource<{ uuid: string; profileContent: string; expirationDate: string }> }>("POST", "/v1/profiles", {
-      data: {
-        type: "profiles",
-        attributes: { name, profileType: "IOS_APP_ADHOC" },
-        relationships: {
-          bundleId: { data: { type: "bundleIds", id: bundleId } },
-          certificates: { data: certificates.map((id) => ({ type: "certificates", id })) },
-          devices: { data: deviceIds.map((id) => ({ type: "devices", id })) },
-        },
-      },
-    });
-    return { id: res.data.id, ...res.data.attributes };
   }
 
   // Returns Apple's id for an explicit App ID, creating it when it does not exist yet.
@@ -281,7 +220,7 @@ export class AppleClient {
     await this.call("POST", "/v1/betaAppReviewSubmissions", { data: { type: "betaAppReviewSubmissions", relationships: { build: { data: { type: "builds", id: buildId } } } } });
   }
 
-  // An Apple Distribution certificate signs Ad Hoc builds for iPhone and iPad.
+  // An Apple Distribution certificate signs the iPhone and iPad builds that go to TestFlight.
   async createDistributionCertificate(csrPem: string): Promise<{ id: string; name: string; serialNumber: string; certificateContent: string; expirationDate: string | null }> {
     const res = await this.call<{ data: Resource<{ name: string; serialNumber: string; certificateContent: string; expirationDate?: string }> }>("POST", "/v1/certificates", {
       data: { type: "certificates", attributes: { certificateType: "DISTRIBUTION", csrContent: csrPem } },

@@ -888,7 +888,7 @@ export const CATEGORIES: Category[] = [
     why: "Each release builds an .apk, an .ipa and a web bundle. Linux builds are cheap; iPhone builds need a Mac, which is where the free minutes go.",
     practices: [
       "Build Android and web on Linux runners; use a macOS runner only for the iPhone step, or build iPhone locally on your Mac.",
-      "Skip the iPhone build when no iPhone has been approved yet.",
+      "Skip the iPhone build until TestFlight is set up for the app: HEAD on the signing URL answers 200 from then on.",
     ],
     services: [
       {

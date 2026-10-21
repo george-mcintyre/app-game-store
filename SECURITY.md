@@ -31,16 +31,17 @@ tokens or sessions, and no way to forge any of them (forging a keyed hash needs 
   console, maximum one year). Keys cannot create or revoke keys. Every key is revocable alone
   or all at once.
 - Decryption is on demand and field-level: install pages decrypt only the GitHub token; the
-  Apple private key is decrypted only while setting up signing, making a profile or approving a
-  device; the signing key only when a release workflow presents one of the developer's build
-  tokens at `/api/build/<app>/signing`. A build token therefore lets its holder sign builds that
-  run on the devices in that developer's profiles.
+  Apple private key is decrypted only while setting up signing or TestFlight, brokering a
+  workflow's upload, and in the ten-minute check that looks after TestFlight builds; the signing
+  key only when a release workflow presents one of the developer's build tokens at
+  `/api/build/<app>/signing`. A build token therefore lets its holder sign builds as that
+  developer and upload them to the app's TestFlight.
 - The signing key is written only by `POST /api/dev/signing` from a browser session (validated as
   a 2048-bit RSA PKCS#8 key); `PUT /api/dev/secrets` cannot set it.
 - The Apple key is validated as an EC P-256 PKCS#8 key before it is stored; GitHub tokens must
   match the `github_pat_` or `ghp_` shape.
 - Security events (sign-in, sign-out, credential saves and removals, signing setup, key creation
-  and revocation, build token rotation, device approvals, app deletion) are written to the audit log
+  and revocation, build token rotation, app deletion) are written to the audit log
   and shown under Settings, Security, with "Sign out everywhere" next to them.
 - Every response carries HSTS (preload), a strict Content Security Policy, `nosniff`,
   `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy: same-origin`, a Referrer-Policy and a

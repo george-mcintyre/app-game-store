@@ -7,15 +7,12 @@
   without network; see `worker/test/helpers.ts`.
 - The session cookie only works because the site and `/api` share one origin. Do not move
   the site to another host (GitHub Pages) without switching to bearer tokens.
-- Apple profiles cannot be edited: the worker deletes and recreates the Ad Hoc profile with
-  the same name. Device slots are not freed by disabling a device; 100 per membership year.
+- Apple profiles cannot be edited: the worker deletes and recreates the App Store profile with
+  the same name when it lacks the current certificate.
 - Apple JSON Web Tokens must expire within 20 minutes of `iat` (the worker uses 10).
-- The `.mobileconfig` is served as `application/x-apple-aspen-config`; the device posts a
-  PKCS#7 body and the worker slices the inner `<?xml ... </plist>` instead of verifying it.
-- `itms-services://` links do nothing inside an app's web view (Instagram, Facebook, Gmail).
-  The install page shows an "open in Safari" instruction; WhatsApp is the exception.
+- Installs do not work inside most apps' web views (Instagram, Facebook, Gmail). The install
+  page shows an "open in Safari" instruction; WhatsApp is the exception.
 - Developer slugs may not collide with `api`, `dl`, `dev`, `l` (see `RESERVED_SLUGS`).
-- `latestProfile` orders by `created_at, rowid` because two profiles can share a timestamp.
 - `wrangler` is not installed globally; use `npx wrangler` inside `worker/`.
 - GitHub Pages on a private repo needs a paid plan; this repo is public for that reason
   even though Pages is no longer used.
@@ -62,7 +59,6 @@
   sign-up lets any GitHub user serve files through ourapps.app, which could get the domain
   flagged by Safe Browsing (deferred until the owner has investigated options).
 - iPads use the same path as iPhones (`platform` "ios"); wording comes from `appleDeviceName`.
-  Apple lists devices 200 per page, so `listEnabledIosDevices` follows `links.next`.
 - `wrangler dev` presents requests as coming from the route's host (ourapps.app), so with
   `PUBLIC_ORIGIN=http://localhost:8787` every console save was refused as cross-site locally.
   `npm run dev -w worker` passes `--local-upstream localhost:8787`; running plain `wrangler dev`

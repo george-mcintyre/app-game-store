@@ -36,9 +36,9 @@ function architectureSvg(): Raw {
     <text x="340" y="68" ${s("fill:var(--text);font-weight:800;font-size:15px")}>ourapps.app</text>
     <text x="340" y="86" ${s("fill:var(--accent);font-size:11.5px;font-weight:600")}>distribution only</text>
     ${card(336, 100, 258, 52, "Install page", "/l/&lt;link&gt;: listing, steps, QR")}
-    ${card(336, 162, 258, 52, "Signed downloads", "/dl/&#8230;: streams .ipa and .apk")}
-    ${card(336, 224, 258, 52, "iPhone enrolment", "device number, Apple registration")}
-    ${card(336, 286, 258, 52, "iPhone signing", "certificate, profile, TestFlight")}
+    ${card(336, 162, 258, 52, "Signed downloads", "/dl/&#8230;: streams .apk and images")}
+    ${card(336, 224, 258, 52, "TestFlight", "uploads, friends' group, fresh builds")}
+    ${card(336, 286, 258, 52, "iPhone signing", "certificate, App Store profile")}
     <text x="465" y="372" text-anchor="middle" ${s("fill:var(--text-2);font-size:11.5px;font-style:italic")}>no app code, API or database runs here</text>
 
     <rect x="680" y="40" width="300" height="214" rx="16" ${s("fill:var(--surface-2);stroke:var(--line-2);stroke-width:1")} />
@@ -47,8 +47,7 @@ function architectureSvg(): Raw {
     <rect x="696" y="144" width="268" height="94" rx="12" ${s("fill:var(--surface);stroke:var(--line-2);stroke-width:1")} />
     <text x="710" y="168" ${s("fill:var(--text);font-weight:700;font-size:13px")}>Releases</text>
     <text x="710" y="190" ${s("fill:var(--text-2);font-size:11.5px")}>my-app.json · CHANGELOG.md</text>
-    <text x="710" y="208" ${s("fill:var(--text-2);font-size:11.5px")}>.ipa + manifest.plist</text>
-    <text x="710" y="226" ${s("fill:var(--text-2);font-size:11.5px")}>.apk</text>
+    <text x="710" y="208" ${s("fill:var(--text-2);font-size:11.5px")}>.apk · icon · screenshots</text>
 
     <rect x="680" y="270" width="300" height="72" rx="16" ${s("fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.2")} />
     <text x="696" y="296" ${s("fill:var(--text);font-weight:700;font-size:13px")}>Your Cloudflare account</text>
@@ -68,10 +67,10 @@ function architectureSvg(): Raw {
     ${install("M320,134 C292,134 284,250 252,250")}
     ${install("M696,200 L596,188")}
     ${install("M596,250 C640,250 640,392 678,392")}
-    ${install("M596,126 C640,126 650,108 694,108")}
+    ${install("M596,236 C650,236 650,104 694,104")}
     ${install("M596,312 C650,312 660,124 694,124")}
     ${install("M964,108 C996,108 996,306 982,306")}
-    ${label(640, 98, "rebuild", "--accent")}
+    ${label(626, 98, "fresh build", "--accent")}
     ${label(626, 182, "files", "--accent")}
     ${label(612, 340, "certificate, profile", "--accent")}
     ${run("M155,282 L155,438 L830,438 L830,346")}
@@ -178,7 +177,7 @@ const TOPOLOGIES: Topology[] = [
     id: "topo-crossplatform",
     title: "One codebase, three builds",
     file: "cross-platform.png",
-    summary: "Flutter, React Native, Capacitor or .NET MAUI produce the .ipa, the .apk and often a web build from one source. One release carries the .ipa and the .apk; the web build is deployed to your Cloudflare account.",
+    summary: "Flutter, React Native, Capacitor or .NET MAUI produce the .ipa, the .apk and often a web build from one source. The .ipa goes to TestFlight through ourapps, one release carries the .apk, and the web build is deployed to your Cloudflare account.",
     parts: [
       ["Clients", "the same app on every device"],
       ["ourapps", "one listing, three install paths"],
@@ -231,7 +230,7 @@ function body(): Raw {
             <li>Running server code, APIs or databases on ourapps. It distributes apps; it does not host their logic.</li>
             <li>Desktop apps (macOS, Windows, Linux) and Apple Watch, Apple TV or Vision Pro apps. The install flow is for phones, tablets and browsers.</li>
             <li>Android App Bundles (.aab) as they are: phones cannot install them. Convert to a universal .apk (<a href="#android">how</a>).</li>
-            <li>iPhone apps without Apple's beta review: Ad Hoc builds need Developer Mode on every phone since iOS 16, so ourapps does not offer them.</li>
+            <li>iPhone apps that skip Apple's beta review: every iPhone build reaches friends through TestFlight.</li>
             <li>Features that need App Store distribution, such as real in-app purchases.</li>
           </ul>
         </section>
@@ -239,10 +238,10 @@ function body(): Raw {
         <section id="where">
           <h2>Where everything runs</h2>
           <figure class="ref-diagram">${optionalFigure("architecture.png", "How a typical app is hosted and installed through ourapps")}<div class="svg-fallback hidden">${architectureSvg()}</div></figure>
-          <p>Three parties, three jobs. <b>Your repository</b> builds and holds the release files. <b>ourapps</b> turns a share link into an install: it reads the release, signs short-lived download links, signs and registers iPhones with Apple, and links to the web version on your Cloudflare account. <b>Your backend</b>, if the app has one, is wherever you put it; the installed apps talk to it directly, so ourapps never sees app traffic and its limits never apply to your API.</p>
+          <p>Three parties, three jobs. <b>Your repository</b> builds and holds the release files. <b>ourapps</b> turns a share link into an install: it reads the release, signs short-lived download links, signs iPhone builds and puts them on TestFlight, and links to the web version on your Cloudflare account. <b>Your backend</b>, if the app has one, is wherever you put it; the installed apps talk to it directly, so ourapps never sees app traffic and its limits never apply to your API.</p>
           <table class="table">
             <tr><th>Thing</th><th>Lives in</th><th>Reaches the phone by</th></tr>
-            <tr><td>.ipa and manifest.plist</td><td>your GitHub release</td><td>streamed through ourapps on a signed link valid for one hour; not stored</td></tr>
+            <tr><td>.ipa</td><td>uploaded by your workflow to Apple, through upload addresses ourapps reserves</td><td>TestFlight installs it; ourapps never stores it</td></tr>
             <tr><td>.apk</td><td>your GitHub release</td><td>streamed through ourapps on a signed link; not stored</td></tr>
             <tr><td>Web version</td><td>your Cloudflare account (or any host)</td><td><b>linked</b>, not proxied: the install page opens the address in <code>install.pwa</code></td></tr>
             <tr><td>web.zip (apps that already ship it)</td><td>your GitHub release</td><td><b>copied</b>: unpacked once per release into ourapps storage, served from <code>https://&lt;link&gt;.ourapps.app/</code></td></tr>
@@ -253,21 +252,20 @@ function body(): Raw {
 
         <section id="ios">
           <h2>Native iPhone and iPad</h2>
-          <p>Through Apple's TestFlight: friends install with Apple's free TestFlight app from a public invitation link. Nothing on the phone changes; no registration, no approvals. ourapps does the Apple side.</p>
+          <p>Through Apple's TestFlight: friends install with Apple's free TestFlight app from a public invitation link. Nothing on the phone changes. ourapps does the Apple side.</p>
           <ol class="steps">
             <li><b>Signing setup, once.</b> Your browser makes an RSA key and a certificate request; with your App Store Connect key ourapps gets an Apple Distribution certificate (<code>POST /v1/certificates</code>) and stores the key encrypted.</li>
-            <li><b>TestFlight setup, once per app.</b> You add the app in App Store Connect (Apple has no API for that). ourapps finds it by bundle ID, makes an App Store profile, an external beta group with a public link (<code>/v1/betaGroups</code>), and fills in the beta review contact and description.</li>
+            <li><b>TestFlight setup, once per app.</b> You add the app in App Store Connect (Apple has no API for that); the TestFlight card on the app's page lists every field of Apple's New App form. ourapps finds it by bundle ID, makes an App Store profile, an external beta group with a public link (<code>/v1/betaGroups</code>), and fills in the beta review contact and description.</li>
             <li><b>Build.</b> Your workflow fetches certificate, key and the App Store profile from <code>/api/build/&lt;app&gt;/signing</code> with the app's build token and exports for <code>app-store-connect</code>.</li>
             <li><b>Upload.</b> The workflow asks ourapps to reserve an upload (<code>/v1/buildUploads</code>), sends the bytes straight to Apple's upload addresses, and tells ourapps the MD5. No Apple key in the repository.</li>
             <li><b>Distribute.</b> Every ten minutes ourapps checks Apple; once the build is processed it adds it to the friends' group, sets What to Test from your release notes and submits it for beta review (the first build of each version).</li>
             <li><b>Keep it alive.</b> Builds last 90 days; two weeks before expiry ourapps sends <code>my-store-release</code> to the repository for a fresh build.</li>
           </ol>
           <ul class="bullets">
-            <li>Limits: up to 10,000 testers per app through the public link; builds last 90 days; Apple's beta review checks the first build of each version, usually within a day.</li>
+            <li>Limits: up to 10,000 testers per app through the public link; builds last 90 days; Apple's beta review checks the first build of each version.</li>
             <li>Updates arrive through TestFlight; data stays.</li>
             <li>ourapps holds the certificate's private key, encrypted per account, and gives it only to a workflow presenting the app's build token.</li>
             <li><b>iPad and universal apps:</b> build one .ipa with <code>TARGETED_DEVICE_FAMILY</code> <code>1,2</code>; TestFlight installs it on both.</li>
-            <li><b>Ad Hoc</b>, the older route that registered each device, only opens with Developer Mode switched on since iOS 16, so ourapps no longer offers it to friends.</li>
           </ul>
         </section>
 

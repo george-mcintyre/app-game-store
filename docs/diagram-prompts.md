@@ -14,13 +14,13 @@ and regenerate or touch up in an editor when a label is wrong.
 
 | file | state on 2026-10-21 |
 |---|---|
-| `architecture.png` | to regenerate: shows "iPhone enrolment" and Ad Hoc; iPhone now goes through TestFlight (prompt 1 updated) |
-| `cross-platform.png` | to regenerate: the macOS lane says Ad Hoc and the release lists .ipa and manifest.plist (prompt 7 updated) |
-| `testflight-sequence.png` | new: replaces `iphone-sequence.png`, which shows the Ad Hoc registration flow (prompt 8) |
+| `architecture.png` | missing: generate with prompt 1; until then the reference page draws its own diagram |
+| `cross-platform.png` | missing: generate with prompt 7 |
+| `testflight-sequence.png` | missing: generate with prompt 8 |
+| `offline.png` | to regenerate: its Releases card lists the .ipa (prompt 2 updated) |
 | the others | current |
 
-The PNGs are the masters; the site serves WebP copies. Delete `iphone-sequence.png` and `.webp`
-once `testflight-sequence.png` is in place.
+The PNGs are the masters; the site serves WebP copies.
 
 ## Shared style (already included in every prompt below)
 
@@ -61,9 +61,9 @@ Dashed indigo #4F46E5 arrows: from "Install page" to each of the three devices; 
 ```
 Clean flat vector technical diagram for a developer documentation site, 16:9, two-dimensional, no perspective, no 3D, no photorealism, no people, no brand logos. Light background #F3F5FA. White rounded cards (radius about 16 px) with 1 px light grey borders #E2E8F0 and a very soft shadow. A deep navy #0B1226 band across the top with a small logo of four rounded squares in indigo #8B85FF at falling opacity and the white title "Offline app, no backend". Typography: modern geometric sans serif like Inter, bold dark slate #0F172A titles, slate grey #475569 subtitles, sentence case, every word spelled exactly as given. Simple 2 px line icons in slate or indigo.
 
-Left: three device cards stacked, "iPhone", "Android phone", "Browser", each containing a small database cylinder icon with a padlock and the caption "data stays on the phone". Middle: a pale indigo #EEF2FF container with an indigo #4F46E5 border titled "ourapps.app" holding the cards "Install page" and "Signed downloads". Right, top: a light grey group "Your GitHub repository" holding "Releases" / ".ipa and .apk". Right, below it: a pale green #DCFCE7 container with a green #15803D border titled "Your Cloudflare account" holding one card "Web app files".
+Left: three device cards stacked, "iPhone", "Android phone", "Browser", each containing a small database cylinder icon with a padlock and the caption "data stays on the phone". Middle: a pale indigo #EEF2FF container with an indigo #4F46E5 border titled "ourapps.app" holding the cards "Install page" and "Signed downloads". Right, top: a light grey group "Your GitHub repository" holding "Releases" / ".apk and my-app.json". Right, below it: a pale green #DCFCE7 container with a green #15803D border titled "Your Cloudflare account" holding one card "Web app files".
 
-Dashed indigo #4F46E5 arrows from "Releases" into ourapps labelled "read at install time", and from ourapps to "iPhone" and "Android phone" labelled "install and update". A solid green #15803D arrow from "Web app files" to "Browser" labelled "opens the web app". At the bottom, instead of a backend, a dotted grey outline area with a crossed-out server icon and the text "no server to run". Legend at bottom left: dashed indigo line "installing and updating", solid green line "using the app". Generous whitespace, aligned grid, crisp edges.
+Dashed indigo #4F46E5 arrows from "Releases" into ourapps labelled "read at install time", from ourapps to "Android phone" labelled "install and update", and from ourapps to "iPhone" labelled "through TestFlight". A solid green #15803D arrow from "Web app files" to "Browser" labelled "opens the web app". At the bottom, instead of a backend, a dotted grey outline area with a crossed-out server icon and the text "no server to run". Legend at bottom left: dashed indigo line "installing and updating", solid green line "using the app". Generous whitespace, aligned grid, crisp edges.
 ```
 
 ## 3. `web-cloudflare.png`: static web app on the developer's own Cloudflare account

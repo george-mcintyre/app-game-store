@@ -39,7 +39,6 @@ export interface AppDetails {
 export interface DevApp extends AppDetails {
   repo: string;
   manifestUrl: string;
-  profileName: string;
   bundleId: string;
   showOnPage: boolean;
   ascAppId?: string | null;
@@ -51,7 +50,7 @@ export interface DevApp extends AppDetails {
 export interface Install {
   pwa: string | null;
   android: { apk: string } | null;
-  ios: { bundleId: string; adhoc: string | null; testflight: string | null; devices?: ("iphone" | "ipad")[] } | null;
+  ios: { bundleId: string; testflight: string | null; devices?: ("iphone" | "ipad")[] } | null;
 }
 
 export interface Release {
@@ -97,23 +96,6 @@ export interface ShareLink {
   revokedAt: string | null;
 }
 
-export interface Enrolment {
-  id: string;
-  appId: string;
-  linkId: string;
-  name: string;
-  state: string;
-  udid: string | null;
-  product: string | null;
-  profileUuid: string | null;
-  message: string | null;
-  createdAt: string;
-  updatedAt: string;
-  // When the registration profile was last downloaded, and in which browser.
-  profileFetchedAt?: string | null;
-  profileBrowser?: string | null;
-}
-
 export interface SecretStatus {
   apple: boolean;
   appleSavedAt: string | null;
@@ -131,18 +113,10 @@ export interface SigningStatus {
   createdAt: string;
 }
 
-export interface ProfileSummary {
-  name: string;
-  uuid: string;
-  expirationDate: string | null;
-  devices: number;
-  createdAt?: string;
-}
-
-// The result of POST /api/dev/signing: the certificate, then one line per app.
+// The result of POST /api/dev/signing: the certificate, then one line per app on TestFlight.
 export interface SigningSetUp {
   signing: SigningStatus;
-  apps: { id: string; name: string; profile: ProfileSummary | null; error: string | null }[];
+  apps: { id: string; name: string; error: string | null }[];
 }
 
 export interface Me {
@@ -155,8 +129,15 @@ export interface Me {
   reviewContact: { firstName: string; lastName: string; email: string; phone: string } | null;
 }
 
+// The developer's next step before TestFlight can be set up, in the order they meet them.
+export type TestflightNeed = "bundle-id" | "apple-key" | "signing" | "review-contact" | "store-app";
+
 export interface TestflightStatus {
   setUp: boolean;
+  // null with setUp false: ourapps can check with Apple whether the app is in App Store Connect yet.
+  needs: TestflightNeed | null;
+  // What to type into App Store Connect's New App form, until the app is set up.
+  storeApp: { name: string; otherName: string; bundleId: string; sku: string } | null;
   url: string | null;
   profile: string | null;
   contact: boolean;
@@ -167,7 +148,6 @@ export interface ReleaseStatus {
   ok: boolean;
   githubToken: boolean;
   appleKey: boolean;
-  profile: { uuid: string; expirationDate: string | null; devices: number } | null;
   tag: string | null;
   publishedAt: string | null;
   assets: string[];

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Install } from "./api.js";
 import { availableViews, chooseView, shapeFor, showTabs } from "./views.js";
 
-const ios = { bundleId: "a.b", adhoc: "https://x/m.plist", testflight: null };
+const ios = { bundleId: "a.b", testflight: "https://testflight.apple.com/join/x" };
 const all: Install = { pwa: "https://w/", android: { apk: "https://x/a.apk" }, ios };
 const none = () => false;
 

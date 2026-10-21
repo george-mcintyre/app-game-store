@@ -31,7 +31,7 @@ export const POKER_NIGHT: LinkPage = {
     install: {
       pwa: "https://example.invalid/poker-night/",
       android: { apk: "https://example.invalid/poker-night.apk" },
-      ios: { bundleId: "com.example.pokernight", adhoc: "https://example.invalid/manifest.plist", testflight: null, devices: ["iphone", "ipad"] },
+      ios: { bundleId: "com.example.pokernight", testflight: "https://example.invalid/testflight", devices: ["iphone", "ipad"] },
     },
     fallbackName: "Poker Night",
     fallbackIcon: "",
@@ -137,7 +137,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <p class="small muted">Share links themselves are unlimited and never expire unless you say so. Everything runs on free tiers; the only cost is Apple's developer membership, which you need for iPhone apps anyway.</p>
 
           <h2>How updates happen</h2>
-          <p><b>Nothing updates behind anyone's back.</b> There is no store running in the background, so an installed copy stays as it is until the friend taps Update. What that takes:</p>
+          <p><b>iPhone updates itself; Android waits for a tap.</b> TestFlight installs new iPhone builds; on Android no store runs in the background, so an installed copy stays as it is until the friend taps Update. What that takes:</p>
           <div class="compare">
             <div class="card"><h3>For your friends</h3><ul><li><b>iPhone:</b> TestFlight installs the new version, by itself when automatic updates are on. Settings and saved data stay.</li><li><b>Android:</b> tap Update, tap Install when the phone asks. Data stays as long as you signed with the same key.</li><li><b>Web app:</b> nothing; it refreshes itself.</li></ul></div>
             <div class="card"><h3>For you</h3><ul><li>Push a tag. The workflow publishes a release; the share link serves it at once.</li><li>ourapps uploads the iPhone build to TestFlight and sends it to your friends once Apple has processed it.</li><li>Bump the version numbers (Android versionCode, iOS CFBundleVersion) or phones will refuse the update.</li><li>Do not change the Android signing key, ever.</li></ul></div>
@@ -149,7 +149,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
 {
   "name": "Poker Night",
   "version": "1.3.0",
-  "ios":     { "installUrl": "itms-services://?action=download-manifest&url=...", "bundleId": "..." },
+  "testflightUrl": "https://testflight.apple.com/join/...",
   "android": { "apkUrl": "https://ourapps.app/dl/..." },
   "pwa": null,
   "linksExpireAt": "2026-10-16T11:00:00.000Z"
@@ -157,7 +157,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <ol class="steps">
             <li>Create a share link labelled "In-app updates" and never revoke it. Bake its id into the app.</li>
             <li>On launch, fetch <code>/latest</code> and compare <code>version</code> with the running version.</li>
-            <li>If newer, show one button. On iPhone open <code>ios.installUrl</code> (iOS shows its own Install prompt and replaces the app in place). On Android open <code>android.apkUrl</code> (the phone downloads it and asks to install).</li>
+            <li>If newer, show one button. On Android open <code>android.apkUrl</code> (the phone downloads it and asks to install). On iPhone TestFlight updates the app itself; <code>testflightUrl</code> opens TestFlight if you want a button.</li>
             <li>Fetch right before opening: the install links are good for an hour.</li>
           </ol>
           <p>The <a href="/dev/guide#updates">guide</a> has the Swift and Kotlin snippets, and the agent prompt asks your coding agent to add the check for you.</p>

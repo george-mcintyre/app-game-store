@@ -5,7 +5,7 @@ export type Platform = "ios" | "android" | "other";
 export interface InAppBrowser {
   // Human name of the host app.
   name: string;
-  // Whether itms-services links still work inside it (Safari view controller does, web views do not).
+  // Whether installs still work inside it (Safari view controller does, web views do not).
   installWorks: boolean;
 }
 
@@ -42,8 +42,4 @@ export function detectInAppBrowser(userAgent: string, platform: Platform): InApp
   if (platform === "ios" && !/Safari\//.test(userAgent) && !/CriOS|FxiOS|EdgiOS/.test(userAgent)) return { name: "this app", installWorks: false };
   if (platform === "android" && /\bwv\b/.test(userAgent)) return { name: "this app", installWorks: false };
   return null;
-}
-
-export function itmsLink(manifestUrl: string): string {
-  return `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
 }

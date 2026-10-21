@@ -31,5 +31,6 @@
     // Google Search Console HTML file name, for example google1234abcd.html; blank disables the route.
     "GOOGLE_SITE_VERIFICATION": ""
   },
+  "triggers": { "crons": ["*/10 * * * *"] },
   "observability": { "enabled": true }
 }

@@ -38,7 +38,7 @@ function architectureSvg(): Raw {
     ${card(336, 100, 258, 52, "Install page", "/l/&lt;link&gt;: listing, steps, QR")}
     ${card(336, 162, 258, 52, "Signed downloads", "/dl/&#8230;: streams .ipa and .apk")}
     ${card(336, 224, 258, 52, "iPhone enrolment", "device number, Apple registration")}
-    ${card(336, 286, 258, 52, "iPhone signing", "certificate and Ad Hoc profile")}
+    ${card(336, 286, 258, 52, "iPhone signing", "certificate, profile, TestFlight")}
     <text x="465" y="372" text-anchor="middle" ${s("fill:var(--text-2);font-size:11.5px;font-style:italic")}>no app code, API or database runs here</text>
 
     <rect x="680" y="40" width="300" height="214" rx="16" ${s("fill:var(--surface-2);stroke:var(--line-2);stroke-width:1")} />
@@ -54,7 +54,7 @@ function architectureSvg(): Raw {
     <text x="696" y="296" ${s("fill:var(--text);font-weight:700;font-size:13px")}>Your Cloudflare account</text>
     <text x="696" y="316" ${s("fill:var(--text-2);font-size:11.5px")}>web app files, served free</text>
 
-    ${card(680, 360, 300, 64, "Apple App Store Connect API", "devices, certificate, Ad Hoc profiles")}
+    ${card(680, 360, 300, 64, "Apple App Store Connect API", "certificate, profiles, TestFlight")}
 
     <rect x="20" y="460" width="960" height="124" rx="16" ${s("fill:var(--ok-soft);stroke:var(--ok);stroke-width:1.2")} />
     <text x="40" y="488" ${s("fill:var(--text);font-weight:800;font-size:15px")}>Your backend, hosted wherever you like</text>
@@ -115,7 +115,7 @@ const TOPOLOGIES: Topology[] = [
     summary: "The common case: one backend, three clients. ourapps installs the clients; the clients talk to your API directly.",
     parts: [
       ["Clients", "SwiftUI .ipa, Kotlin .apk and a web build, all from one release workflow"],
-      ["ourapps", "install pages, iPhone enrolment and signing, signed downloads"],
+      ["ourapps", "install pages, iPhone signing and TestFlight, signed downloads"],
       ["You host", "the API and the database anywhere with HTTPS; the web build on your Cloudflare account"],
     ],
   },
@@ -187,13 +187,13 @@ const TOPOLOGIES: Topology[] = [
   },
   {
     id: "topo-iphone",
-    title: "iPhone install, step by step",
-    file: "iphone-sequence.png",
-    summary: "The sequence behind the two taps a friend makes on an iPhone: enrolment, approval, Apple registration, a rebuild signed with the certificate and profile ourapps hands the workflow, install.",
+    title: "iPhone install through TestFlight, step by step",
+    file: "testflight-sequence.png",
+    summary: "From a tagged release to the app on a friend's iPhone: signing from ourapps, the upload through ourapps, Apple's processing and beta review, the invitation link, TestFlight's Install.",
     parts: [
-      ["Friend", "two taps and one Settings install"],
-      ["ourapps", "enrolment, Apple calls, rebuild request, install link"],
-      ["You", "approve; your workflow builds"],
+      ["Friend", "TestFlight app, Open the invitation, Accept, Install"],
+      ["ourapps", "signing, upload, friends' group, beta review, fresh build before expiry"],
+      ["You", "add the app once in App Store Connect; push a tag"],
     ],
   },
 ];
@@ -218,7 +218,7 @@ function body(): Raw {
           <h2>Supported app types</h2>
           <table class="table">
             <tr><th>Kind</th><th>Examples</th><th>How it reaches people</th><th>Status</th></tr>
-            <tr><td>Native iPhone and iPad</td><td>Swift, SwiftUI, UIKit, Objective-C</td><td>Ad Hoc signed .ipa, installed from the link</td><td><span class="pill ok">supported</span> 100 devices per family a year</td></tr>
+            <tr><td>Native iPhone and iPad</td><td>Swift, SwiftUI, UIKit, Objective-C</td><td>App Store-signed .ipa on TestFlight; friends install with Apple's TestFlight app</td><td><span class="pill ok">supported</span> 10,000 people per app; Apple's beta review</td></tr>
             <tr><td>Native Android</td><td>Kotlin, Java, Jetpack Compose</td><td>Signed universal .apk, direct download</td><td><span class="pill ok">supported</span> no device limit</td></tr>
             <tr><td>Cross-platform native</td><td>Flutter, React Native and Expo, .NET MAUI, Kotlin Multiplatform, Capacitor, Cordova, Unity and Godot mobile builds</td><td>As the two above</td><td><span class="pill ok">supported</span></td></tr>
             <tr><td>Static web app or PWA</td><td>Vite with React, Vue, Svelte or Solid; Angular; Astro; Flutter web; Next.js static export</td><td>Deployed by your workflow to your own free Cloudflare account; the install page opens it</td><td><span class="pill ok">supported</span> 20,000 files, 25 MB per file</td></tr>
@@ -231,7 +231,7 @@ function body(): Raw {
             <li>Running server code, APIs or databases on ourapps. It distributes apps; it does not host their logic.</li>
             <li>Desktop apps (macOS, Windows, Linux) and Apple Watch, Apple TV or Vision Pro apps. The install flow is for phones, tablets and browsers.</li>
             <li>Android App Bundles (.aab) as they are: phones cannot install them. Convert to a universal .apk (<a href="#android">how</a>).</li>
-            <li>More than 100 iPhones, or 100 iPads, per membership year. Past that, use TestFlight or the App Store.</li>
+            <li>iPhone apps without Apple's beta review: Ad Hoc builds need Developer Mode on every phone since iOS 16, so ourapps does not offer them.</li>
             <li>Features that need App Store distribution, such as real in-app purchases.</li>
           </ul>
         </section>
@@ -253,20 +253,21 @@ function body(): Raw {
 
         <section id="ios">
           <h2>Native iPhone and iPad</h2>
-          <p>Apple's Ad Hoc distribution: the build is signed with a provisioning profile listing the device numbers allowed to run it. ourapps automates the list.</p>
+          <p>Through Apple's TestFlight: friends install with Apple's free TestFlight app from a public invitation link. Nothing on the phone changes; no registration, no approvals. ourapps does the Apple side.</p>
           <ol class="steps">
-            <li><b>Signing setup, once.</b> Your browser makes an RSA key and a certificate request; with your App Store Connect key ourapps gets an Apple Distribution certificate (<code>POST /v1/certificates</code>), stores the key encrypted, finds or creates each app's App ID (<code>/v1/bundleIds</code>) and makes its Ad Hoc profile.</li>
-            <li><b>Enrolment.</b> The friend taps Register. ourapps serves a configuration profile of type <code>Profile Service</code> asking for <code>UDID</code>, <code>PRODUCT</code> and <code>VERSION</code> only. iOS posts those back as a signed plist to <code>/api/enrol/&lt;id&gt;</code>; ourapps reads the device number. The profile installs nothing else.</li>
-            <li><b>Approval.</b> You approve the device in the console or through the API.</li>
-            <li><b>Apple.</b> With your App Store Connect key (ES256 token, ten minutes), ourapps registers the device (<code>POST /v1/devices</code>, or finds it), then deletes and recreates your Ad Hoc profile with every enabled iOS device, because Apple profiles cannot be edited.</li>
-            <li><b>Rebuild.</b> ourapps sends <code>repository_dispatch</code> of type <code>my-store-rebuild</code>. Your workflow fetches certificate, key and the new profile from <code>/api/build/&lt;app&gt;/signing</code> with the app's build token, builds, publishes, and calls <code>/api/build-ready</code> with the profile's uuid.</li>
-            <li><b>Install.</b> Devices inside that profile become ready. The page offers <code>itms-services://?action=download-manifest&amp;url=&#8230;</code>; ourapps rewrites the .ipa address inside manifest.plist to a signed link. A device approved after the workflow fetched its profile gets one more rebuild automatically.</li>
+            <li><b>Signing setup, once.</b> Your browser makes an RSA key and a certificate request; with your App Store Connect key ourapps gets an Apple Distribution certificate (<code>POST /v1/certificates</code>) and stores the key encrypted.</li>
+            <li><b>TestFlight setup, once per app.</b> You add the app in App Store Connect (Apple has no API for that). ourapps finds it by bundle ID, makes an App Store profile, an external beta group with a public link (<code>/v1/betaGroups</code>), and fills in the beta review contact and description.</li>
+            <li><b>Build.</b> Your workflow fetches certificate, key and the App Store profile from <code>/api/build/&lt;app&gt;/signing</code> with the app's build token and exports for <code>app-store-connect</code>.</li>
+            <li><b>Upload.</b> The workflow asks ourapps to reserve an upload (<code>/v1/buildUploads</code>), sends the bytes straight to Apple's upload addresses, and tells ourapps the MD5. No Apple key in the repository.</li>
+            <li><b>Distribute.</b> Every ten minutes ourapps checks Apple; once the build is processed it adds it to the friends' group, sets What to Test from your release notes and submits it for beta review (the first build of each version).</li>
+            <li><b>Keep it alive.</b> Builds last 90 days; two weeks before expiry ourapps sends <code>my-store-release</code> to the repository for a fresh build.</li>
           </ol>
           <ul class="bullets">
-            <li>Limits: 100 devices per product family per membership year (iPhone and iPad counted separately); slots return only at renewal. Builds stop launching a year after the profile was created.</li>
-            <li>Updates install over the existing app when the bundle id is the same and <code>CFBundleVersion</code> is higher; data stays.</li>
-            <li>ourapps holds the certificate's private key, encrypted per account, and gives it only to a workflow presenting the app's build token. The repository needs no Apple secrets.</li>
-            <li><b>iPad and universal apps:</b> build one .ipa with <code>TARGETED_DEVICE_FAMILY</code> <code>1,2</code>; nothing else changes. iPads detect, enrol, register and install exactly like iPhones and use Apple's separate iPad allowance. An iPhone-only build also installs on an iPad, where it runs in a phone-sized window and still uses an iPad slot. Say which devices a build targets with the optional <code>install.ios.devices</code> (<code>["iphone", "ipad"]</code>); the page shows it and warns on the other device, but never blocks.</li>
+            <li>Limits: up to 10,000 testers per app through the public link; builds last 90 days; Apple's beta review checks the first build of each version, usually within a day.</li>
+            <li>Updates arrive through TestFlight; data stays.</li>
+            <li>ourapps holds the certificate's private key, encrypted per account, and gives it only to a workflow presenting the app's build token.</li>
+            <li><b>iPad and universal apps:</b> build one .ipa with <code>TARGETED_DEVICE_FAMILY</code> <code>1,2</code>; TestFlight installs it on both.</li>
+            <li><b>Ad Hoc</b>, the older route that registered each device, only opens with Developer Mode switched on since iOS 16, so ourapps no longer offers it to friends.</li>
           </ul>
         </section>
 
@@ -336,7 +337,7 @@ unzip app.apks universal.apk</code></pre></li>
             <tr><td>Vite, Angular, Astro, SvelteKit static</td><td>Static output, deployed to your Cloudflare account. SvelteKit needs the static adapter.</td></tr>
             <tr><td>Phaser, PlayCanvas, Three.js, Babylon.js</td><td>Static output; nothing special.</td></tr>
             <tr><td>Capacitor, Cordova</td><td>Native shells: publish the .ipa and .apk; optionally deploy the same web build to your Cloudflare account.</td></tr>
-            <tr><td>React Native and Expo</td><td>Build the .ipa with an Ad Hoc profile and a universal .apk (local builds or your own CI); Expo's web output can ship as web.zip.</td></tr>
+            <tr><td>React Native and Expo</td><td>Build the .ipa with the App Store profile for TestFlight and a universal .apk (local builds or your own CI); Expo's web output can ship as web.zip.</td></tr>
           </table>
         </section>
 
@@ -354,8 +355,8 @@ unzip app.apks universal.apk</code></pre></li>
           <h2>Limits</h2>
           <table class="table">
             <tr><th>Limit</th><th>Value</th><th>Set by</th></tr>
-            <tr><td>iPhone devices</td><td>100 per product family per membership year (iPhone and iPad separately)</td><td>Apple</td></tr>
-            <tr><td>Ad Hoc build lifetime</td><td>one year from profile creation</td><td>Apple</td></tr>
+            <tr><td>iPhone and iPad people</td><td>10,000 per app through the TestFlight public link</td><td>Apple</td></tr>
+            <tr><td>TestFlight build lifetime</td><td>90 days; ourapps asks for a fresh build two weeks before</td><td>Apple</td></tr>
             <tr><td>Android devices</td><td>none</td><td>n/a</td></tr>
             <tr><td>Signed download links</td><td>valid one hour; the page makes fresh ones on every load</td><td>ourapps</td></tr>
             <tr><td>Web app on your Cloudflare account</td><td>20,000 files per deploy, 25 MB per file, 100 Workers per account; plain files served without a request limit</td><td>Cloudflare</td></tr>

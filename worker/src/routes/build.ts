@@ -7,6 +7,7 @@ import { rebuildPayload, transition } from "../flow.js";
 import { dispatchRebuild } from "../github.js";
 import { HttpError, bearer, json, readJson } from "../http.js";
 import { loadSecrets } from "../secrets.js";
+import { commitUpload, reserveUpload } from "../testflight.js";
 import { MAX_SAMPLE_SECONDS } from "../buildtime.js";
 
 // Verifies the per-app token; a token stored as a plain hash is rewritten as a keyed hash.
@@ -30,8 +31,8 @@ export async function buildProfile(request: Request, env: Env, appId: string): P
 }
 
 // GET or HEAD /api/build/:app/signing - everything an iPhone build needs: ourapps' certificate, its
-// private key and the latest Ad Hoc profile. 404 until signing is set up and the profile exists;
-// HEAD answers the same status without the key, for deciding whether to build for iPhone.
+// private key, the App Store profile for TestFlight and the latest Ad Hoc profile. 404 until signing
+// is set up and one of the profiles exists; HEAD answers the same status without the key.
 export async function buildSigning(request: Request, env: Env, appId: string): Promise<Response> {
   const db = Db.from(env);
   const app = await db.appById(appId);
@@ -40,7 +41,8 @@ export async function buildSigning(request: Request, env: Env, appId: string): P
   const certificate = await db.signingCertificate(app.developerId);
   if (!certificate) throw new HttpError(404, "iPhone signing is not set up; the developer sets it up under Settings in ourapps");
   const profile = await db.latestProfile(app.id);
-  if (!profile) throw new HttpError(404, "no Ad Hoc profile yet; it is made when the app has a bundle ID and a device is registered");
+  const store = app.storeProfileBase64 && app.storeProfileUuid ? app : null;
+  if (!profile && !store) throw new HttpError(404, "no profile yet; set up TestFlight on the app's page in ourapps");
   if (request.method === "HEAD") return new Response(null, { status: 200, headers: { "Cache-Control": "no-store" } });
   const secrets = await loadSecrets(env, app.developerId, ["signingKey", "appleTeamId"]);
   if (!secrets.signingKey) throw new HttpError(404, "the signing key is missing; set up iPhone signing again under Settings");
@@ -48,8 +50,21 @@ export async function buildSigning(request: Request, env: Env, appId: string): P
     certificate: { id: certificate.certificateId, name: certificate.name, serialNumber: certificate.serialNumber, expirationDate: certificate.expirationDate, base64: certificate.certificateBase64 },
     privateKeyPem: secrets.signingKey,
     teamId: secrets.appleTeamId ?? null,
-    profile: { profileName: profile.profileName, profileId: profile.profileId, uuid: profile.uuid, profileBase64: profile.profileBase64, expirationDate: profile.expirationDate },
+    // TestFlight builds use storeProfile and export with method app-store-connect.
+    storeProfile: store ? { profileName: store.storeProfileName, profileId: store.storeProfileId, uuid: store.storeProfileUuid, profileBase64: store.storeProfileBase64 } : null,
+    testflight: app.ascAppId ? { url: app.testflightUrl ?? null } : null,
+    profile: profile ? { profileName: profile.profileName, profileId: profile.profileId, uuid: profile.uuid, profileBase64: profile.profileBase64, expirationDate: profile.expirationDate } : null,
   });
+}
+
+// POST /api/build/:app/testflight/upload and /commit - the workflow uploads its .ipa to Apple through
+// operations ourapps reserves, so the repository holds no Apple key.
+export async function buildTestflight(request: Request, env: Env, deps: Deps, appId: string, step: "upload" | "commit"): Promise<Response> {
+  const app = await Db.from(env).appById(appId);
+  if (!app) throw new HttpError(404, "unknown app");
+  await requireBuildToken(request, env, app);
+  const body = await readJson<Record<string, unknown>>(request);
+  return json(step === "upload" ? await reserveUpload(env, deps, app, body) : await commitUpload(env, deps, app, body));
 }
 
 // POST /api/build-ready - only devices inside the signed profile become ready; others get a new build.

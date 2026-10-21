@@ -11,6 +11,7 @@ import { EDITABLE_SECRET_FIELDS, appleReady, loadSecrets, saveSecrets, secretsSu
 import { CHANGELOG_ASSET } from "../history.js";
 import { fetchManifest, loadManifest, resolveRelease } from "../upstream.js";
 import { webHosting } from "../webapp.js";
+import { reviewContact, setUpTestflight } from "../testflight.js";
 import { buildLinkPage } from "./public.js";
 
 type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName" | "bundleId", string>> & {
@@ -24,7 +25,7 @@ function buildTokenHash(env: Env, token: string): Promise<string> {
 }
 
 function publicApp(app: AppRow) {
-  const { buildTokenHash: _hash, ...rest } = app;
+  const { buildTokenHash: _hash, storeProfileBase64: _profile, ...rest } = app;
   return rest;
 }
 
@@ -99,7 +100,7 @@ export async function me(env: Env, dev: AuthedDeveloper): Promise<Response> {
   const { authVia, scope, keyId: _k, ...developer } = dev;
   // The summary only marks fields as present; the team ID is shown, so it alone is decrypted.
   const [summary, team, signing] = await Promise.all([secretsSummary(env, dev.id), loadSecrets(env, dev.id, ["appleTeamId"]), Db.from(env).signingCertificate(dev.id)]);
-  return json({ developer, authVia, scope, termsVersion: TERMS_VERSION, secrets: secretStatus({ ...summary, appleTeamId: team.appleTeamId }, signing) });
+  return json({ developer, authVia, scope, termsVersion: TERMS_VERSION, secrets: secretStatus({ ...summary, appleTeamId: team.appleTeamId }, signing), reviewContact: reviewContact(dev) });
 }
 
 // POST /api/dev/terms - dashboard only; records acceptance of the current terms.
@@ -402,6 +403,43 @@ export async function removeDevice(env: Env, dev: Developer, id: string): Promis
   if (!record || record.developerId !== dev.id) throw new HttpError(404, "unknown device");
   await db.deleteEnrolment(id);
   return json({ ok: true });
+}
+
+// GET /api/dev/apps/:id/testflight - where TestFlight stands for the app and its latest uploads.
+export async function testflightStatus(env: Env, dev: Developer, id: string): Promise<Response> {
+  const db = Db.from(env);
+  const app = await ownedApp(db, dev, id);
+  return json(await testflightView(db, app, dev));
+}
+
+async function testflightView(db: Db, app: AppRow, dev: Developer) {
+  const builds = await db.testflightBuilds(app.id, 6);
+  return {
+    setUp: Boolean(app.ascAppId),
+    url: app.testflightUrl ?? null,
+    profile: app.storeProfileName ?? null,
+    contact: Boolean(reviewContact(dev)),
+    builds: builds.filter((b) => b.version !== "-").map((b) => ({ version: b.version, buildNumber: b.buildNumber, state: b.state, message: b.message, updatedAt: b.updatedAt })),
+  };
+}
+
+// POST /api/dev/apps/:id/testflight - set TestFlight up, or bring it up to date.
+export async function setUpAppTestflight(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+  const db = Db.from(env);
+  const app = await ownedApp(db, dev, id);
+  await setUpTestflight(env, deps, dev, app);
+  return json(await testflightView(db, app, dev));
+}
+
+// PUT /api/dev/review-contact - who Apple's TestFlight beta review contacts.
+export async function updateReviewContact(request: Request, env: Env, dev: Developer): Promise<Response> {
+  const body = await readJson<{ firstName?: unknown; lastName?: unknown; email?: unknown; phone?: unknown }>(request);
+  const c = { firstName: text(body.firstName, 60), lastName: text(body.lastName, 60), email: text(body.email, 120), phone: text(body.phone, 40) };
+  if (!c.firstName || !c.lastName) throw new HttpError(400, "first and last name are required");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email)) throw new HttpError(400, "email must be an email address");
+  if (!/^\+?[0-9 ().-]{6,}$/.test(c.phone)) throw new HttpError(400, "phone must be a phone number, for example +44 7700 900123");
+  await Db.from(env).setReviewContact(dev.id, c);
+  return json({ reviewContact: c });
 }
 
 // GET /api/dev/apps/:id/release - what the latest release looks like from the store's side.

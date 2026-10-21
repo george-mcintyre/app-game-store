@@ -83,14 +83,14 @@ export async function landing(root: HTMLElement): Promise<void> {
           <div class="section-title"><h2>For your friends</h2></div>
           <div class="grid-3">
             <div class="card"><div class="num">1</div><h3>Open the link</h3><p class="muted">A link or QR code from someone they know opens an install page that looks and feels like the store they already use.</p></div>
-            <div class="card"><div class="num">2</div><h3>Tap once or twice</h3><p class="muted">Android downloads straight away. iPhone registers the phone first, then installs. The page explains each step in plain words.</p></div>
-            <div class="card"><div class="num">3</div><h3>It is on the home screen</h3><p class="muted">No app store, no account, no sideloading tools. Updates come from the same link.</p></div>
+            <div class="card"><div class="num">2</div><h3>Tap once or twice</h3><p class="muted">Android downloads straight away. iPhone and iPad install through Apple's free TestFlight app. The page explains each step in plain words.</p></div>
+            <div class="card"><div class="num">3</div><h3>It is on the home screen</h3><p class="muted">No app store listing, no account, no settings to change. Updates arrive the same way.</p></div>
           </div>
           <div class="section-title"><h2>For you, the developer</h2></div>
           <div class="grid-3">
             <div class="card"><div class="num">1</div><h3>Sign in and add your app</h3><p class="muted">Name, icon, screenshots, a few lines of text. Point it at the GitHub repository that publishes releases.</p></div>
             <div class="card"><div class="num">2</div><h3>Create share links</h3><p class="muted">One per person or group, with labels, expiry and revoke. Each has a QR code.</p></div>
-            <div class="card"><div class="num">3</div><h3>Approve iPhones as they arrive</h3><p class="muted">The console registers each device with Apple, rebuilds the app and tells your friend when it is ready.</p></div>
+            <div class="card"><div class="num">3</div><h3>iPhone through TestFlight</h3><p class="muted">ourapps signs each iPhone build, uploads it to TestFlight and sends it to your friends, and asks for a fresh build before one expires.</p></div>
           </div>
           <div class="card mt pad-l row wrap" style="justify-content:space-between">
             <div style="flex:1 1 260px"><h3>Agents welcome</h3><p class="muted small">Everything in the console is also an API. Give your coding agent an API key and the prompt from the guide, and it can register apps, publish releases and hand you share links.</p></div>
@@ -356,79 +356,6 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
     target?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
   }));
-  const form = root.querySelector<HTMLFormElement>("#enrol-form");
-  if (form && data.linkId) {
-    form.onsubmit = (e) => startEnrolment(e, data.linkId!, form, name);
-    // A registration started earlier in this browser carries on instead of starting a second one.
-    const earlier = localStorage.getItem(`enrolment:${data.linkId}`);
-    if (earlier) {
-      const linkId = data.linkId;
-      api<{ state: string; install?: InstallInfo }>("GET", `/api/enrol/${earlier}/status`)
-        .then((s) => {
-          if (["rejected", "failed"].includes(s.state)) return;
-          if (s.state === "ready") return onDevice(root, form, earlier, d.device, data.release?.version ?? null, s.install);
-          registering(root, form, linkId, earlier, d.device, s.state);
-        })
-        .catch(() => localStorage.removeItem(`enrolment:${linkId}`));
-    }
-  }
-  if (form && !data.linkId) form.onsubmit = (e) => { e.preventDefault(); toast(opts.example ? "Example only: nothing to install" : "Preview only: create a share link to try this"); };
-}
-
-// Sets the Get button at the top of the page and the line beside it.
-function setGet(root: HTMLElement, label: string, caption: string): void {
-  root.querySelectorAll<HTMLButtonElement>("[data-get]").forEach((b) => {
-    b.textContent = label;
-    const c = b.nextElementSibling;
-    if (c instanceof HTMLElement && c.matches("span.small")) c.textContent = caption;
-  });
-}
-
-// A registration this browser started and has not finished: one card saying what happens next,
-// in place of the form.
-function registering(root: HTMLElement, form: HTMLFormElement, linkId: string, enrolmentId: string, device: string, state: string): void {
-  const next =
-    state === "awaiting-device"
-      ? "Next: open Settings, tap Profile Downloaded, then Install."
-      : state === "pending-approval"
-        ? `Waiting for the developer to approve your ${device}.`
-        : `Your copy is being built. This page and the progress page update by themselves.`;
-  const label = state === "awaiting-device" ? "Continue" : "See progress";
-  form.outerHTML = html`
-    <div class="install-card" id="on-device">
-      <h3>${icon("phone", "icon-20")} On this ${device}</h3>
-      <p class="muted small">${next}</p>
-      <a class="btn block lg" href="/l/${linkId}/wait/${enrolmentId}">${label}</a>
-    </div>`.html;
-  setGet(root, label, state === "awaiting-device" ? "Registration started" : state === "pending-approval" ? "Waiting for approval" : "Being built");
-}
-
-// A device this browser registered and the developer approved: install, update or install again
-// without a new registration.
-function onDevice(root: HTMLElement, form: HTMLFormElement, enrolmentId: string, device: string, latest: string | null, install: InstallInfo | undefined): void {
-  const installed = install?.phase === "installed" ? (install.version ?? "") : null;
-  const newer = installed !== null && latest !== null && installed !== "" && installed !== latest;
-  const label = newer ? `Update to ${latest}` : installed !== null ? "Install again" : "Install";
-  form.outerHTML = html`
-    <div class="install-card" id="on-device">
-      <h3>${icon("phone", "icon-20")} On this ${device}</h3>
-      <p class="muted small">${installed !== null ? (installed ? `Version ${installed} is installed.` : "The app is installed.") : `Your ${device} is approved and ready to install.`}${newer ? ` Version ${latest} is out.` : ""}</p>
-      <button class="btn block lg ${newer || installed === null ? "" : "secondary"}" type="button" id="install-latest">${label}</button>
-      <div class="install-progress" id="install-progress" hidden></div>
-    </div>`.html;
-  setGet(root, newer ? "Update" : installed !== null ? "Installed" : "Install", newer ? `Version ${latest} is out` : installed !== null ? `On this ${device}` : `Ready for this ${device}`);
-  const button = root.querySelector<HTMLButtonElement>("#install-latest")!;
-  // An update installs the newest release; installing again uses the build made for this device.
-  const manifest = newer
-    ? async () => (await api<{ manifestUrl: string }>("GET", `/api/enrol/${enrolmentId}/latest`)).manifestUrl
-    : async () => (await api<{ manifestUrl: string }>("GET", `/api/enrol/${enrolmentId}/status`)).manifestUrl;
-  wireInstall(root, button, enrolmentId, device, manifest, install?.attemptAt ?? null, () => {
-    button.textContent = "Install again";
-    button.classList.add("secondary");
-    button.disabled = false;
-    root.querySelector<HTMLElement>("#on-device p")!.textContent = "Installed. Look for the icon on your home screen.";
-    setGet(root, "Installed", `On this ${device}`);
-  });
 }
 
 // Latest version with a clamped summary; "more..." reveals the full list.
@@ -486,8 +413,7 @@ function ctaArea(data: LinkPage, d: Detected, name: string): Raw {
   const install = data.release.install;
   if (d.inApp && !d.inApp.installWorks) return html`<button class="btn get" data-get>Get</button><span class="small muted">Open in ${d.platform === "ios" ? "Safari" : "Chrome"} first</span>`;
   if (d.platform === "ios") {
-    if (install.ios?.adhoc) return html`<button class="btn get" data-get>Get</button><span class="small muted">Two quick steps</span>`;
-    if (install.ios?.testflight) return html`<a class="btn get" href="${install.ios.testflight}">Get</a><span class="small muted">via TestFlight</span>`;
+    if (install.ios?.testflight) return html`<button class="btn get" data-get>Get</button><span class="small muted">via Apple's TestFlight</span>`;
     if (install.pwa) return html`<a class="btn get" href="${install.pwa}">Open</a><span class="small muted">web app</span>`;
     return html`<span class="pill">Not for ${d.device} yet</span>`;
   }
@@ -520,8 +446,36 @@ function installPanel(view: ViewKind | null, data: LinkPage, d: Detected, name: 
   if (view === "web") return remote ? webOnComputer(install.pwa!, name) : pwaSteps(install.pwa!, d.platform);
   if (remote) return remoteCard(view, install, pageUrl);
   if (view === "android") return androidSteps(install.android!.apk, name);
-  if (install.ios?.adhoc) return iosEnrol(name, d.device, install.ios.devices);
-  return html`<div class="install-card"><h3>Install through TestFlight</h3><p class="muted small">Apple's TestFlight app opens; tap Install there.</p><a class="btn block" href="${install.ios!.testflight!}">Open in TestFlight</a></div>`;
+  if (install.ios?.testflight) return testflightSteps(name, d.device, install.ios.testflight);
+  return iosComingSoon(name, d.device, install.pwa);
+}
+
+const TESTFLIGHT_APP = "https://apps.apple.com/app/testflight/id899247664";
+
+// iPhone and iPad installs go through Apple's TestFlight app: no settings to change, nothing to approve.
+function testflightSteps(name: string, device: string, invite: string): Raw {
+  return html`
+    <div class="install-card" id="testflight-card">
+      <h3>${icon("phone", "icon-20")} Install on this ${device}</h3>
+      <p class="muted small">Your ${device} installs ${name} through TestFlight, Apple's free app for sharing apps before the App Store.</p>
+      <ol class="steps">
+        <li><b>Get TestFlight</b> from the App Store, if you do not have it yet.<a class="btn block secondary mt-s" href="${TESTFLIGHT_APP}">Get TestFlight</a></li>
+        <li>Come back here and open the invitation. TestFlight opens.<a class="btn block mt-s" href="${invite}">Open the invitation</a></li>
+        <li>In TestFlight tap <b>Accept</b>, then <b>Install</b>. ${name} appears on your home screen.</li>
+      </ol>
+      <p class="tiny faint mt-s">TestFlight keeps ${name} up to date; say yes to automatic updates when it asks. If the invitation says it is not open yet, Apple is still checking the newest version; try again later today.</p>
+    </div>`;
+}
+
+// An app that only ships an Ad Hoc build would need Developer Mode on the friend's iPhone, which
+// ourapps does not ask for; the web version stands in until the app is on TestFlight.
+function iosComingSoon(name: string, device: string, pwa: string | null): Raw {
+  return html`
+    <div class="install-card">
+      <h3>${icon("phone", "icon-20")} Coming to ${device} soon</h3>
+      <p class="muted small">The developer is getting ${name} ready for ${device}s.${pwa ? " Until then, the web version runs on this " + device + " too." : ""}</p>
+      ${pwa ? html`<a class="btn block" href="${pwa}" rel="noopener">Open the web version</a>` : ""}
+    </div>`;
 }
 
 function remoteCard(view: "iphone" | "ipad" | "android", install: Install, pageUrl: string): Raw {
@@ -529,9 +483,9 @@ function remoteCard(view: "iphone" | "ipad" | "android", install: Install, pageU
   const steps =
     view === "android"
       ? html`<li>Tap <b>Get</b>; the app downloads.</li><li>The first time, allow installs from the browser when Android asks.</li><li>Tap <b>Install</b>.</li>`
-      : install.ios?.adhoc
-        ? html`<li>Tap <b>Get</b> and type your name.</li><li>Install the small profile from <b>Settings</b>.</li><li>Once the developer has approved your ${device}, tap <b>Install</b>.</li>`
-        : html`<li>Tap <b>Get</b>; Apple's TestFlight app opens.</li><li>Tap <b>Install</b> there.</li>`;
+      : install.ios?.testflight
+        ? html`<li>Get Apple's free <b>TestFlight</b> app from the App Store.</li><li>Tap <b>Open the invitation</b> on this page, on the ${device}.</li><li>In TestFlight tap <b>Accept</b>, then <b>Install</b>.</li>`
+        : html`<li>The ${device} version is on its way; the web version works there now.</li>`;
   return html`
     <div class="install-card remote-card">
       <div class="qr">${qrSvg(pageUrl)}</div>
@@ -565,42 +519,6 @@ function shotsBlock(view: ViewKind | null, sets: ScreenshotSets, name: string, t
   return html`${source ? html`<p class="sub">${VIEW_LABEL[source]} screenshots</p>` : ""}<div class="shots shape-${shape}">${picked.urls.map((u) => html`<img src="${u}" alt="Screenshot of ${name}" loading="lazy" />`)}</div>`;
 }
 
-function iosEnrol(name: string, device: "iPhone" | "iPad", devices?: ("iphone" | "ipad")[]): Raw {
-  const note = deviceNote(devices, device);
-  return html`
-    <form id="enrol-form" class="install-card">
-      <h3>${icon("phone", "icon-20")} Install on this ${device}</h3>
-      ${devices && devices.length > 0 ? html`<p class="small muted">For ${appleTargets(devices)}.</p>` : ""}
-      ${note ? callout("warn", html`<p>${note}</p>`) : ""}
-      <p class="muted small">Apple only lets ${name} run on devices the developer has registered. Step one registers this ${device}, step two builds your copy. The page keeps you posted.</p>
-      <div class="field">
-        <label for="friend-name">Your name, so the developer knows whose ${device} this is</label>
-        <input type="text" id="friend-name" name="name" required maxlength="60" autocomplete="given-name" placeholder="Sam" />
-      </div>
-      <button class="btn block lg" type="submit">Register this ${device}</button>
-      <p class="tiny faint mt-s">Next your ${device} asks to download a small profile, and this page shows how to install it in Settings. It tells the developer your ${device}'s device number and nothing else.</p>
-    </form>
-  `;
-}
-
-async function startEnrolment(e: Event, linkId: string, form: HTMLFormElement, appName: string): Promise<void> {
-  e.preventDefault();
-  const button = form.querySelector<HTMLButtonElement>("button")!;
-  button.disabled = true;
-  const name = (form.elements.namedItem("name") as HTMLInputElement).value;
-  try {
-    const res = await api<{ enrolmentId: string; profileUrl: string }>("POST", "/api/enrol/new", { linkId, name });
-    localStorage.setItem(`enrolment:${linkId}`, res.enrolmentId);
-    // The download cancels the wait page's own requests in Safari, so it gets the name from here.
-    sessionStorage.setItem(`appName:${res.enrolmentId}`, appName);
-    // The wait page comes first: a browser that blanks the page for the download can go back to it.
-    navigate(`/l/${linkId}/wait/${res.enrolmentId}`);
-    location.href = res.profileUrl;
-  } catch (err) {
-    button.disabled = false;
-    toast(err instanceof Error ? err.message : String(err));
-  }
-}
 
 function androidSteps(apkUrl: string, name: string): Raw {
   return html`

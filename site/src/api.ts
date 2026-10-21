@@ -42,6 +42,8 @@ export interface DevApp extends AppDetails {
   profileName: string;
   bundleId: string;
   showOnPage: boolean;
+  ascAppId?: string | null;
+  testflightUrl?: string | null;
   releaseIcon?: string;
   createdAt: string;
 }
@@ -149,6 +151,16 @@ export interface Me {
   scope: "read" | "manage";
   termsVersion: string;
   secrets: SecretStatus;
+  // Who Apple's TestFlight beta review contacts; null until saved.
+  reviewContact: { firstName: string; lastName: string; email: string; phone: string } | null;
+}
+
+export interface TestflightStatus {
+  setUp: boolean;
+  url: string | null;
+  profile: string | null;
+  contact: boolean;
+  builds: { version: string; buildNumber: string; state: string; message: string | null; updatedAt: string }[];
 }
 
 export interface ReleaseStatus {

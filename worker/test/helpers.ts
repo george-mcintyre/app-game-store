@@ -19,15 +19,9 @@ export const manifest = {
   install: {
     pwa: null,
     android: { apk: "https://api.github.com/repos/o/skull/releases/assets/2" },
-    ios: { bundleId: "com.example.skull", adhoc: "https://api.github.com/repos/o/skull/releases/assets/3", testflight: null },
+    ios: { bundleId: "com.example.skull", testflight: "https://testflight.apple.com/join/FIXTURE" },
   },
 };
-
-export const manifestPlist = `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict><key>items</key><array><dict>
-<key>assets</key><array><dict><key>kind</key><string>software-package</string><key>url</key><string>https://api.github.com/repos/o/skull/releases/assets/4</string></dict></array>
-<key>metadata</key><dict><key>bundle-identifier</key><string>com.example.skull</string><key>kind</key><string>software</string><key>title</key><string>Skull</string></dict>
-</dict></array></dict></plist>`;
 
 export type Call = { method: string; url: string; body?: string; headers: Headers };
 
@@ -79,7 +73,7 @@ export async function clearDb(env: Env): Promise<void> {
   const kv = await env.WEBAPP_FILES.list();
   await Promise.all(kv.keys.map((k) => env.WEBAPP_FILES.delete(k.name)));
 
-  for (const table of ["audit_log", "api_keys", "build_durations", "testflight_builds", "profiles", "enrolments", "links", "apps", "sessions", "signing_certificates", "developer_secrets", "developers"]) {
+  for (const table of ["audit_log", "api_keys", "testflight_builds", "links", "apps", "sessions", "signing_certificates", "developer_secrets", "developers"]) {
     await env.DB.prepare(`DELETE FROM ${table}`).run();
   }
 }
@@ -103,8 +97,6 @@ export function githubRoutes() {
     [`GET ${gh("/repos/o/skull/releases/latest")}`]: () => jsonRes({ assets: [{ name: "my-app.json", url: "https://api.github.com/repos/o/skull/releases/assets/1" }] }),
     [`GET ${gh("/repos/o/skull/releases/assets/1")}`]: () => jsonRes(manifest),
     [`GET ${gh("/repos/o/skull/releases/assets/2")}`]: () => new Response("APKBYTES", { status: 200 }),
-    [`GET ${gh("/repos/o/skull/releases/assets/3")}`]: () => new Response(manifestPlist, { status: 200 }),
-    [`GET ${gh("/repos/o/skull/releases/assets/4")}`]: () => new Response("IPABYTES", { status: 200 }),
     [`GET ${gh("/repos/o/skull/releases/assets/6")}`]: () => new Response("SHOT", { status: 200, headers: { "Content-Type": "image/png" } }),
     [`GET ${gh("/repos/o/skull/releases/assets/5")}`]: () => new Response("PNGBYTES", { status: 200, headers: { "Content-Type": "image/png" } }),
     [`POST ${gh("/repos/o/skull/dispatches")}`]: () => new Response(null, { status: 204 }),
@@ -122,22 +114,11 @@ export function githubRoutes() {
   };
 }
 
-// Routes that make Apple accept new devices and recreate one profile. Without `noOldProfile` an
-// existing "Skull Ad Hoc" profile is found; bundle IDs and certificates are created on request.
-export function appleRoutes(state: { devices: { id: string; udid: string }[]; profileCount: number; noOldProfile?: boolean; bundleIds?: { id: string; identifier: string }[] }) {
+// Apple's signing side. Without `noOldProfile` an existing "Skull App Store" profile with an older
+// certificate is found; bundle IDs, profiles and certificates are created on request.
+export function appleRoutes(state: { profileCount?: number; noOldProfile?: boolean; bundleIds?: { id: string; identifier: string }[] } = {}) {
   const bundleIds = state.bundleIds ?? (state.bundleIds = []);
   return {
-    [`GET ${apple("/v1/devices")}`]: (call: Call) => {
-      const udid = new URL(call.url).searchParams.get("filter[udid]");
-      const data = (udid ? state.devices.filter((d) => d.udid === udid) : state.devices).map((d) => ({ id: d.id, type: "devices", attributes: { udid: d.udid } }));
-      return jsonRes({ data });
-    },
-    [`POST ${apple("/v1/devices")}`]: (call: Call) => {
-      const body = JSON.parse(call.body!);
-      const device = { id: `dev-${state.devices.length + 1}`, udid: body.data.attributes.udid };
-      state.devices.push(device);
-      return jsonRes({ data: { id: device.id, type: "devices", attributes: body.data.attributes } }, 201);
-    },
     [`GET ${apple("/v1/profiles")}`]: () =>
       jsonRes({
         data: state.noOldProfile
@@ -146,15 +127,14 @@ export function appleRoutes(state: { devices: { id: string; udid: string }[]; pr
               {
                 id: "prof-old",
                 type: "profiles",
-                attributes: { name: "Skull Ad Hoc", uuid: "uuid-old", profileContent: "b64old", expirationDate: "2027-01-01T00:00:00Z" },
+                attributes: { name: "Skull App Store", profileType: "IOS_APP_STORE", uuid: "uuid-old", profileContent: "b64old", expirationDate: "2027-01-01T00:00:00Z" },
                 relationships: { bundleId: { data: { type: "bundleIds", id: "bid-1" } }, certificates: { data: [{ type: "certificates", id: "cert-1" }] } },
               },
             ],
       }),
     [`DELETE ${apple("/v1/profiles/prof-old")}`]: () => new Response(null, { status: 204 }),
     [`POST ${apple("/v1/profiles")}`]: () => {
-      state.profileCount += 1;
-      const n = state.profileCount;
+      const n = (state.profileCount = (state.profileCount ?? 0) + 1);
       return jsonRes({ data: { id: `prof-${n}`, type: "profiles", attributes: { uuid: `uuid-${n}`, profileContent: `b64-${n}`, expirationDate: "2027-10-01T00:00:00Z" } } }, 201);
     },
     // A prefix match comes back too, as Apple's filter may return it.
@@ -178,11 +158,6 @@ export async function rsaPem(): Promise<string> {
 }
 
 export const CSR = "-----BEGIN CERTIFICATE REQUEST-----\nMIIBVzCBwQIBADAYMRYwFAYDVQQDDA1vdXJhcHBzIHRlc3Q=\n-----END CERTIFICATE REQUEST-----\n";
-
-export const deviceReply = (udid: string) =>
-  new TextEncoder().encode(
-    `\x30\x82\x01\x00binary-junk<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>PRODUCT</key><string>iPhone15,2</string><key>UDID</key><string>${udid}</string><key>VERSION</key><string>22B83</string></dict></plist>more-junk`,
-  );
 
 // Sign in through the stubbed OAuth flow; returns the Cookie header to use.
 export async function signIn(env: Env, deps: TestDeps, user?: { id: number; login: string; name: string }, acceptTerms = true): Promise<string> {
@@ -210,7 +185,7 @@ export function api(cookie: string | null, method: string, path: string, body?: 
 }
 
 export async function createSkull(env: Env, deps: TestDeps, cookie: string): Promise<{ appId: string; buildToken: string; linkId: string }> {
-  const res = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", profileName: "Skull Ad Hoc", tagline: "Bluff your friends" }), env, deps);
+  const res = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", tagline: "Bluff your friends" }), env, deps);
   expect(res.status).toBe(201);
   const { app, buildToken } = (await res.json()) as { app: { id: string }; buildToken: string };
   const linkRes = await handle(api(cookie, "POST", `/api/dev/apps/${app.id}/links`, { label: "family" }), env, deps);
@@ -224,25 +199,4 @@ export const GH_TOKEN = "ghp_" + "a".repeat(36);
 export async function saveAppleSecrets(env: Env, deps: TestDeps, cookie: string): Promise<void> {
   const res = await handle(api(cookie, "PUT", "/api/dev/secrets", { appleIssuerId: "iss", appleKeyId: "kid", applePrivateKey: await applePem(), appleTeamId: "TEAM123456", githubToken: GH_TOKEN }), env, deps);
   expect(res.status).toBe(200);
-}
-
-export async function enrol(env: Env, deps: TestDeps, linkId: string, name: string, udid: string): Promise<string> {
-  const created = await handle(api(null, "POST", "/api/enrol/new", { linkId, name }), env, deps);
-  expect(created.status).toBe(201);
-  const { enrolmentId } = (await created.json()) as { enrolmentId: string };
-  const cb = await handle(new Request(`${BASE}/api/enrol/${enrolmentId}`, { method: "POST", body: deviceReply(udid) }), env, deps);
-  expect(cb.status).toBe(301);
-  return enrolmentId;
-}
-
-export async function status(env: Env, deps: TestDeps, id: string, since?: string) {
-  const res = await handle(new Request(`${BASE}/api/enrol/${id}/status${since ? `?since=${since}` : ""}`), env, deps);
-  expect(res.status).toBe(200);
-  return (await res.json()) as {
-    state: string;
-    manifestUrl?: string;
-    message?: string;
-    build?: { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null };
-    install?: { attemptAt: string | null; phase: string; version: string | null };
-  };
 }

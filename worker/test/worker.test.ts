@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Env } from "../src/env.js";
 import { errorResponse, handle } from "../src/index.js";
-import { BASE, CSR, GH_TOKEN, api, jsonRes, type Call, manifest, appleRoutes, applePem, clearDb, createSkull, deviceReply, enrol, fakeFetch, githubRoutes, rsaPem, saveAppleSecrets, signIn, status, testDeps, testEnv, type TestDeps } from "./helpers.js";
-
-const UDID_1 = "00008030-000A1B2C3D4E5F67";
-const UDID_2 = "00008030-000F0E0D0C0B0A09";
+import { BASE, CSR, GH_TOKEN, api, jsonRes, type Call, manifest, appleRoutes, applePem, clearDb, createSkull, fakeFetch, githubRoutes, rsaPem, saveAppleSecrets, signIn, testDeps, testEnv, type TestDeps } from "./helpers.js";
 
 let env: Env;
 let deps: TestDeps;
@@ -49,8 +46,8 @@ describe("apps", () => {
 
     const rot = (await (await handle(api(cookie, "POST", `/api/dev/apps/${appId}/build-token`), env, deps)).json()) as { buildToken: string };
     expect(rot.buildToken).not.toBe(buildToken);
-    expect((await handle(api(null, "GET", `/api/build/${appId}/profile`, undefined, { Authorization: `Bearer ${buildToken}` }), env, deps)).status).toBe(401);
-    expect((await handle(api(null, "GET", `/api/build/${appId}/profile`, undefined, { Authorization: `Bearer ${rot.buildToken}` }), env, deps)).status).toBe(404);
+    expect((await handle(api(null, "GET", `/api/build/${appId}/signing`, undefined, { Authorization: `Bearer ${buildToken}` }), env, deps)).status).toBe(401);
+    expect((await handle(api(null, "GET", `/api/build/${appId}/signing`, undefined, { Authorization: `Bearer ${rot.buildToken}` }), env, deps)).status).toBe(404);
 
     expect((await handle(api(cookie, "DELETE", `/api/dev/apps/${appId}`), env, deps)).status).toBe(200);
     expect((await handle(api(cookie, "GET", `/api/dev/apps/${appId}`), env, deps)).status).toBe(404);
@@ -65,7 +62,7 @@ describe("share links and public pages", () => {
     const d = { ...deps, fetch };
     const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { app: { name: string; tagline: string }; developer: { displayName: string }; release: { version: string; fallbackIcon: string; fallbackScreenshots: string[]; install: { android: { apk: string }; ios: { adhoc: string } } } };
+    const body = (await res.json()) as { app: { name: string; tagline: string }; developer: { displayName: string }; release: { version: string; fallbackIcon: string; fallbackScreenshots: string[]; install: { android: { apk: string }; ios: { testflight: string } } } };
     expect(body.release.fallbackIcon).toMatch(new RegExp(`^${BASE}/dl/`));
     expect(body.release.fallbackScreenshots[0]).toMatch(new RegExp(`^${BASE}/dl/`));
     expect(body.release.fallbackScreenshots[1]).toBe("https://cdn.example.com/2.png");
@@ -82,13 +79,7 @@ describe("share links and public pages", () => {
     const apk = await handle(new Request(body.release.install.android.apk), env, d);
     expect(apk.headers.get("Content-Type")).toBe("application/vnd.android.package-archive");
     expect(await apk.text()).toBe("APKBYTES");
-
-    const plist = await handle(new Request(body.release.install.ios.adhoc), env, d);
-    expect(plist.headers.get("Content-Type")).toBe("text/xml");
-    const text = await plist.text();
-    expect(text).not.toContain("api.github.com");
-    const ipaUrl = /<key>url<\/key><string>([^<]+)<\/string>/.exec(text)![1];
-    expect(await (await handle(new Request(ipaUrl), env, d)).text()).toBe("IPABYTES");
+    expect(body.release.install.ios.testflight).toBe("https://testflight.apple.com/join/FIXTURE");
   });
 
   it("builds the revision history from releases, tags and commits", async () => {
@@ -235,7 +226,7 @@ describe("share links and public pages", () => {
     const live = (await (await handle(api(cookie, "POST", `/api/dev/apps/${appId}/links`, {}), env, deps)).json()) as { link: { id: string } };
     expect((await handle(api(cookie, "POST", `/api/dev/links/${live.link.id}/revoke`), env, deps)).status).toBe(200);
     expect((await handle(api(null, "GET", `/api/public/links/${live.link.id}`), env, deps)).status).toBe(410);
-    expect((await handle(api(null, "POST", "/api/enrol/new", { linkId: live.link.id, name: "Bob" }), env, deps)).status).toBe(410);
+    expect((await handle(api(null, "GET", `/api/public/links/${live.link.id}/latest`), env, deps)).status).toBe(410);
     expect((await handle(api(null, "GET", "/api/public/links/nope"), env, deps)).status).toBe(404);
   });
 
@@ -252,270 +243,14 @@ describe("share links and public pages", () => {
   });
 });
 
-describe("enrolment", () => {
-  it("creates an enrolment and serves the profile", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    const created = await handle(api(null, "POST", "/api/enrol/new", { linkId, name: "Bob" }), env, deps);
-    const { enrolmentId, profileUrl } = (await created.json()) as { enrolmentId: string; profileUrl: string };
-    expect(profileUrl).toBe(`${BASE}/api/enrol/${enrolmentId}/profile.mobileconfig`);
-    const profile = await handle(new Request(profileUrl), env, deps);
-    expect(profile.headers.get("Content-Type")).toBe("application/x-apple-aspen-config");
-    // Nothing but the type: older iOS Safari fails on attachments, and page headers mean nothing to Settings.
-    expect(profile.headers.get("Content-Disposition")).toBeNull();
-    expect(profile.headers.get("Content-Security-Policy")).toBeNull();
-    expect(profile.headers.get("Cross-Origin-Opener-Policy")).toBeNull();
-    const text = await profile.text();
-    expect(text).toContain("<string>Profile Service</string>");
-    expect(text).toContain(`<string>${BASE}/api/enrol/${enrolmentId}</string>`);
-    expect(text).toContain("Install Skull");
-    expect((await status(env, deps, enrolmentId)).state).toBe("awaiting-device");
-  });
-
-  it("records which browser downloaded the profile, so the wait page can send the friend to Safari", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    const created = await handle(api(null, "POST", "/api/enrol/new", { linkId, name: "Iluminada" }), env, deps);
-    const { enrolmentId } = (await created.json()) as { enrolmentId: string };
-    expect((await status(env, deps, enrolmentId) as { profile?: unknown }).profile).toEqual({ fetchedAt: null, browser: null, safari: null });
-    const chrome = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1";
-    expect((await handle(new Request(`${BASE}/api/enrol/${enrolmentId}/profile.mobileconfig`, { headers: { "User-Agent": chrome } }), env, deps)).status).toBe(200);
-    expect((await status(env, deps, enrolmentId) as { profile?: unknown }).profile).toMatchObject({ browser: "Chrome", safari: false });
-    const safari = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
-    await handle(new Request(`${BASE}/api/enrol/${enrolmentId}/profile.mobileconfig`, { headers: { "User-Agent": safari } }), env, deps);
-    expect((await status(env, deps, enrolmentId) as { profile?: unknown }).profile).toMatchObject({ browser: "Safari", safari: true });
-  });
-
-  it("requires a name and a known link", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    expect((await handle(api(null, "POST", "/api/enrol/new", { linkId, name: " " }), env, deps)).status).toBe(400);
-    expect((await handle(api(null, "POST", "/api/enrol/new", { linkId: "zzz", name: "Bob" }), env, deps)).status).toBe(404);
-    expect((await handle(api(null, "POST", "/api/enrol/new", "not json"), env, deps)).status).toBe(400);
-  });
-
-  it("records the UDID and redirects to the wait page", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    const created = await handle(api(null, "POST", "/api/enrol/new", { linkId, name: "Bob" }), env, deps);
-    const { enrolmentId } = (await created.json()) as { enrolmentId: string };
-    const cb = await handle(new Request(`${BASE}/api/enrol/${enrolmentId}`, { method: "POST", body: deviceReply(UDID_1) }), env, deps);
-    expect(cb.status).toBe(301);
-    expect(cb.headers.get("Location")).toBe(`${BASE}/l/${linkId}/wait/${enrolmentId}`);
-    expect((await status(env, deps, enrolmentId)).state).toBe("pending-approval");
-    const list = (await (await handle(api(cookie, "GET", "/api/dev/devices"), env, deps)).json()) as { enrolments: { udid: string; product: string }[] };
-    expect(list.enrolments[0]).toMatchObject({ udid: UDID_1, product: "iPhone15,2" });
-    expect((await handle(new Request(`${BASE}/api/enrol/${enrolmentId}`, { method: "POST", body: "garbage" }), env, deps)).status).toBe(400);
-  });
-
-  it("long polls until the deadline when nothing changes, returns at once otherwise", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    const id = await enrol(env, deps, linkId, "Bob", UDID_1);
-    let before = deps.now().getTime();
-    expect((await status(env, deps, id, "pending-approval")).state).toBe("pending-approval");
-    expect(deps.now().getTime() - before).toBeGreaterThanOrEqual(25_000);
-    before = deps.now().getTime();
-    await status(env, deps, id, "awaiting-device");
-    expect(deps.now().getTime() - before).toBe(0);
-  });
-
-  it("can be rejected and removed by the owning developer only", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    const id = await enrol(env, deps, linkId, "Bob", UDID_1);
-    const other = await signIn(env, deps, { id: 9, login: "sue", name: "Sue" });
-    expect((await handle(api(other, "POST", `/api/dev/devices/${id}/reject`), env, deps)).status).toBe(404);
-    expect((await handle(api(cookie, "POST", `/api/dev/devices/${id}/reject`), env, deps)).status).toBe(200);
-    expect((await status(env, deps, id)).state).toBe("rejected");
-    expect((await handle(api(cookie, "POST", `/api/dev/devices/${id}/reject`), env, deps)).status).toBe(409);
-    expect((await handle(api(cookie, "DELETE", `/api/dev/devices/${id}`), env, deps)).status).toBe(200);
-    expect((await handle(new Request(`${BASE}/api/enrol/${id}/status`), env, deps)).status).toBe(404);
-  });
-});
-
-describe("approve, rebuild and build-ready", () => {
-  it("registers the device, recreates the profile and dispatches a rebuild", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const { appId, linkId, buildToken } = await createSkull(env, deps, cookie);
-    const id = await enrol(env, deps, linkId, "Bob", UDID_1);
-    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [], profileCount: 0 }) });
-    const d = { ...deps, fetch };
-
-    const res = await handle(api(cookie, "POST", `/api/dev/devices/${id}/approve`), env, d);
-    expect(res.status).toBe(200);
-    expect((await status(env, d, id)).state).toBe("building");
-
-    const register = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/devices"))!;
-    expect(JSON.parse(register.body!).data.attributes).toEqual({ name: "Bob (iPhone15,2)", udid: UDID_1, platform: "IOS" });
-    expect(register.headers.get("Authorization")).toMatch(/^Bearer [\w-]+\.[\w-]+\.[\w-]+$/);
-
-    const create = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/profiles"))!;
-    const body = JSON.parse(create.body!);
-    expect(body.data.attributes).toEqual({ name: "Skull Ad Hoc", profileType: "IOS_APP_ADHOC" });
-    expect(body.data.relationships.devices.data).toEqual([{ type: "devices", id: "dev-1" }]);
-
-    const dispatch = calls.find((c) => c.url.endsWith("/dispatches"))!;
-    expect(dispatch.headers.get("Authorization")).toBe(`Bearer ${GH_TOKEN}`);
-    const payload = JSON.parse(dispatch.body!);
-    expect(payload.event_type).toBe("my-store-rebuild");
-    expect(payload.client_payload).toMatchObject({ app: appId, enrolmentId: id, udid: UDID_1, profileUuid: "uuid-1", buildReadyUrl: `${BASE}/api/build-ready`, profileUrl: `${BASE}/api/build/${appId}/profile` });
-
-    const profile = await handle(api(null, "GET", `/api/build/${appId}/profile`, undefined, { Authorization: `Bearer ${buildToken}` }), env, d);
-    expect(await profile.json()).toMatchObject({ profileName: "Skull Ad Hoc", uuid: "uuid-1", profileBase64: "b64-1" });
-    const detail = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}`), env, d)).json()) as { profile: { uuid: string; devices: number } };
-    expect(detail.profile).toMatchObject({ uuid: "uuid-1", devices: 1 });
-  });
-
-  it("includes devices from every page of Apple's device list in the new profile", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const { linkId } = await createSkull(env, deps, cookie);
-    const id = await enrol(env, deps, linkId, "Bob", UDID_1);
-    const state = { devices: [{ id: "ipad-1", udid: "00008103-0001AAAAAAAAAAAA" }, { id: "iphone-1", udid: "00008110-0002BBBBBBBBBBBB" }], profileCount: 0 };
-    const routes = { ...githubRoutes(), ...appleRoutes(state) };
-    routes["GET api.appstoreconnect.apple.com/v1/devices"] = (call) => {
-      const u = new URL(call.url);
-      const udid = u.searchParams.get("filter[udid]");
-      const all = state.devices.map((d) => ({ id: d.id, type: "devices", attributes: { udid: d.udid } }));
-      if (udid) return jsonRes({ data: all.filter((d) => d.attributes.udid === udid) });
-      if (u.searchParams.get("cursor") === "p2") return jsonRes({ data: all.slice(2) });
-      return jsonRes({ data: all.slice(0, 2), links: { next: "https://api.appstoreconnect.apple.com/v1/devices?cursor=p2&limit=200" } });
-    };
-    const { fetch, calls } = fakeFetch(routes);
-    expect((await handle(api(cookie, "POST", `/api/dev/devices/${id}/approve`), env, { ...deps, fetch })).status).toBe(200);
-    const create = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/profiles"))!;
-    expect(JSON.parse(create.body!).data.relationships.devices.data.map((d: { id: string }) => d.id)).toEqual(["ipad-1", "iphone-1", "dev-3"]);
-  });
-
-  it("marks failed when Apple refuses", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const { linkId } = await createSkull(env, deps, cookie);
-    const id = await enrol(env, deps, linkId, "Bob", UDID_1);
-    const routes = { ...githubRoutes(), ...appleRoutes({ devices: [], profileCount: 0 }) };
-    routes["POST api.appstoreconnect.apple.com/v1/devices"] = () => new Response(JSON.stringify({ errors: [{ detail: "device limit reached" }] }), { status: 409 });
-    const res = await handle(api(cookie, "POST", `/api/dev/devices/${id}/approve`), env, { ...deps, fetch: fakeFetch(routes).fetch });
-    expect(res.status).toBe(502);
-    const s = await status(env, deps, id);
-    expect(s.state).toBe("failed");
-    expect(s.message).toMatch(/device limit reached/);
-  });
-
-  it("refuses approval before the UDID arrived or without Apple secrets", async () => {
-    const { linkId } = await createSkull(env, deps, cookie);
-    const created = await handle(api(null, "POST", "/api/enrol/new", { linkId, name: "Bob" }), env, deps);
-    const { enrolmentId } = (await created.json()) as { enrolmentId: string };
-    expect((await handle(api(cookie, "POST", `/api/dev/devices/${enrolmentId}/approve`), env, deps)).status).toBe(409);
-    const id = await enrol(env, deps, linkId, "Bob", UDID_1);
-    const res = await handle(api(cookie, "POST", `/api/dev/devices/${id}/approve`), env, deps);
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toMatch(/App Store Connect API key/);
-  });
-
-  it("build-ready makes only the devices in that profile ready and re-dispatches for the rest", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const { appId, linkId, buildToken } = await createSkull(env, deps, cookie);
-    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [], profileCount: 0 }) });
-    const d = { ...deps, fetch };
-    const auth = { Authorization: `Bearer ${buildToken}` };
-
-    const first = await enrol(env, d, linkId, "Bob", UDID_1);
-    expect((await handle(api(cookie, "POST", `/api/dev/devices/${first}/approve`), env, d)).status).toBe(200);
-    const second = await enrol(env, d, linkId, "Sue", UDID_2);
-    expect((await handle(api(cookie, "POST", `/api/dev/devices/${second}/approve`), env, d)).status).toBe(200);
-    expect(calls.filter((c) => c.url.endsWith("/dispatches")).length).toBe(2);
-
-    // The CI built with the first profile, which only contained Bob's device.
-    const res = await handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://api.github.com/repos/o/skull/releases/assets/3", version: "0.1.1", profileUuid: "uuid-1" }, auth), env, d);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ready: [first], waiting: [second], redispatched: true });
-    expect(calls.filter((c) => c.url.endsWith("/dispatches")).length).toBe(3);
-
-    const bob = await status(env, d, first);
-    expect(bob.state).toBe("ready");
-    expect(bob.manifestUrl).toMatch(new RegExp(`^${BASE}/dl/`));
-    expect(bob.message).toBe("version 0.1.1");
-    expect((await status(env, d, second)).state).toBe("building");
-
-    const res2 = await handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://api.github.com/repos/o/skull/releases/assets/3", profileUuid: "uuid-2" }, auth), env, d);
-    expect(await res2.json()).toEqual({ ready: [second], waiting: [], redispatched: false });
-  });
-
-  it("times builds and tells the waiting page how long the next one should take", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const { appId, linkId, buildToken } = await createSkull(env, deps, cookie);
-    const { fetch } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [], profileCount: 0 }) });
-    const d = { ...deps, fetch };
-    const auth = { Authorization: `Bearer ${buildToken}` };
-    const ready = (uuid: string) => handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://api.github.com/repos/o/skull/releases/assets/3", profileUuid: uuid }, auth), env, d);
-
-    // No build yet: 20 minutes.
-    const bob = await enrol(env, d, linkId, "Bob", UDID_1);
-    expect((await status(env, d, bob)).build).toBeUndefined();
-    await handle(api(cookie, "POST", `/api/dev/devices/${bob}/approve`), env, d);
-    expect((await status(env, d, bob)).build).toEqual({ elapsedSeconds: 0, expectedSeconds: 1200, typicalSeconds: null });
-    d.advance(4 * 60_000);
-    expect((await status(env, d, bob)).build?.elapsedSeconds).toBe(240);
-    d.advance(6 * 60_000);
-    expect((await ready("uuid-1")).status).toBe(200);
-    expect((await status(env, d, bob)).build).toBeUndefined();
-
-    // One ten-minute build: the next is expected to take eleven.
-    const sue = await enrol(env, d, linkId, "Sue", UDID_2);
-    await handle(api(cookie, "POST", `/api/dev/devices/${sue}/approve`), env, d);
-    expect((await status(env, d, sue)).build).toEqual({ elapsedSeconds: 0, expectedSeconds: 660, typicalSeconds: 600 });
-
-    // A build that took hours was blocked or re-run by hand and is not counted.
-    d.advance(3 * 60 * 60_000);
-    expect((await ready("uuid-2")).status).toBe(200);
-    const rows = await env.DB.prepare("SELECT seconds FROM build_durations ORDER BY id").all<{ seconds: number }>();
-    expect(rows.results.map((r) => r.seconds)).toEqual([600]);
-  });
-
-  it("tracks an install from the manifest to the end of the .ipa download, and gives ready devices the newest build", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const { appId, linkId, buildToken } = await createSkull(env, deps, cookie);
-    const { fetch } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [], profileCount: 0 }) });
-    const d = { ...deps, fetch };
-    const bob = await enrol(env, d, linkId, "Bob", UDID_1);
-    expect((await handle(api(null, "GET", `/api/enrol/${bob}/latest`), env, d)).status).toBe(409);
-    await handle(api(cookie, "POST", `/api/dev/devices/${bob}/approve`), env, d);
-    await handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://api.github.com/repos/o/skull/releases/assets/3", version: "0.1.1", profileUuid: "uuid-1" }, { Authorization: `Bearer ${buildToken}` }), env, d);
-
-    const ready = await status(env, d, bob);
-    expect(ready.install).toEqual({ attemptAt: null, phase: "none", version: null });
-    const plist = await (await handle(new Request(ready.manifestUrl!), env, d)).text();
-    expect((await status(env, d, bob)).install?.phase).toBe("requested");
-    const ipaUrl = /<key>url<\/key>\s*<string>([^<]+)</.exec(plist)![1];
-    const ipa = await handle(new Request(ipaUrl), env, d);
-    expect((await status(env, d, bob)).install?.phase).toBe("downloading");
-    expect(await ipa.text()).toBe("IPABYTES");
-    expect((await status(env, d, bob)).install).toMatchObject({ phase: "installed", version: "0.1.1" });
-
-    // The newest release for an update; a new attempt clears progress and keeps the installed version.
-    const latest = (await (await handle(api(null, "GET", `/api/enrol/${bob}/latest`), env, d)).json()) as { version: string; manifestUrl: string };
-    expect(latest.version).toBe("0.1.0");
-    expect(latest.manifestUrl).toMatch(new RegExp(`^${BASE}/dl/`));
-    await (await handle(new Request(latest.manifestUrl), env, d)).text();
-    expect((await status(env, d, bob)).install).toMatchObject({ phase: "requested", version: "0.1.1" });
-
-    // A revoked link gives no new install links.
-    await handle(api(cookie, "POST", `/api/dev/links/${linkId}/revoke`), env, d);
-    expect((await handle(api(null, "GET", `/api/enrol/${bob}/latest`), env, d)).status).toBe(410);
-  });
-
-  it("build-ready validates its input and token", async () => {
-    const { appId, buildToken } = await createSkull(env, deps, cookie);
-    const auth = { Authorization: `Bearer ${buildToken}` };
-    expect((await handle(api(null, "POST", "/api/build-ready", { app: appId }), env, deps)).status).toBe(401);
-    expect((await handle(api(null, "POST", "/api/build-ready", { app: "nope" }, auth), env, deps)).status).toBe(404);
-    expect((await handle(api(null, "POST", "/api/build-ready", { app: appId }, auth), env, deps)).status).toBe(400);
-    expect((await handle(api(null, "POST", "/api/build-ready", { app: appId, manifestUrl: "https://x", profileUuid: "nope" }, auth), env, deps)).status).toBe(409);
-  });
-});
-
 describe("iPhone signing", () => {
-  type SetUp = { signing: { name: string; expirationDate: string } | null; apps: { id: string; name: string; profile: { name: string; devices: number } | null; error: string | null }[] };
+  type SetUp = { signing: { name: string; expirationDate: string } | null; apps: { id: string; name: string; error: string | null }[] };
 
-  it("creates the certificate, keeps its key encrypted and makes profiles for apps with a bundle ID", async () => {
+  it("creates the certificate, keeps its key encrypted, and serves it to builds once TestFlight is set up", async () => {
     await saveAppleSecrets(env, deps, cookie);
     const made = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", bundleId: "com.example.skull" }), env, deps);
     const { app, buildToken } = (await made.json()) as { app: { id: string }; buildToken: string };
-    await handle(api(cookie, "POST", "/api/dev/apps", { name: "Web only", repo: "o/web" }), env, deps);
-    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [{ id: "dev-1", udid: UDID_1 }], profileCount: 0, noOldProfile: true }) });
+    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...appleRoutes({ noOldProfile: true }) });
     const d = { ...deps, fetch };
     const key = await rsaPem();
 
@@ -523,75 +258,42 @@ describe("iPhone signing", () => {
     expect(res.status).toBe(201);
     const body = (await res.json()) as SetUp;
     expect(body.signing).toMatchObject({ name: "Apple Distribution: Test Person", expirationDate: "2027-10-20T10:00:00.000+00:00" });
-    expect(body.apps).toEqual([
-      { id: app.id, name: "Skull", profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1, createdAt: deps.now().toISOString() }, error: null },
-      { id: expect.any(String), name: "Web only", profile: null, error: "skipped: no iPhone bundle ID" },
-    ]);
-
+    // No app is on TestFlight yet, so no profile is touched.
+    expect(body.apps).toEqual([]);
+    expect(calls.some((c) => c.url.endsWith("/v1/profiles"))).toBe(false);
     const cert = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/certificates"))!;
     expect(JSON.parse(cert.body!).data.attributes).toEqual({ certificateType: "DISTRIBUTION", csrContent: CSR.trim() });
-    const bundle = calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/bundleIds"))!;
-    expect(JSON.parse(bundle.body!).data.attributes).toEqual({ identifier: "com.example.skull", name: "ourapps Skull", platform: "IOS" });
-    const profile = JSON.parse(calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/profiles"))!.body!).data;
-    expect(profile.attributes).toEqual({ name: "Skull Ad Hoc", profileType: "IOS_APP_ADHOC" });
-    expect(profile.relationships.bundleId.data).toEqual({ type: "bundleIds", id: "bid-new-1" });
-    expect(profile.relationships.certificates.data).toEqual([{ type: "certificates", id: "cert-ours" }]);
 
-    const detail = (await (await handle(api(cookie, "GET", `/api/dev/apps/${app.id}`), env, d)).json()) as { app: { profileName: string; bundleId: string } };
-    expect(detail.app).toMatchObject({ profileName: "Skull Ad Hoc", bundleId: "com.example.skull" });
     const me = (await (await handle(api(cookie, "GET", "/api/dev/me"), env, d)).json()) as { secrets: { signing: { name: string } | null } };
     expect(me.secrets.signing?.name).toBe("Apple Distribution: Test Person");
-
     const blob = (await env.DB.prepare("SELECT blob FROM developer_secrets").first<{ blob: string }>())!.blob;
     expect(blob).not.toContain("PRIVATE KEY");
     expect(blob).not.toContain(key.split("\n")[1]);
 
+    // Builds get nothing until the app is on TestFlight.
     const auth = { Authorization: `Bearer ${buildToken}` };
-    const head = await handle(api(null, "HEAD", `/api/build/${app.id}/signing`, undefined, auth), env, d);
-    expect(head.status).toBe(200);
+    expect((await handle(api(null, "HEAD", `/api/build/${app.id}/signing`, undefined, auth), env, d)).status).toBe(404);
+    const early = await handle(api(null, "GET", `/api/build/${app.id}/signing`, undefined, auth), env, d);
+    expect(((await early.json()) as { error: string }).error).toMatch(/TestFlight is not set up/);
+    await env.DB.prepare("UPDATE apps SET asc_app_id = 'asc-1', beta_group_id = 'grp-1', testflight_url = 'https://testflight.apple.com/join/AbCd', store_profile_id = 'prof-s', store_profile_uuid = 'uuid-s', store_profile_name = 'Skull App Store', store_profile_base64 = 'b64-s' WHERE id = ?").bind(app.id).run();
+    expect((await handle(api(null, "HEAD", `/api/build/${app.id}/signing`, undefined, auth), env, d)).status).toBe(200);
     const got = await handle(api(null, "GET", `/api/build/${app.id}/signing`, undefined, auth), env, d);
-    expect(got.status).toBe(200);
     expect(got.headers.get("Cache-Control")).toBe("no-store");
     expect(await got.json()).toEqual({
       certificate: { id: "cert-ours", name: "Apple Distribution: Test Person", serialNumber: "5EA1", expirationDate: "2027-10-20T10:00:00.000+00:00", base64: "Q0VSVElGSUNBVEU=" },
       privateKeyPem: key.trim(),
       teamId: "TEAM123456",
-      storeProfile: null,
-      testflight: null,
-      profile: { profileName: "Skull Ad Hoc", profileId: "prof-1", uuid: "uuid-1", profileBase64: "b64-1", expirationDate: "2027-10-01T00:00:00Z" },
+      storeProfile: { profileName: "Skull App Store", profileId: "prof-s", uuid: "uuid-s", profileBase64: "b64-s" },
+      testflight: { url: "https://testflight.apple.com/join/AbCd" },
     });
     expect((await handle(api(null, "GET", `/api/build/${app.id}/signing`, undefined, { Authorization: "Bearer wrong" }), env, d)).status).toBe(401);
-  });
 
-  it("approvals then use ourapps' certificate and the app's App ID", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const made = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", bundleId: "com.example.skull" }), env, deps);
-    const { app } = (await made.json()) as { app: { id: string } };
-    const link = (await (await handle(api(cookie, "POST", `/api/dev/apps/${app.id}/links`, {}), env, deps)).json()) as { link: { id: string } };
-    const state = { devices: [] as { id: string; udid: string }[], profileCount: 0, noOldProfile: true, bundleIds: [{ id: "bid-skull", identifier: "com.example.skull" }] };
-    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...appleRoutes(state) });
-    const d = { ...deps, fetch };
-    const setUp = (await (await handle(api(cookie, "POST", "/api/dev/signing", { csr: CSR, privateKey: await rsaPem() }), env, d)).json()) as SetUp;
-    expect(setUp.apps[0].error).toMatch(/at least one iPhone or iPad/);
-
-    const id = await enrol(env, d, link.link.id, "Bob", UDID_1);
-    expect((await handle(api(cookie, "POST", `/api/dev/devices/${id}/approve`), env, d)).status).toBe(200);
+    // A replaced certificate goes into the App Store profile of every app on TestFlight.
+    const again = await handle(api(cookie, "POST", "/api/dev/signing", { csr: CSR, privateKey: await rsaPem() }), env, d);
+    expect(((await again.json()) as SetUp).apps).toEqual([{ id: app.id, name: "Skull", error: null }]);
     const profile = JSON.parse(calls.filter((c) => c.method === "POST" && c.url.endsWith("/v1/profiles")).at(-1)!.body!).data;
-    expect(profile.relationships.bundleId.data).toEqual({ type: "bundleIds", id: "bid-skull" });
+    expect(profile.attributes).toEqual({ name: "Skull App Store", profileType: "IOS_APP_STORE" });
     expect(profile.relationships.certificates.data).toEqual([{ type: "certificates", id: "cert-ours" }]);
-    expect(profile.attributes.name).toBe("Skull Ad Hoc");
-    expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/v1/bundleIds"))).toBe(false);
-  });
-
-  it("refreshes one app's profile with a manage key", async () => {
-    await saveAppleSecrets(env, deps, cookie);
-    const made = await handle(api(cookie, "POST", "/api/dev/apps", { name: "Skull", repo: "o/skull", profileName: "Skull Ad Hoc" }), env, deps);
-    const { app } = (await made.json()) as { app: { id: string } };
-    const { key } = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "agent" }), env, deps)).json()) as { key: string };
-    const d = { ...deps, fetch: fakeFetch({ ...githubRoutes(), ...appleRoutes({ devices: [{ id: "dev-1", udid: UDID_1 }], profileCount: 0 }) }).fetch };
-    const res = await handle(api(null, "POST", `/api/dev/apps/${app.id}/profile`, {}, { Authorization: `Bearer ${key}` }), env, d);
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ profile: { name: "Skull Ad Hoc", uuid: "uuid-1", expirationDate: "2027-10-01T00:00:00Z", devices: 1, createdAt: deps.now().toISOString() } });
   });
 
   it("refuses bad input, API keys and missing Apple keys; Settings cannot write the signing key", async () => {
@@ -706,10 +408,9 @@ describe("API keys and agent endpoints", () => {
     const { linkId } = await createSkull(env, deps, cookie);
     const res = await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, deps);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { name: string; version: string; ios: { installUrl: string; bundleId: string }; android: { apkUrl: string }; pwa: null; linksExpireAt: string };
-    expect(body).toMatchObject({ name: "Skull", version: "0.1.0", pwa: null, linksExpireAt: "2026-10-16T11:00:00.000Z" });
-    expect(body.ios.installUrl).toMatch(new RegExp(`^itms-services://\\?action=download-manifest&url=${encodeURIComponent(BASE)}%2Fdl%2F`));
-    expect(body.ios.bundleId).toBe("com.example.skull");
+    const body = (await res.json()) as { name: string; version: string; testflightUrl: string; android: { apkUrl: string }; pwa: null; linksExpireAt: string };
+    expect(body).toMatchObject({ name: "Skull", version: "0.1.0", pwa: null, testflightUrl: "https://testflight.apple.com/join/FIXTURE", linksExpireAt: "2026-10-16T11:00:00.000Z" });
+    expect(body).not.toHaveProperty("ios");
     expect(body.android.apkUrl).toMatch(new RegExp(`^${BASE}/dl/`));
     expect(await (await handle(new Request(body.android.apkUrl), env, deps)).text()).toBe("APKBYTES");
     await handle(api(cookie, "POST", `/api/dev/links/${linkId}/revoke`), env, deps);
@@ -720,10 +421,13 @@ describe("API keys and agent endpoints", () => {
     await saveAppleSecrets(env, deps, cookie);
     const { linkId } = await createSkull(env, deps, cookie);
     const routes = githubRoutes();
-    routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () => jsonRes({ ...manifest, install: { ...manifest.install, ios: { ...manifest.install.ios, devices: ["iphone", "ipad"] } } });
-    const body = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { release: { install: { ios: { devices: string[]; adhoc: string } } } };
-    expect(body.release.install.ios.devices).toEqual(["iphone", "ipad"]);
-    expect(body.release.install.ios.adhoc).toMatch(new RegExp(`^${BASE}/dl/`));
+    // A field the schema does not know, such as a repository asset address, never reaches the page.
+    routes["GET api.github.com/repos/o/skull/releases/assets/1"] = () => jsonRes({ ...manifest, install: { ...manifest.install, ios: { ...manifest.install.ios, adhoc: "https://api.github.com/repos/o/skull/releases/assets/3", devices: ["iphone", "ipad"] } } });
+    const res = await handle(api(null, "GET", `/api/public/links/${linkId}`), env, { ...deps, fetch: fakeFetch(routes).fetch });
+    const text = await res.text();
+    expect(text).not.toContain("assets/3");
+    const body = JSON.parse(text) as { release: { install: { ios: { devices: string[] } } } };
+    expect(body.release.install.ios).toEqual({ bundleId: "com.example.skull", testflight: "https://testflight.apple.com/join/FIXTURE", devices: ["iphone", "ipad"] });
   });
 
   it("hides internal detail of unexpected errors from public endpoints", async () => {
@@ -768,9 +472,9 @@ describe("token hardening", () => {
     // Simulate a token stored before peppering.
     const plain = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(buildToken))), (b) => b.toString(16).padStart(2, "0")).join("");
     await env.DB.prepare("UPDATE apps SET build_token_hash = ? WHERE id = ?").bind(plain, appId).run();
-    expect((await handle(api(null, "GET", `/api/build/${appId}/profile`, undefined, { Authorization: `Bearer ${buildToken}` }), env, deps)).status).toBe(404);
+    expect((await handle(api(null, "GET", `/api/build/${appId}/signing`, undefined, { Authorization: `Bearer ${buildToken}` }), env, deps)).status).toBe(404);
     expect((await row())!.h.startsWith("h2:")).toBe(true);
-    expect((await handle(api(null, "GET", `/api/build/${appId}/profile`, undefined, { Authorization: "Bearer wrong" }), env, deps)).status).toBe(401);
+    expect((await handle(api(null, "GET", `/api/build/${appId}/signing`, undefined, { Authorization: "Bearer wrong" }), env, deps)).status).toBe(401);
 
     const { key, apiKey } = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "k" }), env, deps)).json()) as { key: string; apiKey: { id: string } };
     const keyPlain = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key))), (b) => b.toString(16).padStart(2, "0")).join("");

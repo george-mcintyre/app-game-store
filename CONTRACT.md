@@ -15,7 +15,6 @@ Every build publishes a GitHub Release (not a pre-release, not a draft) with the
 | `my-app.json`    | always       | schema 1 manifest (shape and rules in agents.md)             |
 | `icon.png`, `screenshot-*.png` | recommended | referenced from my-app.json `icon`, `screenshots` and `screenshotsByPlatform` |
 | `CHANGELOG.md`   | recommended  | Keep a Changelog file; the version's section is the release notes |
-| `manifest.plist`, `<app>.ipa` | Ad Hoc only | see the Ad Hoc appendix; TestFlight builds are uploaded, not attached |
 | `<app>.apk`      | Android      | signed APK                                                  |
 
 Create the release as a draft, upload every asset with `my-app.json` last, then publish it
@@ -28,10 +27,8 @@ drafts.
 The store resolves `GET /repos/<owner>/<repo>/releases/latest`, takes the asset named
 `my-app.json`, and follows the URLs inside it. Those URLs are the release-asset API URLs,
 for example `https://api.github.com/repos/<owner>/<repo>/releases/assets/<id>`, which the
-store fetches with the developer's GitHub token. The same applies to the `.ipa` URL inside
-`manifest.plist`: write it as the asset API URL. The store rewrites it to a short-lived
-signed link before the phone sees it, so private repositories work and nothing public is
-guessable.
+store fetches with the developer's GitHub token. The store rewrites them to short-lived signed
+links before the phone sees them, so private repositories work and nothing public is guessable.
 
 Repositories that publish elsewhere can set a direct `my-app.json` URL on the app in the
 dashboard instead; the artefact URLs then need to be HTTPS and unguessable.
@@ -81,15 +78,20 @@ On a phone or tablet the page shows the matching version; on a computer it shows
 ## 2. iPhone and iPad through TestFlight
 
 Friends install iPhone and iPad apps through Apple's TestFlight app from a public invitation
-link: no device registration, no approvals, nothing to change in Settings. ourapps holds the
-signing material, uploads go through ourapps, and ourapps puts each processed build in the
-friends' group and sends it for Apple's beta review (the first build of each version, usually
-within a day). A TestFlight build lasts 90 days; ourapps asks the repository for a fresh build
-before then (step 5), so friends keep the app indefinitely.
+link, with nothing to change in Settings. ourapps holds the signing material, uploads go through
+ourapps, and ourapps puts each processed build in the friends' group and sends it for Apple's beta
+review (the first build of each version). A TestFlight build lasts 90 days; ourapps asks the
+repository for a fresh build before then (step 5), so friends keep the app indefinitely.
 
-Once per app the developer adds it in App Store Connect (Apps, the plus, New App, platform iOS,
-the app's bundle ID; Apple offers no API for this) and presses **Set up TestFlight** on the app's
-page in ourapps, which makes an App Store profile, the beta group and its public link.
+Once per app the developer adds it in App Store Connect; Apple offers no API for this. The
+TestFlight card on the app's page in ourapps lists every field of Apple's New App form, notices
+when the app is there, and makes the App Store profile, the beta group and its public link.
+
+A universal app needs nothing extra: build one `.ipa` with `TARGETED_DEVICE_FAMILY` set to `1,2`.
+Optionally say which devices the build targets with `install.ios.devices`, any of `"iphone"` and
+`"ipad"` (for example `["iphone", "ipad"]`). It is display only: the install page says "for iPhone
+and iPad" or "for iPhone", and warns on the device a build was not made for, but never blocks an
+install. Absent, the page makes no claim.
 
 ## 3. Get the certificate, key and profile
 
@@ -102,12 +104,11 @@ Authorization: Bearer $STORE_BUILD_TOKEN
 ```
 
 Response: `{ "certificate": { "id", "name", "serialNumber", "expirationDate", "base64" },
-"privateKeyPem", "teamId", "storeProfile": { "profileName", "profileId", "uuid", "profileBase64" } | null,
-"testflight": { "url" } | null, "profile": {...} | null }`. `certificate.base64` is the DER
-certificate and `privateKeyPem` a PKCS #8 RSA key. `storeProfile` is what TestFlight builds use;
-`profile` is the Ad Hoc profile of the appendix below. 404 until signing and a profile exist;
-`HEAD` gives the status without the key, so build for iPhone only when it is 200 and
-`storeProfile` is not null.
+"privateKeyPem", "teamId", "storeProfile": { "profileName", "profileId", "uuid", "profileBase64" },
+"testflight": { "url" } }`. `certificate.base64` is the DER certificate, `privateKeyPem` a PKCS #8
+RSA key and `storeProfile` the app's App Store profile; `testflight.url` is null until Apple has
+made the invitation link. 404 until iPhone signing and TestFlight are set up for the app; `HEAD`
+gives the status without the key, so build for iPhone only when it is 200.
 
 On the macOS runner:
 
@@ -172,9 +173,8 @@ sends it for beta review. The app's page in ourapps shows each upload's state.
 ## 5. Releases and fresh builds
 
 The release carries `my-app.json` with `install.ios` set to
-`{ "bundleId": "<bundle id>", "adhoc": null, "testflight": "<.testflight.url from step 3, or https://testflight.apple.com when null>" }`;
-ourapps shows its own invitation link in its place. The `.ipa` and `manifest.plist` are not
-release assets for TestFlight apps.
+`{ "bundleId": "<bundle id>", "testflight": "<.testflight.url from step 3, or https://testflight.apple.com when null>" }`;
+ourapps shows its own invitation link in its place. The `.ipa` is not a release asset.
 
 Before the newest TestFlight build expires, ourapps asks the repository for a fresh one:
 
@@ -301,124 +301,6 @@ so home screen icons made from them keep opening the app.
 - Storage, service workers and permissions belong to each link's origin. Allow the link
   origins (`^https://[0-9a-f]{16,64}\.ourapps\.app$`) in your API's CORS and use token
   authentication, not cookies.
-
-## Optional: Ad Hoc builds for phones in Developer Mode
-
-Ad Hoc builds only open on iPhones and iPads with Developer Mode switched on (iOS 16 and later),
-so ourapps no longer offers them to friends; an app with only an Ad Hoc build shows "coming soon"
-on iPhone. Devices registered earlier keep working. For reference, the Ad Hoc flow:
-
-### Rebuild requests
-
-When a developer approves a new iPhone, the store registers the device with Apple,
-recreates the Ad Hoc profile, and sends:
-
-```
-POST https://api.github.com/repos/<owner>/<repo>/dispatches
-{ "event_type": "my-store-rebuild", "client_payload": { ... } }
-```
-
-`client_payload` keys:
-
-| key             | meaning                                                            |
-|-----------------|--------------------------------------------------------------------|
-| `app`           | opaque app id from the dashboard; echo it back, never hardcode it  |
-| `enrolmentId`   | the device enrolment that triggered this build                     |
-| `udid`          | the new device                                                     |
-| `deviceName`    | the friend's name as typed on the install page                     |
-| `profileName`   | Ad Hoc profile name                                                |
-| `profileId`     | Apple's id of the new profile                                      |
-| `profileUuid`   | UUID of the new profile                                            |
-| `profileUrl`    | where to download the profile (above)                             |
-| `buildReadyUrl` | where to report the published build (below)                       |
-
-Workflow trigger:
-
-```yaml
-on:
-  repository_dispatch:
-    types: [my-store-rebuild]
-```
-
-### Certificate, key and Ad Hoc profile
-
-The store holds the developer's Apple Distribution certificate, its private key and each app's
-Ad Hoc profile; the repository needs no Apple secrets. One call returns all three:
-
-```
-GET https://ourapps.app/api/build/<STORE_APP_ID>/signing
-Authorization: Bearer $STORE_BUILD_TOKEN
-```
-
-Response: `{ "certificate": { "id", "name", "serialNumber", "expirationDate", "base64" },
-"privateKeyPem", "teamId", "profile": { "profileName", "profileId", "uuid", "profileBase64",
-"expirationDate" } }`. `certificate.base64` is the DER certificate and `privateKeyPem` a PKCS #8
-RSA key. The answer is 404 until the developer has set up iPhone signing and the app has a
-profile; `HEAD` gives the same status without the key, so build for iPhone only when it is 200.
-The profile is the latest one the store made, so tag builds and rebuilds use the same call.
-
-On the macOS runner:
-
-```bash
-curl -sSf -H "Authorization: Bearer $STORE_BUILD_TOKEN" \
-  "https://ourapps.app/api/build/$STORE_APP_ID/signing" > "$RUNNER_TEMP/signing.json"
-KC="$RUNNER_TEMP/build.keychain-db"
-security create-keychain -p "" "$KC"
-security set-keychain-settings -lut 21600 "$KC"
-security unlock-keychain -p "" "$KC"
-jq -r .privateKeyPem "$RUNNER_TEMP/signing.json" > "$RUNNER_TEMP/key.pem"
-jq -r .certificate.base64 "$RUNNER_TEMP/signing.json" | base64 -d > "$RUNNER_TEMP/cert.cer"
-security import "$RUNNER_TEMP/key.pem" -k "$KC" -A
-security import "$RUNNER_TEMP/cert.cer" -k "$KC"
-rm "$RUNNER_TEMP/key.pem"
-security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KC" >/dev/null
-security list-keychain -d user -s "$KC" login.keychain-db
-uuid=$(jq -r .profile.uuid "$RUNNER_TEMP/signing.json")
-mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-jq -r .profile.profileBase64 "$RUNNER_TEMP/signing.json" | base64 -d \
-  > ~/Library/MobileDevice/Provisioning\ Profiles/"$uuid".mobileprovision
-```
-
-Build with manual signing: identity `Apple Distribution` and the profile named
-`.profile.profileName`, set on the app target only (in the project, for example XcodeGen's
-`project.yml`). Passed as `xcodebuild` overrides they also reach Swift package resource bundles,
-which then fail with "requires a development team". The team id is `.teamId`. Delete the keychain and `signing.json` when the job ends, also on failure.
-`<profileUrl>` from the payload returns the profile alone:
-`{ "profileName", "profileId", "uuid", "profileBase64", "expirationDate" }`.
-
-### Build and publish
-
-Build the `.ipa` with the downloaded profile, write `manifest.plist`, create the release
-with the assets from step 1. Asset `my-app.json` must carry the new version.
-
-### Report the build
-
-```
-POST <buildReadyUrl>
-Authorization: Bearer $STORE_BUILD_TOKEN
-Content-Type: application/json
-{
-  "app": "<client_payload.app>",
-  "manifestUrl": "<asset API URL of manifest.plist>",
-  "version": "0.1.1",
-  "profileUuid": "<uuid of the profile the build used>"
-}
-```
-
-The store marks ready every waiting device whose UDID is inside that profile. Devices
-approved after the workflow fetched the profile are not in the build; the store sends one
-more `my-store-rebuild` for them automatically. Response:
-`{ "ready": [ids], "waiting": [ids], "redispatched": true|false }`.
-
-### iPad
-
-A universal app needs nothing extra: build one `.ipa` with `TARGETED_DEVICE_FAMILY` set to
-`1,2`. Optionally say which devices the build targets with `install.ios.devices`, any of
-`"iphone"` and `"ipad"` (for example `["iphone", "ipad"]`). It is display only: the install page
-says "for iPhone and iPad" or "for iPhone", and warns on the device a build was not made for, but
-never blocks an install. Absent, the page makes no claim. iPads enrol and install exactly like iPhones, appear in the same Ad Hoc profile, and use
-Apple's separate allowance of 100 iPads per membership year. An iPhone-only build also installs
-on iPads (in a phone-sized window) and uses an iPad slot there.
 
 ## Optional: in-app updates
 

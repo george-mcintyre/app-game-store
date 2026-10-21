@@ -11,13 +11,10 @@ async function hmacKey(secret: string): Promise<CryptoKey> {
 
 export interface LinkPayload {
   url: string;
-  kind: "apk" | "manifest" | "ipa" | "icon";
+  kind: "apk" | "icon";
   // Developer whose GitHub token may be used to fetch the url.
   dev: string;
   exp: number;
-  // Enrolment whose install the download belongs to, and the version it installs.
-  e?: string;
-  v?: string;
 }
 
 export async function signLink(secret: string, payload: LinkPayload): Promise<string> {
@@ -45,7 +42,6 @@ export async function verifyLink(secret: string, token: string, now: Date): Prom
     return null;
   }
   if (typeof payload.url !== "string" || typeof payload.exp !== "number" || typeof payload.dev !== "string") return null;
-  if ((payload.e !== undefined && typeof payload.e !== "string") || (payload.v !== undefined && typeof payload.v !== "string")) return null;
   if (payload.exp * 1000 < now.getTime()) return null;
   return payload;
 }

@@ -3,18 +3,18 @@ import { SCREENSHOT_PLATFORMS, TERMS_VERSION, type ScreenshotPlatform } from "@m
 import { audit } from "../audit.js";
 import { RESERVED_SLUGS, apiKeyHash, clearSessionCookie, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";
 import { randomId, tokenHash, validateAppleKey, validateSigningKey } from "../crypto.js";
-import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow, type ProfileRow, type SigningCertificateRow } from "../db.js";
+import { Db, type ApiKeyRow, type AppRow, type Developer, type DeveloperSecrets, type KeyScope, type LinkRow, type SigningCertificateRow } from "../db.js";
 import type { Deps, Env } from "../env.js";
-import { appleClient, approveEnrolment, dlUrl, refreshProfile, transition } from "../flow.js";
+import { appleClient, dlUrl } from "../flow.js";
 import { HttpError, httpsUrlOrEmpty, json, readJson, text } from "../http.js";
 import { EDITABLE_SECRET_FIELDS, appleReady, loadSecrets, saveSecrets, secretsSummary } from "../secrets.js";
 import { CHANGELOG_ASSET } from "../history.js";
 import { fetchManifest, loadManifest, resolveRelease } from "../upstream.js";
 import { webHosting } from "../webapp.js";
-import { reviewContact, setUpTestflight } from "../testflight.js";
+import { localNeed, renewStoreProfile, reviewContact, setUpTestflight, storeAppForm, type TestflightNeed } from "../testflight.js";
 import { buildLinkPage } from "./public.js";
 
-type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "profileName" | "bundleId", string>> & {
+type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "bundleId", string>> & {
   screenshots?: unknown;
   screenshotsByPlatform?: unknown;
   showOnPage?: unknown;
@@ -43,7 +43,6 @@ function applyInput(app: AppRow, body: AppInput): void {
   if (body.privacySummary !== undefined) app.privacySummary = text(body.privacySummary, 2000);
   if (body.iconUrl !== undefined) app.iconUrl = httpsUrlOrEmpty(body.iconUrl);
   if (body.manifestUrl !== undefined) app.manifestUrl = httpsUrlOrEmpty(body.manifestUrl);
-  if (body.profileName !== undefined) app.profileName = text(body.profileName, 120);
   if (body.bundleId !== undefined) {
     app.bundleId = text(body.bundleId, 155);
     if (app.bundleId !== "" && !/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(app.bundleId)) throw new HttpError(400, "bundleId must look like com.yourname.app");
@@ -72,8 +71,6 @@ async function ownedApp(db: Db, dev: Developer, id: string): Promise<AppRow> {
   if (!app || app.developerId !== dev.id) throw new HttpError(404, "unknown app");
   return app;
 }
-
-const profileSummary = (p: ProfileRow) => ({ name: p.profileName, uuid: p.uuid, expirationDate: p.expirationDate, devices: p.udids.length, createdAt: p.createdAt });
 
 // The certificate counts only while its private key is stored too.
 function signingStatus(s: DeveloperSecrets, c: SigningCertificateRow | null) {
@@ -179,8 +176,8 @@ export async function updateSecrets(request: Request, env: Env, deps: Deps, dev:
 }
 
 // POST /api/dev/signing - dashboard only. The browser makes the RSA key and the certificate signing
-// request; Apple issues an Apple Distribution certificate, the key is stored encrypted, and every
-// app with a bundle ID gets its Ad Hoc profile made with it. Run again to replace the certificate.
+// request; Apple issues an Apple Distribution certificate and the key is stored encrypted. Apps
+// already on TestFlight get their App Store profile made again with it.
 export async function setUpSigning(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper): Promise<Response> {
   requireSession(dev);
   const body = await readJson<{ csr?: unknown; privateKey?: unknown }>(request);
@@ -214,30 +211,15 @@ export async function setUpSigning(request: Request, env: Env, deps: Deps, dev: 
   await audit(request, env, deps, dev.id, "signing-set-up", `${issued.name} ${issued.serialNumber}`);
   const apps = [];
   for (const app of await db.appsByDeveloper(dev.id)) {
-    if (!app.bundleId) {
-      apps.push({ id: app.id, name: app.name, profile: null, error: "skipped: no iPhone bundle ID" });
-      continue;
-    }
+    if (!app.ascAppId) continue;
     try {
-      const p = await refreshProfile(env, deps, app, apple);
-      apps.push({ id: app.id, name: app.name, profile: profileSummary(p), error: null });
+      await renewStoreProfile(env, apple, app, issued.id);
+      apps.push({ id: app.id, name: app.name, error: null });
     } catch (err) {
-      apps.push({ id: app.id, name: app.name, profile: null, error: err instanceof Error ? err.message : String(err) });
+      apps.push({ id: app.id, name: app.name, error: err instanceof Error ? err.message : String(err) });
     }
   }
   return json({ signing: signingStatus({ signingKey: privateKey }, certificate), apps }, 201);
-}
-
-// POST /api/dev/apps/:id/profile - make the app's Ad Hoc profile again with every registered device.
-export async function refreshAppProfile(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
-  const db = Db.from(env);
-  const app = await ownedApp(db, dev, id);
-  const apple = appleClient(env, deps, await loadSecrets(env, dev.id, ["appleIssuerId", "appleKeyId", "applePrivateKey"]));
-  try {
-    return json({ profile: profileSummary(await refreshProfile(env, deps, app, apple)) });
-  } catch (err) {
-    throw new HttpError(502, err instanceof Error ? err.message : String(err));
-  }
 }
 
 // GET /api/dev/apps - apps without a dashboard icon get the latest release icon, best effort.
@@ -282,7 +264,6 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
     screenshotsByPlatform: {},
     repo: "",
     manifestUrl: "",
-    profileName: "",
     bundleId: "",
     showOnPage: false,
     buildTokenHash: await buildTokenHash(env, buildToken),
@@ -299,7 +280,7 @@ export async function createApp(request: Request, env: Env, deps: Deps, dev: Dev
 export async function getApp(env: Env, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
-  return json({ app: publicApp(app), links: await db.linksByApp(app.id), profile: await db.latestProfile(app.id).then((p) => (p ? profileSummary(p) : null)) });
+  return json({ app: publicApp(app), links: await db.linksByApp(app.id) });
 }
 
 // PUT /api/dev/apps/:id
@@ -371,51 +352,22 @@ export async function revokeLink(env: Env, deps: Deps, dev: Developer, id: strin
   return json({ ok: true });
 }
 
-// GET /api/dev/devices
-export async function listDevices(env: Env, dev: Developer): Promise<Response> {
-  return json({ enrolments: await Db.from(env).enrolmentsByDeveloper(dev.id) });
-}
-
-// POST /api/dev/devices/:id/approve
-export async function approveDevice(request: Request, env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
-  const db = Db.from(env);
-  const record = await db.enrolmentById(id);
-  if (!record || record.developerId !== dev.id) throw new HttpError(404, "unknown device");
-  const app = await ownedApp(db, dev, record.appId);
-  const profile = await approveEnrolment(env, deps, app, await loadSecrets(env, dev.id), record);
-  await audit(request, env, deps, dev.id, "device-approved", `${record.name} for ${app.name}`);
-  return json({ enrolment: record, profileUuid: profile.uuid });
-}
-
-// POST /api/dev/devices/:id/reject
-export async function rejectDevice(request: Request, env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
-  const record = await Db.from(env).enrolmentById(id);
-  if (!record || record.developerId !== dev.id) throw new HttpError(404, "unknown device");
-  await transition(env, deps, record, "rejected", { message: "The developer declined this device." });
-  await audit(request, env, deps, dev.id, "device-rejected", record.name);
-  return json({ enrolment: record });
-}
-
-// DELETE /api/dev/devices/:id - forget the record; Apple keeps the device slot.
-export async function removeDevice(env: Env, dev: Developer, id: string): Promise<Response> {
-  const db = Db.from(env);
-  const record = await db.enrolmentById(id);
-  if (!record || record.developerId !== dev.id) throw new HttpError(404, "unknown device");
-  await db.deleteEnrolment(id);
-  return json({ ok: true });
-}
-
 // GET /api/dev/apps/:id/testflight - where TestFlight stands for the app and its latest uploads.
+// The next step only the developer can take is in "needs"; null with setUp false means ourapps can go
+// ahead (POST) and find out whether the app is in App Store Connect yet.
 export async function testflightStatus(env: Env, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
-  return json(await testflightView(db, app, dev));
+  return json(await testflightView(db, app, dev, app.ascAppId ? null : await localNeed(env, dev, app)));
 }
 
-async function testflightView(db: Db, app: AppRow, dev: Developer) {
+async function testflightView(db: Db, app: AppRow, dev: Developer, needs: TestflightNeed | null) {
   const builds = await db.testflightBuilds(app.id, 6);
   return {
     setUp: Boolean(app.ascAppId),
+    needs,
+    // What to type into App Store Connect's New App form, until the app is set up.
+    storeApp: app.ascAppId || !app.bundleId ? null : storeAppForm(app, dev),
     url: app.testflightUrl ?? null,
     profile: app.storeProfileName ?? null,
     contact: Boolean(reviewContact(dev)),
@@ -423,12 +375,13 @@ async function testflightView(db: Db, app: AppRow, dev: Developer) {
   };
 }
 
-// POST /api/dev/apps/:id/testflight - set TestFlight up, or bring it up to date.
+// POST /api/dev/apps/:id/testflight - set TestFlight up, or bring it up to date. Answers 200 either
+// way: "needs" names the step that is still the developer's, such as adding the app in App Store Connect.
 export async function setUpAppTestflight(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
-  await setUpTestflight(env, deps, dev, app);
-  return json(await testflightView(db, app, dev));
+  const needs = await setUpTestflight(env, deps, dev, app);
+  return json(await testflightView(db, app, dev, needs));
 }
 
 // PUT /api/dev/review-contact - who Apple's TestFlight beta review contacts.
@@ -447,9 +400,7 @@ export async function releaseStatus(env: Env, deps: Deps, dev: Developer, id: st
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
   const secrets = await loadSecrets(env, dev.id);
-  const latest = await db.latestProfile(app.id);
-  const profile = latest ? { uuid: latest.uuid, expirationDate: latest.expirationDate, devices: latest.udids.length } : null;
-  const base = { githubToken: Boolean(secrets.githubToken), appleKey: appleReady(secrets), profile };
+  const base = { githubToken: Boolean(secrets.githubToken), appleKey: appleReady(secrets) };
   try {
     const release = await resolveRelease(env, deps, app, secrets.githubToken);
     const manifest = await fetchManifest(env, deps, app, release.manifestUrl, secrets.githubToken);

@@ -18,7 +18,7 @@ the app lands on their home screen. No App Store, no Google Play, no accounts fo
   bare listing still looks finished. The page detects iPhone, Android, desktop and in-app
   browsers and shows the right install steps.
 - Developers see a console at `/dev`: overview with a setup checklist and stats, apps, share
-  links with QR codes, devices, settings, an A to Z guide, and an agents page with API keys
+  links with QR codes, a TestFlight card per iPhone app, settings, an A to Z guide, and an agents page with API keys
   and prompts. Signed-in developers see an owner bar on their own install pages.
 
 ## Agents and the API
@@ -26,13 +26,13 @@ the app lands on their home screen. No App Store, no Google Play, no accounts fo
 Everything the console does is an API. Create a key on `/dev/agents` (shown once, `oa_...`),
 send it as `Authorization: Bearer`, and read https://ourapps.app/agents.md for every
 endpoint. `/dev/agents` also carries two prompts to paste into a coding agent: one sets up an
-app repository to the contract, one drives the console (register, check releases, share,
-approve). `llms.txt` points agents at both documents.
+app repository to the contract, one drives the console (register, check releases, set up
+TestFlight, share). `llms.txt` points agents at both documents.
 
 ## Security and terms
 
-The guide's Security section (`/dev/guide#security`) explains how credentials, account access,
-friends' iPhone records and app files are protected. Developers accept the terms and data
+The guide's Security section (`/dev/guide#security`) explains how credentials, account access
+and app files are protected; nothing is recorded about friends. Developers accept the terms and data
 statement (`/terms`, version in `shared/src/terms.ts`) at first sign-in and after any change;
 the accepted version is shown in the profile, which also offers account deletion.
 
@@ -46,16 +46,14 @@ steps: `SECURITY.md`.
 
 | path       | what                                                            |
 |------------|-----------------------------------------------------------------|
-| `worker/`  | Cloudflare Worker: sign-in, dashboard API, enrolment, build hooks, artefact proxy |
+| `worker/`  | Cloudflare Worker: sign-in, dashboard API, TestFlight, build hooks, artefact proxy |
 | `site/`    | Vite + TypeScript site served by the worker                      |
-| `shared/`  | my-app.json validation and the enrolment state machine           |
+| `shared/`  | my-app.json validation and the terms version                     |
 | `site/public/agents.md` | API reference for agents, served at /agents.md            |
 | `site/src/freeTiers.ts` | Free-service catalogue: guide section, /small, /free-tiers.md |
 | `CONTRACT.md` | what an app repository must implement                         |
 
 ## What kinds of app
-
-![How a typical app is hosted and installed](site/public/reference/architecture.png)
 
 Native iPhone and Android apps (and anything that compiles to them), and web apps and web games
 that the app's workflow deploys to the developer's own free Cloudflare account; the install page
@@ -88,10 +86,11 @@ TL;DR at `/dev/guide#tldr` is the definitive list.
 3. Add the app: name, repository `owner/name`, the iPhone bundle ID, and the App Store style
    details (tagline, description, screenshots, privacy summary). Copy the build token and app id
    shown once into the repository secrets `STORE_BUILD_TOKEN` and `STORE_APP_ID`. For iPhone,
-   add the app once in App Store Connect and press Set up TestFlight on its page.
+   follow the TestFlight card on the app's page; its one manual step is adding the app in App
+   Store Connect, and it lists every field to fill in.
 4. Make the repository follow `CONTRACT.md`: publish releases with `my-app.json` and
    `CHANGELOG.md` (its sections become the revision history friends see), fetch signing from
-   `/api/build/<app>/signing`, listen for `my-store-rebuild`, call `/api/build-ready`.
+   `/api/build/<app>/signing`, upload the iPhone build through ourapps, run on `my-store-release`.
 5. Create a share link for the app and send it, or show the QR code.
 
 The in-app guide at `/dev/guide` covers all of this with exact clicks, including how to create
@@ -111,11 +110,9 @@ links, and is marked noindex.
 
 - TestFlight: up to 10,000 people per app; Apple's beta review checks the first build of each
   version; builds last 90 days and ourapps asks the repository for a fresh one before then.
-- Ad Hoc builds (the older route) only open with Developer Mode switched on since iOS 16, so
-  ourapps no longer offers them to friends.
 - Android does not auto-update. Friends tap Update; an app can offer it by polling
   `/api/public/links/<id>/latest` (see the guide, "Auto-update").
-- Install links for the APK and the manifest are signed and last one hour; the install
+- Install links for the APK are signed and last one hour; the install
   page makes fresh ones every time it loads.
 
 ## Develop

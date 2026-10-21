@@ -3,10 +3,8 @@ import { ApiError, api, whoAmI, type AppDetails, type HistoryEntry, type Install
 import { html, mount, paragraphs, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { notesHtml } from "../notes.js";
-import { buildFraction, timeLeft, usualTime } from "../progress.js";
-import { installCopy, startInstall, type InstallInfo, type InstallStep } from "../install.js";
 import { screenshotSvg } from "../placeholders.js";
-import { appleDeviceName, detectInAppBrowser, detectPlatform, itmsLink, type InAppBrowser, type Platform } from "../platform.js";
+import { appleDeviceName, detectInAppBrowser, detectPlatform, type InAppBrowser, type Platform } from "../platform.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
 import { VIEW_ICON, VIEW_LABEL, availableViews, chooseView, shapeFor, showTabs, type ViewKind } from "../views.js";
 import { setTheme } from "../theme.js";
@@ -234,7 +232,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
       html`
         ${opts.example ? html`<div class="owner-bar"><span class="pill">Example</span> This is the page a friend would get for an imaginary app. Nothing installs. <a href="/example">Why Poker Night</a> <a href="/dev">Build yours</a></div>` : ""}
         ${opts.preview ? html`<div class="owner-bar"><span class="pill">Preview</span> This is how the install page looks to a friend. Install buttons are shown but the share link does not exist yet. <a href="/dev/apps/${app.id}">Back to the app</a></div>` : ""}
-        ${owner && !opts.preview && !opts.example ? html`<div class="owner-bar"><span class="pill">You</span> You are the developer of this app. <a href="/dev/apps/${app.id}">Edit</a> <a href="/dev/apps/${app.id}/links">Links</a> <a href="/dev/devices">Devices</a></div>` : ""}
+        ${owner && !opts.preview && !opts.example ? html`<div class="owner-bar"><span class="pill">You</span> You are the developer of this app. <a href="/dev/apps/${app.id}">Edit</a> <a href="/dev/apps/${app.id}/links">Links</a></div>` : ""}
         <header class="product">
           ${appIcon(name, icon0, "xl")}
           <div>
@@ -392,7 +390,7 @@ export function appleTargets(devices: ("iphone" | "ipad")[] | undefined): string
 // A note shown on the Apple device the build was not made for; never blocks the install.
 export function deviceNote(devices: ("iphone" | "ipad")[] | undefined, device: "iPhone" | "iPad"): string {
   if (!devices || devices.length === 0) return "";
-  if (device === "iPad" && !devices.includes("ipad")) return "Made for iPhone. On this iPad it runs in a phone-sized window, and registering uses one of the developer's iPad slots.";
+  if (device === "iPad" && !devices.includes("ipad")) return "Made for iPhone. On this iPad it runs in a phone-sized window.";
   if (device === "iPhone" && !devices.includes("iphone")) return "Made for iPad. It will not install on an iPhone; open this page on an iPad instead.";
   return "";
 }
@@ -467,8 +465,7 @@ function testflightSteps(name: string, device: string, invite: string): Raw {
     </div>`;
 }
 
-// An app that only ships an Ad Hoc build would need Developer Mode on the friend's iPhone, which
-// ourapps does not ask for; the web version stands in until the app is on TestFlight.
+// Until the app is on TestFlight; the web version stands in when there is one.
 function iosComingSoon(name: string, device: string, pwa: string | null): Raw {
   return html`
     <div class="install-card">
@@ -548,197 +545,6 @@ function pwaSteps(url: string, platform: Platform): Raw {
       <ol class="steps small">${steps}</ol>
     </div>
   `;
-}
-
-const STEPS = [
-  { key: "register", title: "Register this device", states: ["awaiting-device"] },
-  { key: "approve", title: "Developer approval", states: ["pending-approval"] },
-  { key: "build", title: "Build your copy", states: ["registering", "building"] },
-  { key: "install", title: "Install", states: ["ready"] },
-];
-
-function waitCopy(state: string, device: string): string {
-  switch (state) {
-    case "awaiting-device": return `Your ${device} just downloaded a small profile. Install it in Settings:`;
-    case "pending-approval": return `Your ${device} is registered with this page. The developer approves it next; this page updates by itself when they do, so you can close it and come back to the same link.`;
-    case "registering": return `Registering your ${device} with Apple.`;
-    case "building": return `A fresh build that includes your ${device} is on its way. You can close this page and come back to the same link.`;
-    case "ready": return `Tap Install, then tap Install again when your ${device} asks. The icon appears on your home screen.`;
-    case "rejected": return `The developer did not approve this ${device}. Get in touch with them if you think that is a mistake.`;
-    case "failed": return "Something went wrong on the developer's side and they have been told. Try again later or get in touch with them.";
-    default: return state;
-  }
-}
-
-type BuildTiming = { elapsedSeconds: number; expectedSeconds: number; typicalSeconds: number | null };
-
-function installStepHtml(step: InstallStep, device: string): string {
-  const mark = step === "installed" ? icon("check", "icon-20").html : step === "nothing" ? `<b class="warn-mark">!</b>` : `<span class="spinner"></span>`;
-  return `${mark}<span>${installCopy(step, device)}</span>`;
-}
-
-// The Install button and the line under it that follows the install.
-function wireInstall(root: HTMLElement, button: HTMLButtonElement, enrolmentId: string, device: string, getManifest: () => Promise<string>, before: string | null, onInstalled?: (version: string | null) => void): void {
-  const box = root.querySelector<HTMLElement>("#install-progress")!;
-  let stop: (() => void) | null = null;
-  button.onclick = async () => {
-    stop?.();
-    button.disabled = true;
-    try {
-      const manifestUrl = await getManifest();
-      stop = startInstall(enrolmentId, manifestUrl, before, (step, version) => {
-        box.hidden = false;
-        box.className = `install-progress ${step}`;
-        box.innerHTML = installStepHtml(step, device);
-        if (step === "nothing") button.disabled = false;
-        if (step === "installed") onInstalled?.(version);
-      });
-    } catch (err) {
-      button.disabled = false;
-      toast(err instanceof Error ? err.message : String(err));
-    }
-  };
-}
-
-const RING_R = 44;
-const RING_C = 2 * Math.PI * RING_R;
-
-// A ring that fills over the expected build time; the numbers move every second between polls.
-function buildRing(build: BuildTiming): Raw {
-  const f = buildFraction(build.elapsedSeconds, build.expectedSeconds);
-  return html`
-    <div class="build-ring" data-elapsed="${build.elapsedSeconds}" data-expected="${build.expectedSeconds}" data-t0="${performance.now()}">
-      <svg viewBox="0 0 100 100" width="112" height="112" aria-hidden="true">
-        <circle class="track" cx="50" cy="50" r="${RING_R}" />
-        <circle class="fill" cx="50" cy="50" r="${RING_R}" stroke-dasharray="${RING_C.toFixed(2)}" stroke-dashoffset="${(RING_C * (1 - f)).toFixed(2)}" />
-        <text x="50" y="50" text-anchor="middle" dominant-baseline="central">${Math.round(f * 100)}%</text>
-      </svg>
-      <div><b class="left">${timeLeft(build.elapsedSeconds, build.expectedSeconds)}</b><p class="small muted">${usualTime(build.typicalSeconds)}</p></div>
-    </div>`;
-}
-
-function tickRings(root: HTMLElement): void {
-  root.querySelectorAll<HTMLElement>(".build-ring").forEach((ring) => {
-    const elapsed = Number(ring.dataset.elapsed) + (performance.now() - Number(ring.dataset.t0)) / 1000;
-    const expected = Number(ring.dataset.expected);
-    const f = buildFraction(elapsed, expected);
-    ring.querySelector(".fill")?.setAttribute("stroke-dashoffset", (RING_C * (1 - f)).toFixed(2));
-    const pct = ring.querySelector("text");
-    if (pct) pct.textContent = `${Math.round(f * 100)}%`;
-    const left = ring.querySelector(".left");
-    if (left) left.textContent = timeLeft(elapsed, expected);
-  });
-}
-
-type ProfileFetch = { fetchedAt: string | null; browser: string | null; safari: boolean | null };
-
-// What to do in Settings, step by step, as iOS 26 shows it, with a way out when nothing arrives.
-function settingsSteps(enrolmentId: string, device: string, appName: string, pageUrl: string): Raw {
-  return html`
-    <ol class="settings-steps steps">
-      <li><b>Allow</b> the download when your ${device} asks about a configuration profile, then tap <b>Close</b>.</li>
-      <li>Open the <b>Settings</b> app.</li>
-      <li>Tap <b>Profile Downloaded</b>, just below your name.<span class="small muted"> Not there? Tap <b>General</b>, then <b>VPN &amp; Device Management</b> (on older iPhones <b>Profiles &amp; Device Management</b> or <b>Profiles</b>), then <b>Install ${appName}</b>.</span></li>
-      <li>Tap <b>Install</b> at the top right and enter your passcode if asked. Tap <b>Install</b> again, then <b>Install</b> once more in the box that appears.<span class="small muted"> It says Not Signed; that is normal for this profile.</span></li>
-      <li>Your ${device} brings you back to this page by itself.</li>
-    </ol>
-    <a class="btn block secondary mt" href="/api/enrol/${enrolmentId}/profile.mobileconfig">Download the profile again</a>
-    <p class="tiny faint center mt-s">Use this if nothing appeared, or after 8 minutes: Settings drops a profile that is not installed by then.</p>
-    <details class="small mt-s">
-      <summary>Still nothing in Settings?</summary>
-      <p class="small muted">Some browsers inside other apps cannot pass the profile on. Copy this page's link and open it in Safari or Chrome.</p>
-      ${copyRow(pageUrl, "Copy link")}
-    </details>`;
-}
-
-export async function waitPage(root: HTMLElement, linkId: string, enrolmentId: string): Promise<void> {
-  setTheme("store", "Almost there");
-  const device = detect().device;
-  const pageUrl = `${location.origin}/l/${linkId}/wait/${enrolmentId}`;
-  // The profile is named "Install <app>" in Settings, so the steps use the app's name.
-  const appName =
-    sessionStorage.getItem(`appName:${enrolmentId}`) ??
-    (await api<LinkPage>("GET", `/api/public/links/${encodeURIComponent(linkId)}`)
-      .then((d) => d.app.name || d.release?.fallbackName || "the app")
-      .catch(() => "the app"));
-  let since: string | undefined;
-  let stopped = false;
-  // Whichever browser shows this page remembers the registration for the app page.
-  localStorage.setItem(`enrolment:${linkId}`, enrolmentId);
-  const ticker = setInterval(() => (stopped ? clearInterval(ticker) : tickRings(root)), 1000);
-  const render = (state: string, manifestUrl?: string, message?: string, build?: BuildTiming, install?: InstallInfo, profile?: ProfileFetch) => {
-    const installed = state === "ready" && install?.phase === "installed";
-    const idx = STEPS.findIndex((s) => s.states.includes(state));
-    const failed = state === "failed" || state === "rejected";
-    const done = state === "ready";
-    mount(
-      root,
-      storeFrame(
-        html`
-          <div class="card pad-l" style="max-width:560px;margin:24px auto">
-            <h1 style="font-size:24px" id="wait-title">${installed ? "Installed" : done ? "Ready to install" : failed ? (state === "rejected" ? "Not approved" : "Something went wrong") : state === "awaiting-device" ? "Install the profile" : "Almost there"}</h1>
-            <p class="muted">${installed ? `${install?.version ? `Version ${install.version}` : "The app"} is on your home screen.` : waitCopy(state, device)}</p>
-            ${state === "awaiting-device" ? settingsSteps(enrolmentId, device, appName, pageUrl) : ""}
-            ${build && (state === "building" || state === "registering") ? buildRing(build) : ""}
-            ${message && state === "failed" ? html`<p class="small faint">${message}</p>` : ""}
-            <ol class="timeline">
-              ${STEPS.map((s, i) => {
-                const cls = failed && i === Math.max(idx, 1) ? "bad" : done || i < idx ? "done" : i === idx ? "now" : "muted-step";
-                const mark = cls === "done" ? icon("check", "icon-16") : cls === "now" ? html`<span class="spinner"></span>` : cls === "bad" ? "!" : String(i + 1);
-                const title = s.key === "register" ? `Register this ${device}` : s.title;
-                return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${title}</h3><p>${cls === "now" ? "In progress" : cls === "bad" ? "Stopped here" : stepHint(s.key)}</p></div></li>`;
-              })}
-            </ol>
-            ${done && manifestUrl ? html`<button class="btn block lg ${installed ? "secondary" : ""}" type="button" id="install-now">${installed ? "Install again" : "Install"}</button><div class="install-progress" id="install-progress" hidden></div>` : ""}
-            <p class="small center mt"><a href="/l/${linkId}">Back to the app page</a></p>
-          </div>
-        `,
-        { nav: true },
-      ),
-    );
-    const button = root.querySelector<HTMLButtonElement>("#install-now");
-    if (button && manifestUrl) {
-      // A fresh link at tap time, so a page left open for hours still installs.
-      const fresh = async () => (await api<{ manifestUrl?: string }>("GET", `/api/enrol/${enrolmentId}/status`)).manifestUrl ?? manifestUrl;
-      wireInstall(root, button, enrolmentId, device, fresh, install?.attemptAt ?? null, (version) => {
-        root.querySelector("#wait-title")!.textContent = "Installed";
-        button.textContent = "Install again";
-        button.classList.add("secondary");
-        button.disabled = false;
-        if (version) toast(`Version ${version} installed`);
-      });
-    }
-  };
-  const poll = async () => {
-    while (!stopped) {
-      try {
-        const s = await api<{ state: string; manifestUrl?: string; message?: string; build?: BuildTiming; install?: InstallInfo; profile?: ProfileFetch }>("GET", `/api/enrol/${enrolmentId}/status${since ? `?since=${since}` : ""}`);
-        render(s.state, s.manifestUrl, s.message, s.build, s.install, s.profile);
-        since = s.state;
-        if (["ready", "rejected", "failed"].includes(s.state)) {
-          clearInterval(ticker);
-          return;
-        }
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 404) return notFound(root, "This enrolment no longer exists.");
-        await new Promise((r) => setTimeout(r, 5000));
-      }
-    }
-  };
-  const stop = () => (stopped = true);
-  addEventListener("popstate", stop, { once: true });
-  addEventListener("navigate", stop, { once: true });
-  render("awaiting-device");
-  await poll();
-}
-
-function stepHint(key: string): string {
-  switch (key) {
-    case "register": return "Install the small profile from Settings.";
-    case "approve": return "The developer confirms it is you.";
-    case "build": return "A copy that includes your iPhone is built.";
-    default: return "One tap and the icon appears.";
-  }
 }
 
 export { raw };

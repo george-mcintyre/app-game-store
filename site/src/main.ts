@@ -1,10 +1,10 @@
-import { agents, appForm, appLinks, appsPage, dashboard, devices, settings } from "./pages/dev.js";
+import { agents, appForm, appLinks, appsPage, dashboard, settings } from "./pages/dev.js";
 import { exampleApp, examplePage } from "./pages/example.js";
 import { guide } from "./pages/guide.js";
 import { referencePage } from "./pages/reference.js";
 import { smallPage } from "./pages/small.js";
 import { termsPage } from "./pages/terms.js";
-import { devPage, installPage, landing, notFound, previewPage, waitPage } from "./pages/public.js";
+import { devPage, installPage, landing, notFound, previewPage } from "./pages/public.js";
 import { navigate } from "./nav.js";
 import { matchRoute } from "./router.js";
 
@@ -17,14 +17,12 @@ async function render(): Promise<void> {
     case "landing": await landing(root); break;
     case "dev-page": await devPage(root, route.slug); break;
     case "install": await installPage(root, route.linkId); break;
-    case "wait": await waitPage(root, route.linkId, route.enrolmentId); break;
     case "dashboard": await dashboard(root); break;
     case "apps": await appsPage(root); break;
     case "app-new": await appForm(root, null); break;
     case "app-edit": await appForm(root, route.appId); break;
     case "app-links": await appLinks(root, route.appId); break;
     case "app-preview": await previewPage(root, route.appId); break;
-    case "devices": await devices(root); break;
     case "settings": await settings(root); break;
     case "guide": await guide(root); break;
     case "agents": await agents(root); break;

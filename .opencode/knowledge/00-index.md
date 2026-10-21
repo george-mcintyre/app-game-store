@@ -19,8 +19,8 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 |---------------|-------------------------------------------------------------------|
 | `worker/`     | Cloudflare Worker: serves `site/dist`, `/api/*`, `/dl/*`; D1 data |
 | `site/`       | Vite + TypeScript, no framework, history routing                  |
-| `shared/`     | `validateManifest`, enrolment state machine                       |
-| `CONTRACT.md` | what an app repo implements (dispatch, profile, publish, build-ready) |
+| `shared/`     | `validateManifest`, `TERMS_VERSION`, screenshot sets              |
+| `CONTRACT.md` | what an app repo implements (signing, TestFlight upload, publish, `my-store-release`) |
 
 ## Conventions
 
@@ -30,15 +30,14 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 
 ## Where to change X
 
-- Routes: `worker/src/index.ts`. Handlers: `worker/src/routes/{public,enrol,build,dev}.ts`.
+- Routes: `worker/src/index.ts`. Handlers: `worker/src/routes/{public,build,dev}.ts`.
 - Sign-in and sessions: `worker/src/auth.ts`. Encrypted credentials: `worker/src/secrets.ts`, `worker/src/crypto.ts`.
-- Approve flow (Apple register, profile recreate, dispatch): `worker/src/flow.ts`, `worker/src/apple.ts`, `worker/src/github.ts`.
-- iPhone distribution is TestFlight (Ad Hoc needs Developer Mode since iOS 16 and is no longer offered to friends): `worker/src/testflight.ts` (set-up, upload broker, the 10-minute cron `tickTestflight` that distributes processed builds and sends `my-store-release` before the 90-day expiry), Apple calls in `worker/src/apple.ts`, migration 0010, routes `/api/dev/apps/:id/testflight`, `/api/dev/review-contact`, `/api/build/:app/testflight/{upload,commit}`; install page card `testflightSteps` in `site/src/pages/public.ts`; console card `testflightCard` in `site/src/pages/dev.ts`. Apple has no API to create the App Store Connect app record; the developer adds it once.
-- iPhone signing: the browser makes the RSA key and CSR (`site/src/signing.ts`); `POST /api/dev/signing` (`setUpSigning` in `worker/src/routes/dev.ts`) gets an Apple Distribution certificate, stores the key as the `signingKey` secret and the certificate in `signing_certificates` (migration 0006), and makes profiles via `refreshProfile` (`worker/src/flow.ts`) for apps with `bundle_id`; builds fetch everything from `GET|HEAD /api/build/:app/signing` (`worker/src/routes/build.ts`). Settings card and app page card in `site/src/pages/dev.ts`.
+- Apple calls: `worker/src/apple.ts`, client from `appleClient` in `worker/src/flow.ts`; repository dispatch: `worker/src/github.ts`.
+- iPhone distribution is TestFlight only. Per-device Ad Hoc registration was removed on the owner's instruction (its builds need Developer Mode since iOS 16; migration 0011 dropped its tables); do not bring it back: `worker/src/testflight.ts` (set-up, upload broker, the 10-minute cron `tickTestflight` that distributes processed builds and sends `my-store-release` before the 90-day expiry), Apple calls in `worker/src/apple.ts`, migration 0010, routes `/api/dev/apps/:id/testflight`, `/api/dev/review-contact`, `/api/build/:app/testflight/{upload,commit}`; install page card `testflightSteps` in `site/src/pages/public.ts`; console card `testflightCard` in `site/src/pages/dev.ts` (a step list driven by `needs`; for `store-app` it lists Apple's New App form with the values in `storeApp` and checks with Apple every 15 seconds while visible, for up to 20 minutes). Apple has no API to create the App Store Connect app record; the developer adds it once.
+- iPhone signing: the browser makes the RSA key and CSR (`site/src/signing.ts`); `POST /api/dev/signing` (`setUpSigning` in `worker/src/routes/dev.ts`) gets an Apple Distribution certificate, stores the key as the `signingKey` secret and the certificate in `signing_certificates` (migration 0006), and makes the App Store profile again (`renewStoreProfile`, `worker/src/testflight.ts`) for apps already on TestFlight; builds fetch everything from `GET|HEAD /api/build/:app/signing` (`worker/src/routes/build.ts`), 404 until TestFlight is set up. Settings card in `site/src/pages/dev.ts`.
 - Schema: `worker/migrations/*.sql`; queries: `worker/src/db.ts`.
-- Enrolment states: `shared/src/enrolment.ts`.
 - Example story and mock install page: `site/src/pages/example.ts` (routes `/example`, `/example/poker-night`).
-- Site pages: `site/src/pages/public.ts` (store theme: landing, developer page, install, wait, preview), `site/src/pages/dev.ts` (console: overview, apps, form, links, devices, settings, agents), `site/src/pages/guide.ts` (A to Z guide), `site/src/pages/shell.ts` (console frame), `site/src/pages/prompts.ts` (agent prompts).
+- Site pages: `site/src/pages/public.ts` (store theme: landing, developer page, install, preview), `site/src/pages/dev.ts` (console: overview, apps, form, links, settings, agents), `site/src/pages/guide.ts` (A to Z guide), `site/src/pages/shell.ts` (console frame), `site/src/pages/prompts.ts` (agent prompts).
 - Design tokens and both themes: `site/src/style.css` (`[data-theme="store"]`, `[data-theme="dev"]`, dark variants). Placeholders: `site/src/placeholders.ts`. Shared components and icons: `site/src/ui.ts`.
 - Terms and data statement: `site/src/pages/terms.ts`; version constant `shared/src/terms.ts` (bump to force re-acceptance); gate `requireTerms` in `worker/src/auth.ts`; acceptance stored on `developers`.
 - Security model and rotation: `SECURITY.md`. Crypto primitives: `worker/src/crypto.ts`; credential envelopes: `worker/src/secrets.ts`; audit log: `worker/src/audit.ts`.

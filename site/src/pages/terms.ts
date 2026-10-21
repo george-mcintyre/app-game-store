@@ -25,10 +25,10 @@ export function termsBody(): Raw {
       <table class="table">
         <tr><th>Data</th><th>Why we hold it</th><th>Where it goes</th></tr>
         <tr><td>GitHub id, login, display name</td><td>To identify your account when you sign in; sign-in reads your public profile only</td><td>Display name and page address are shown to friends on install pages</td></tr>
-        <tr><td>GitHub token (encrypted)</td><td>To read release assets from your repositories and to send rebuild requests to them</td><td>Sent only to api.github.com, only for repositories you named</td></tr>
-        <tr><td>App Store Connect API key and team id (encrypted)</td><td>To create your iPhone signing certificate, App IDs and provisioning profiles, to upload builds to TestFlight and send them to your friends, and to register devices for Ad Hoc builds, on your behalf</td><td>Sent only to api.appstoreconnect.apple.com, when you set up signing, make a profile or approve a device</td></tr>
+        <tr><td>GitHub token (encrypted)</td><td>To read release assets from your repositories and to ask them for fresh builds</td><td>Sent only to api.github.com, only for repositories you named</td></tr>
+        <tr><td>App Store Connect API key and team id (encrypted)</td><td>To create your iPhone signing certificate, App IDs and provisioning profiles, and to upload builds to TestFlight and send them to your friends, on your behalf</td><td>Sent only to api.appstoreconnect.apple.com, when you set up signing or TestFlight, when a workflow uploads a build, and when the service looks after TestFlight builds</td></tr>
         <tr><td>Private key of the Apple Distribution certificate the service creates for you (encrypted), with the certificate</td><td>So your apps' release workflows can sign iPhone builds without Apple secrets in the repositories</td><td>Given only to a release workflow that presents one of your apps' build tokens</td></tr>
-        <tr><td>App listings (name, text, image addresses, repository name, profile name)</td><td>To build install pages and read releases</td><td>Shown to whoever holds a share link; details only on your public page when you switch it on</td></tr>
+        <tr><td>App listings (name, text, image addresses, repository name, bundle ID) and their TestFlight set-up</td><td>To build install pages and read releases</td><td>Shown to whoever holds a share link; details only on your public page when you switch it on</td></tr>
         <tr><td>Share links</td><td>To let friends reach an install page and to let you revoke access</td><td>Known to whoever you send them to</td></tr>
         <tr><td>API keys (hashed), sessions (hashed), build tokens (hashed)</td><td>To let you, your agents and your repositories act on your account</td><td>Nowhere; we hold hashes only</td></tr>
         <tr><td>Audit log (event, short detail, country of the request)</td><td>So you can see what happened on your account</td><td>Shown only to you</td></tr>
@@ -36,13 +36,13 @@ export function termsBody(): Raw {
       <p>We do not sell, share or analyse this information for any purpose other than running the service for you. No advertising, no analytics, no tracking of friends. Level N Ltd staff do not read your credentials; they are encrypted with a key that exists only in the service's secret store, and the service decrypts a field only at the moment it is needed.</p>
 
       <h2>4. What we hold about your friends</h2>
-      <p>Friends who install through TestFlight deal with Apple directly; the service records nothing about them. When a friend registers an iPhone for an Ad Hoc build through your link, the service records the name they typed, the device identifier (UDID) and model their iPhone reports, the share link used, and the state of the request. This exists so that you can approve the device and Apple can sign a build for it. It is shown only to you, sent only to Apple under your developer account, and deleted when you remove the record or delete the app. Android and web installs record nothing about the friend. Install pages set no cookies and carry no analytics.</p>
+      <p>Nothing. Friends who install on iPhone or iPad deal with Apple directly through TestFlight, and Android and web installs record nothing about the friend. Install pages set no cookies and carry no analytics.</p>
 
       <h2>5. Your responsibilities</h2>
       <ul class="bullets">
         <li>You are responsible for the apps you share: what they do, what they collect, and that you have the right to the code, the images and the names in them. Write the privacy summary on each app honestly; friends rely on it.</li>
         <li>Share links are private by obscurity. Send them to people you mean to, and revoke them when you change your mind.</li>
-        <li>Apple's and Google's developer agreements apply to you, not to us. In particular, TestFlight builds go through Apple's beta review, and Ad Hoc distribution is for people you know and allows 100 devices per membership year.</li>
+        <li>Apple's and Google's developer agreements apply to you, not to us. In particular, TestFlight builds go through Apple's beta review.</li>
         <li>Keep your GitHub and Apple accounts secure; the service can only be as safe as the sign-in in front of it.</li>
         <li>Do not use the service to distribute anything unlawful, deceptive or harmful, or to reach people who did not ask for it.</li>
       </ul>
@@ -51,7 +51,7 @@ export function termsBody(): Raw {
       <p>Credentials are encrypted per account with keys derived from a secret that lives only in the service's secret store; tokens and sessions are stored as keyed hashes; credential changes require a browser session; API keys have scopes and expiry; every security event is logged and shown to you. The details are in the <a href="/dev/guide#security">guide</a>. If we learn of a breach affecting your data we will tell you through the email on your GitHub account without undue delay and say what was affected and what we did.</p>
 
       <h2>7. Removing your data</h2>
-      <p>Credentials can be removed one by one in Settings. Deleting an app removes its links, device records and signing profiles. Deleting your account (Settings, Profile) removes everything we hold about you at once; apps already installed on friends' phones keep working until their signing profile expires, which we cannot change. Device registrations and the signing certificate remain on your Apple account; remove them there.</p>
+      <p>Credentials can be removed one by one in Settings. Deleting an app removes its links and its TestFlight records. Deleting your account (Settings, Profile) removes everything we hold about you at once; apps already installed through TestFlight keep working until their build expires, which we cannot change. The signing certificate, the App Store profiles and the apps in App Store Connect remain on your Apple account; remove them there.</p>
 
       <h2>8. The service itself</h2>
       <p>ourapps is provided free and as is. We aim to keep it running and to give notice before any withdrawal, but we make no promise of availability and accept no liability for loss arising from its use, to the extent the law allows. We may change these terms; when we do, you are asked to accept the new version at your next sign-in, and the version you accepted is shown in your profile.</p>

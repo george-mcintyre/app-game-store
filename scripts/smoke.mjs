@@ -122,7 +122,7 @@ async function keyedChecks() {
 
     const got = await call("GET", P("/api/dev/apps/:id"), { pattern: "/api/dev/apps/:id" });
     expectStatus("GET /api/dev/apps/:id", got, 200);
-    expectKeys("app detail shape", got.json, ["app", "links", "profile"]);
+    expectKeys("app detail shape", got.json, ["app", "links"]);
 
     const bad = await call("PUT", P("/api/dev/apps/:id"), { body: { bundleId: "not a bundle id" }, pattern: "/api/dev/apps/:id" });
     expectStatus("a malformed bundle ID is refused", bad, 400);
@@ -132,7 +132,7 @@ async function keyedChecks() {
 
     const release = await call("GET", P("/api/dev/apps/:id/release"), { pattern: "/api/dev/apps/:id/release" });
     expectStatus("GET /api/dev/apps/:id/release", release, 200);
-    expectKeys("release status shape", release.json, ["ok", "githubToken", "appleKey", "tag", "publishedAt", "assets", "manifestUrl", "version", "install", "web", "screenshots", "changelog", "profile", "errors"]);
+    expectKeys("release status shape", release.json, ["ok", "githubToken", "appleKey", "tag", "publishedAt", "assets", "manifestUrl", "version", "install", "web", "screenshots", "changelog", "errors"]);
     record(release.json?.ok === false && release.json?.errors?.length > 0, "a missing repository is reported in plain words", release.json?.errors?.[0]);
 
     const preview = await call("GET", P("/api/dev/apps/:id/preview"), { pattern: "/api/dev/apps/:id/preview" });
@@ -156,22 +156,6 @@ async function keyedChecks() {
       record(latest.status === 503 && /no release/.test(latest.json?.error ?? ""), "GET /api/public/links/:id/latest says no release without naming the repository", `status ${latest.status} ${latest.text.slice(0, 120)}`);
       record(!latest.text.includes("ourapps-smoke-test"), "the update check does not leak the repository name");
 
-      const enrolled = await call("POST", "/api/enrol/new", { auth: "", body: { linkId, name: "Smoke check" } });
-      expectStatus("POST /api/enrol/new", enrolled, 201);
-      expectKeys("enrolment shape", enrolled.json, ["enrolmentId", "profileUrl"]);
-      const eid = enrolled.json?.enrolmentId;
-      if (eid) {
-        const config = await fetch(`${base}/api/enrol/${eid}/profile.mobileconfig`);
-        exercised.add("GET /api/enrol/:id/profile.mobileconfig");
-        const body = await config.text();
-        record(config.status === 200 && (config.headers.get("content-type") ?? "").includes("apple-aspen-config") && body.includes("Profile Service"), "GET /api/enrol/:id/profile.mobileconfig is an Apple profile service payload", `${config.status} ${config.headers.get("content-type")}`);
-        const st = await call("GET", `/api/enrol/${eid}/status`, { auth: "", pattern: "/api/enrol/:id/status" });
-        record(st.status === 200 && st.json?.state === "awaiting-device", "GET /api/enrol/:id/status", `${st.status} ${st.text.slice(0, 100)}`);
-        const waiting = await call("GET", "/api/dev/devices");
-        record(waiting.json?.enrolments?.some((e) => e.id === eid && e.state === "awaiting-device"), "the new enrolment shows under devices");
-        const dropped = await call("DELETE", `/api/dev/devices/${eid}`, { pattern: "/api/dev/devices/:id" });
-        expectStatus("DELETE /api/dev/devices/:id", dropped, 200);
-      }
       const renamed = await call("PUT", L("/api/dev/links/:id"), { body: { label: "smoke check renamed" }, pattern: "/api/dev/links/:id" });
       expectStatus("PUT /api/dev/links/:id", renamed, 200);
       record(renamed.json?.link?.label === "smoke check renamed" && renamed.json?.link?.id === linkId, "renaming keeps the address");
@@ -186,30 +170,25 @@ async function keyedChecks() {
     const rotated = await call("POST", P("/api/dev/apps/:id/build-token"), { pattern: "/api/dev/apps/:id/build-token" });
     expectStatus("POST /api/dev/apps/:id/build-token", rotated, 200);
     const newToken = rotated.json?.buildToken;
-    const oldRefused = await call("GET", P("/api/build/:id/profile"), { token: buildToken, pattern: "/api/build/:id/profile" });
+    const oldRefused = await call("GET", P("/api/build/:id/signing"), { token: buildToken, pattern: "/api/build/:id/signing" });
     expectStatus("the old build token stops working", oldRefused, 401);
-    const noProfile = await call("GET", P("/api/build/:id/profile"), { token: newToken, pattern: "/api/build/:id/profile" });
-    expectStatus("GET /api/build/:id/profile without a profile is a 404", noProfile, 404);
     const signingHead = await call("HEAD", P("/api/build/:id/signing"), { token: newToken, pattern: "/api/build/:id/signing" });
-    expectStatus("HEAD /api/build/:id/signing before a profile exists is a 404", signingHead, 404);
+    expectStatus("HEAD /api/build/:id/signing before TestFlight is set up is a 404", signingHead, 404);
     const signing = await call("GET", P("/api/build/:id/signing"), { token: newToken, pattern: "/api/build/:id/signing" });
     record(signing.status === 404 && typeof signing.json?.error === "string", "GET /api/build/:id/signing explains why it is not ready", signing.json?.error);
-    const ready = await call("POST", "/api/build-ready", { token: newToken, body: { app: id, manifestUrl: "https://example.com/manifest.plist", profileUuid: "not-a-profile" } });
-    expectStatus("POST /api/build-ready with an unknown profile is a 409", ready, 409);
+    const upload = await call("POST", P("/api/build/:id/testflight/upload"), { token: newToken, body: { version: "0", buildNumber: "0", fileName: "x.ipa", fileSize: 1 }, pattern: "/api/build/:id/testflight/upload" });
+    expectStatus("POST /api/build/:id/testflight/upload before TestFlight is set up is a 409", upload, 409);
 
-    // Reads devices and profiles at Apple and stops: the throwaway app has no bundle ID.
-    const profile = await call("POST", P("/api/dev/apps/:id/profile"), { pattern: "/api/dev/apps/:id/profile" });
-    record([409, 502].includes(profile.status) && typeof profile.json?.error === "string", "POST /api/dev/apps/:id/profile without a bundle ID explains why", `${profile.status} ${profile.json?.error}`);
-
-    const devices = await call("GET", "/api/dev/devices");
-    expectStatus("GET /api/dev/devices", devices, 200);
-    record(Array.isArray(devices.json?.enrolments), "enrolments is a list");
-    for (const action of ["approve", "reject"]) {
-      const r = await call("POST", `/api/dev/devices/nope/${action}`, { pattern: `/api/dev/devices/:id/${action}` });
-      expectStatus(`POST /api/dev/devices/:id/${action} on an unknown device is a 404`, r, 404);
-    }
-    const delDevice = await call("DELETE", "/api/dev/devices/nope", { pattern: "/api/dev/devices/:id" });
-    expectStatus("DELETE /api/dev/devices/:id on an unknown device is a 404", delDevice, 404);
+    // The throwaway app has no bundle ID, so neither call reaches Apple.
+    const tf = await call("GET", P("/api/dev/apps/:id/testflight"), { pattern: "/api/dev/apps/:id/testflight" });
+    expectStatus("GET /api/dev/apps/:id/testflight", tf, 200);
+    expectKeys("TestFlight shape", tf.json, ["setUp", "needs", "storeApp", "url", "profile", "contact", "builds"]);
+    record(tf.json?.setUp === false && tf.json?.needs === "bundle-id", "a new app needs its bundle ID first", tf.json?.needs);
+    const tfSetUp = await call("POST", P("/api/dev/apps/:id/testflight"), { pattern: "/api/dev/apps/:id/testflight" });
+    record(tfSetUp.status === 200 && tfSetUp.json?.needs === "bundle-id", "POST /api/dev/apps/:id/testflight names the missing bundle ID", `${tfSetUp.status} ${tfSetUp.json?.needs}`);
+    // An empty contact is refused, so the saved one is never touched.
+    const contact = await call("PUT", "/api/dev/review-contact", { body: { firstName: "", lastName: "", email: "", phone: "" } });
+    expectStatus("PUT /api/dev/review-contact refuses an empty contact", contact, 400);
 
     const keys = await call("GET", "/api/dev/keys");
     expectStatus("GET /api/dev/keys", keys, 200);
@@ -235,9 +214,7 @@ function coverage() {
   const normalise = (e) => e.replace(/:[a-zA-Z]+/g, ":id");
   const done = new Set([...exercised].map(normalise));
   const documented = documentedEndpoints().map(normalise);
-  // Not walked on purpose: it needs the signed reply of a real iPhone.
-  const skipped = new Set(["POST /api/enrol/:id"]);
-  const notWalked = documented.filter((e) => !done.has(e) && !skipped.has(e));
+  const notWalked = documented.filter((e) => !done.has(e));
   record(notWalked.length === 0, "every endpoint agents.md lists was called", notWalked.join(", "));
 }
 

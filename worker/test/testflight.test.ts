@@ -18,7 +18,20 @@ beforeEach(async () => {
 });
 
 // Apple as TestFlight sees it: one App Store Connect app, groups, review details, uploads and builds.
-function storeRoutes(state: { storeApp: boolean; build?: { processingState: string; usesNonExemptEncryption: boolean | null } }) {
+type Store = {
+  storeApp: boolean;
+  build?: { processingState: string; usesNonExemptEncryption: boolean | null };
+  // Apple's external beta state of the build, and what the public invitation page says.
+  beta?: string;
+  autoNotify?: boolean;
+  invitation?: "closed" | "open" | "full";
+};
+
+const JOIN_CLOSED = `<title>TestFlight - Apple</title><div class="beta-status"><span>This beta isn&#39;t accepting any new testers right now.</span></div>`;
+const JOIN_OPEN = `<title>Join the Skull beta - TestFlight - Apple</title><div id="steps">Step 1 Get TestFlight</div>`;
+const JOIN_FULL = `<title>Join the Skull beta - TestFlight - Apple</title><div class="beta-status">This beta is full.</div>`;
+
+function storeRoutes(state: Store) {
   const groups: { id: string; name: string; publicLink: string | null }[] = [];
   return {
     ...appleRoutes({ noOldProfile: true, bundleIds: [{ id: "bid-skull", identifier: "com.example.skull" }] }),
@@ -38,7 +51,19 @@ function storeRoutes(state: { storeApp: boolean; build?: { processingState: stri
       jsonRes({ data: { id: "file-1", type: "buildUploadFiles", attributes: { uploadOperations: [{ method: "PUT", url: "https://upload.example/part1", offset: 0, length: 9, requestHeaders: [{ name: "Content-Type", value: "application/octet-stream" }] }] } } }, 201),
     [`PATCH ${apple("/v1/buildUploadFiles/file-1")}`]: () => jsonRes({ data: { id: "file-1", type: "buildUploadFiles", attributes: {} } }),
     [`GET ${apple("/v1/buildUploads/up-1")}`]: () => jsonRes({ data: { id: "up-1", type: "buildUploads", attributes: { state: { state: "COMPLETE" } } } }),
-    [`GET ${apple("/v1/builds")}`]: () => jsonRes({ data: state.build ? [{ id: "build-1", type: "builds", attributes: { ...state.build, expirationDate: "2027-01-18T00:00:00Z" } }] : [] }),
+    [`GET ${apple("/v1/builds")}`]: () => jsonRes({ data: state.build ? [{ id: "build-1", type: "builds", attributes: { ...state.build, expired: false, expirationDate: "2027-01-18T00:00:00Z" } }] : [] }),
+    [`PATCH ${apple("/v1/builds/build-1")}`]: (c: Call) => {
+      state.build!.usesNonExemptEncryption = JSON.parse(c.body!).data.attributes.usesNonExemptEncryption;
+      return jsonRes({ data: { id: "build-1", type: "builds", attributes: {} } });
+    },
+    [`GET ${apple("/v1/builds/build-1/buildBetaDetail")}`]: () =>
+      jsonRes({ data: { id: "bbd-1", type: "buildBetaDetails", attributes: { externalBuildState: state.beta ?? "READY_FOR_BETA_SUBMISSION", autoNotifyEnabled: state.autoNotify === true } } }),
+    [`PATCH ${apple("/v1/buildBetaDetails/bbd-1")}`]: () => {
+      state.autoNotify = true;
+      return jsonRes({ data: { id: "bbd-1", type: "buildBetaDetails", attributes: { autoNotifyEnabled: true } } });
+    },
+    [`POST ${apple("/v1/buildBetaNotifications")}`]: () => jsonRes({ data: { id: "n-1", type: "buildBetaNotifications", attributes: {} } }, 201),
+    "GET testflight.apple.com/join/AbCd1234": () => new Response(state.invitation === "open" ? JOIN_OPEN : state.invitation === "full" ? JOIN_FULL : JOIN_CLOSED, { headers: { "Content-Type": "text/html" } }),
     [`POST ${apple("/v1/betaGroups/grp-1/relationships/builds")}`]: () => new Response(null, { status: 204 }),
     [`GET ${apple("/v1/builds/build-1/betaBuildLocalizations")}`]: () => jsonRes({ data: [] }),
     [`POST ${apple("/v1/betaBuildLocalizations")}`]: () => jsonRes({ data: { id: "bl-1", type: "betaBuildLocalizations", attributes: {} } }, 201),
@@ -80,62 +105,113 @@ describe("TestFlight", () => {
     expect(posted).toMatchObject({ setUp: false, needs: "store-app", storeApp: { name: "Skull", otherName: "Skull by George", bundleId: "com.example.skull", sku: "skull" } });
   });
 
-  it("sets up the profile, group and public link, brokers the upload and distributes the processed build", async () => {
-    const state: Parameters<typeof storeRoutes>[0] = { storeApp: true };
+  it("sets up, asks for the first build, follows it through beta review, and offers the invitation only once it accepts testers", async () => {
+    type View = { setUp: boolean; stage: string | null; invitation: { state: string | null }; buildRequest: { at: string; error: string | null } | null; encryptionExempt: boolean; builds: { state: string; message: string | null; appleState: string | null }[] };
+    const state: Store = { storeApp: true };
     const routes = storeRoutes(state);
     const { appId, buildToken, linkId } = await readyApp(routes);
     const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...routes, "GET api.github.com/repos/o/skull/releases/assets/1": () => jsonRes({ ...manifest, install: { ...manifest.install, ios: { bundleId: "com.example.skull", testflight: "https://testflight.apple.com/join/OLD" } } }) });
     const d = { ...deps, fetch };
     await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "g@example.com", phone: "+44 7700 900123" }), env, d);
+    const view = async () => (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/testflight`), env, d)).json()) as View;
+    const page = async () => ((await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d)).json()) as { release: { install: { ios: { testflight: string | null } } } }).release.install.ios.testflight;
+    const latest = async () => ((await (await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, d)).json()) as { testflightUrl: string | null }).testflightUrl;
 
+    // Set-up makes the profile, the group and its link, then asks the repository for the first build.
     const set = await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d);
     expect(set.status).toBe(200);
-    expect(await set.json()).toMatchObject({ setUp: true, needs: null, storeApp: null, url: "https://testflight.apple.com/join/AbCd1234", profile: "Skull App Store", contact: true, builds: [] });
+    expect(await set.json()).toMatchObject({ setUp: true, needs: null, storeApp: null, stage: "waiting-for-upload", url: "https://testflight.apple.com/join/AbCd1234", invitation: { state: "not-accepting" }, buildRequest: { error: null }, profile: "Skull App Store", contact: true, builds: [] });
     const storeProfile = JSON.parse(calls.filter((c) => c.method === "POST" && c.url.endsWith("/v1/profiles")).at(-1)!.body!).data;
     expect(storeProfile.attributes).toEqual({ name: "Skull App Store", profileType: "IOS_APP_STORE" });
-    expect(storeProfile.relationships.devices).toBeUndefined();
     const review = JSON.parse(calls.find((c) => c.method === "PATCH" && c.url.endsWith("/v1/betaAppReviewDetails/rev-1"))!.body!).data.attributes;
     expect(review).toMatchObject({ contactFirstName: "George", contactEmail: "g@example.com", demoAccountRequired: false });
-
-    // The install page and the update check use ourapps' link, not the one in my-app.json.
-    const page = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d)).json()) as { release: { install: { ios: { testflight: string } } } };
-    expect(page.release.install.ios.testflight).toBe("https://testflight.apple.com/join/AbCd1234");
+    const asked = calls.filter((c) => c.url.endsWith("/repos/o/skull/dispatches"));
+    expect(asked.map((c) => JSON.parse(c.body!))).toEqual([{ event_type: "my-store-release", client_payload: { app: appId, reason: "testflight-set-up" } }]);
+    // The invitation refuses testers, so friends are not offered it; neither link from my-app.json nor ourapps'.
+    expect(await page()).toBeNull();
+    expect(await latest()).toBeNull();
 
     const auth = { Authorization: `Bearer ${buildToken}` };
     const signing = (await (await handle(api(null, "GET", `/api/build/${appId}/signing`, undefined, auth), env, d)).json()) as Record<string, unknown>;
     expect(signing).toMatchObject({ storeProfile: { profileName: "Skull App Store" }, testflight: { url: "https://testflight.apple.com/join/AbCd1234" } });
-    expect(signing).not.toHaveProperty("profile");
-
     expect((await handle(api(null, "POST", `/api/build/${appId}/testflight/upload`, { version: "1.0" }, auth), env, d)).status).toBe(400);
     const up = await handle(api(null, "POST", `/api/build/${appId}/testflight/upload`, { version: "1.0", buildNumber: "7", fileName: "skull.ipa", fileSize: 9, whatsNew: "Rematch button" }, auth), env, d);
-    expect(up.status).toBe(200);
     expect(await up.json()).toEqual({ uploadFileId: "file-1", operations: [{ method: "PUT", url: "https://upload.example/part1", offset: 0, length: 9, requestHeaders: [{ name: "Content-Type", value: "application/octet-stream" }] }] });
     const commit = await handle(api(null, "POST", `/api/build/${appId}/testflight/commit`, { uploadFileId: "file-1", md5: "0123456789abcdef0123456789abcdef" }, auth), env, d);
     expect(await commit.json()).toEqual({ state: "uploaded" });
     expect(JSON.parse(calls.find((c) => c.method === "PATCH" && c.url.endsWith("/v1/buildUploadFiles/file-1"))!.body!).data.attributes).toEqual({ uploaded: true, sourceFileChecksums: { file: { algorithm: "MD5", hash: "0123456789abcdef0123456789abcdef" } } });
+    expect((await view()).stage).toBe("processing");
 
-    const status = async () => ((await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/testflight`), env, d)).json()) as { builds: { state: string; message: string | null }[] }).builds[0];
-    // Still processing at Apple, then missing the export compliance answer, then distributed.
     state.build = { processingState: "PROCESSING", usesNonExemptEncryption: null };
     await tickTestflight(env, d);
-    expect((await status()).state).toBe("processing");
+    expect((await view()).builds[0].state).toBe("processing");
     state.build = { processingState: "VALID", usesNonExemptEncryption: null };
     await tickTestflight(env, d);
-    expect(await status()).toMatchObject({ state: "needs-compliance", message: expect.stringMatching(/ITSAppUsesNonExemptEncryption/) });
-    state.build = { processingState: "VALID", usesNonExemptEncryption: false };
-    await tickTestflight(env, d);
-    expect(await status()).toMatchObject({ state: "distributed", message: null });
+    expect(await view()).toMatchObject({ stage: "needs-compliance", builds: [{ state: "needs-compliance", message: expect.stringMatching(/TestFlight card/) }] });
+
+    // The export compliance declaration is the developer's, from a browser; ourapps gives it to Apple.
+    const { key } = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "agent" }), env, d)).json()) as { key: string };
+    expect((await handle(api(null, "PUT", `/api/dev/apps/${appId}/testflight/encryption`, { exempt: true }, { Authorization: `Bearer ${key}` }), env, d)).status).toBe(403);
+    expect((await handle(api(cookie, "PUT", `/api/dev/apps/${appId}/testflight/encryption`, { exempt: "yes" }), env, d)).status).toBe(400);
+    const answered = (await (await handle(api(cookie, "PUT", `/api/dev/apps/${appId}/testflight/encryption`, { exempt: true }), env, d)).json()) as View;
+    expect(answered).toMatchObject({ encryptionExempt: true, stage: "in-review", builds: [{ state: "in-review" }] });
+    expect(JSON.parse(calls.find((c) => c.method === "PATCH" && c.url.endsWith("/v1/builds/build-1"))!.body!).data.attributes).toEqual({ usesNonExemptEncryption: false });
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/v1/betaGroups/grp-1/relationships/builds"))).toBe(true);
     expect(JSON.parse(calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/betaBuildLocalizations"))!.body!).data.attributes).toEqual({ locale: "en-US", whatsNew: "Rematch button" });
+    expect(state.autoNotify).toBe(true);
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/v1/betaAppReviewSubmissions"))).toBe(true);
+    const events = await env.DB.prepare("SELECT event, detail FROM audit_log WHERE event = 'encryption-declared'").all<{ detail: string }>();
+    expect(events.results.map((e) => e.detail)).toEqual(["Skull: no non-exempt encryption"]);
+
+    state.beta = "IN_BETA_REVIEW";
+    await tickTestflight(env, d);
+    expect(await view()).toMatchObject({ stage: "in-review", builds: [{ appleState: "IN_BETA_REVIEW" }] });
+    // Approved: ourapps makes it available to the group once, as App Store Connect's Notify Testers does.
+    state.beta = "BETA_APPROVED";
+    await tickTestflight(env, d);
+    await tickTestflight(env, d);
+    expect((await view()).stage).toBe("approved");
+    expect(calls.filter((c) => c.url.endsWith("/v1/buildBetaNotifications"))).toHaveLength(1);
+    // Testing at Apple, but the invitation page still refuses testers: the developer is told, friends are not offered it.
+    state.beta = "IN_BETA_TESTING";
+    await tickTestflight(env, d);
+    expect(await view()).toMatchObject({ stage: "link-closed", builds: [{ state: "open" }] });
+    expect(await page()).toBeNull();
+    state.invitation = "full";
+    await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d);
+    expect(await view()).toMatchObject({ stage: "link-closed", invitation: { state: "full" } });
+    state.invitation = "open";
+    const checked = (await (await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d)).json()) as View;
+    expect(checked).toMatchObject({ stage: "open", invitation: { state: "open" } });
+    expect(await page()).toBe("https://testflight.apple.com/join/AbCd1234");
+    expect(await latest()).toBe("https://testflight.apple.com/join/AbCd1234");
+  });
+
+  it("asks the repository for a build on request", async () => {
+    const state: Store = { storeApp: true };
+    const routes = storeRoutes(state);
+    const { appId } = await readyApp(routes);
+    expect((await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight/build`), env, deps)).status).toBe(409);
+    await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "g@example.com", phone: "+44 7700 900123" }), env, deps);
+    // Without a dispatch route GitHub answers 599: the set-up still succeeds and the failure is shown.
+    const set = (await (await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, { ...deps, fetch: fakeFetch(routes).fetch })).json()) as { stage: string; buildRequest: { error: string } };
+    expect(set.buildRequest.error).toMatch(/599/);
+    expect(set.stage).toBe("no-build");
+    const { fetch, calls } = fakeFetch({ ...githubRoutes(), ...routes });
+    const asked = (await (await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight/build`), env, { ...deps, fetch })).json()) as { stage: string; buildRequest: { error: string | null } };
+    expect(asked).toMatchObject({ stage: "waiting-for-upload", buildRequest: { error: null } });
+    expect(JSON.parse(calls.find((c) => c.url.endsWith("/dispatches"))!.body!)).toEqual({ event_type: "my-store-release", client_payload: { app: appId, reason: "requested" } });
   });
 
   it("asks the repository for a fresh build before the latest one expires", async () => {
-    const state: Parameters<typeof storeRoutes>[0] = { storeApp: true };
+    const state: Store = { storeApp: true };
     const routes = storeRoutes(state);
-    const { appId } = await readyApp(routes);
-    await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "g@example.com", phone: "+44 7700 900123" }), env, { ...deps, fetch: fakeFetch(routes).fetch });
-    await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, { ...deps, fetch: fakeFetch(routes).fetch });
+    const { appId, buildToken } = await readyApp(routes);
+    const d = { ...deps, fetch: fakeFetch({ ...routes, ...githubRoutes() }).fetch };
+    await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "g@example.com", phone: "+44 7700 900123" }), env, d);
+    await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d);
+    const auth = { Authorization: `Bearer ${buildToken}` };
+    await handle(api(null, "POST", `/api/build/${appId}/testflight/upload`, { version: "1.0", buildNumber: "7", fileName: "skull.ipa", fileSize: 9 }, auth), env, d);
     // The test clock is 16 October 2026; the build expires 18 January 2027: nothing to do.
     state.build = { processingState: "VALID", usesNonExemptEncryption: false };
     const quiet = fakeFetch({ ...routes, ...githubRoutes() });

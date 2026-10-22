@@ -1,7 +1,7 @@
 // TestFlight distribution: set-up per app, the upload the workflow makes through ourapps, and the
 // scheduled step that puts each processed build in the friends' group and sends it for beta review.
 import { AppleClient, AppleError } from "./apple.js";
-import { Db, type AppRow, type Developer, type TestflightBuildRow } from "./db.js";
+import { Db, type AppRow, type Developer, type LinkState, type TestflightBuildRow } from "./db.js";
 import type { Deps, Env } from "./env.js";
 import { appleClient } from "./flow.js";
 import { dispatchEvent } from "./github.js";
@@ -144,8 +144,9 @@ export async function commitUpload(env: Env, deps: Deps, app: AppRow, body: { up
   return { state: row.state };
 }
 
-// Moves one build on: processing, then into the group with its notes and off to beta review.
-export async function advanceBuild(apple: AppleClient, app: AppRow, row: TestflightBuildRow): Promise<void> {
+// Moves one build on: processing, export compliance, into the friends' group with its notes and off to
+// beta review, then through the review until friends can install it.
+export async function advanceBuild(apple: AppleClient, app: AppRow, row: TestflightBuildRow, now: string): Promise<void> {
   if (row.state === "uploaded" && row.uploadId) {
     const up = await apple.buildUploadState(row.uploadId);
     if (up.state === "FAILED") {
@@ -157,6 +158,12 @@ export async function advanceBuild(apple: AppleClient, app: AppRow, row: Testfli
   const build = await apple.findBuild(app.ascAppId!, row.version, row.buildNumber);
   if (!build) return;
   row.buildId = build.id;
+  row.expiresAt = build.expirationDate;
+  if (build.expired) {
+    row.state = "expired";
+    row.message = null;
+    return;
+  }
   if (build.processingState === "PROCESSING") {
     row.state = "processing";
     return;
@@ -167,24 +174,146 @@ export async function advanceBuild(apple: AppleClient, app: AppRow, row: Testfli
     return;
   }
   if (build.usesNonExemptEncryption === null) {
-    row.state = "needs-compliance";
-    row.message = "Apple needs the export compliance answer: set ITSAppUsesNonExemptEncryption in Info.plist, or answer it for this build in App Store Connect";
+    if (!app.encryptionExempt) {
+      row.state = "needs-compliance";
+      row.message = COMPLIANCE_MESSAGE;
+      return;
+    }
+    await apple.setBuildEncryption(build.id, false);
+  }
+  if (row.state === "uploaded" || row.state === "processing" || row.state === "needs-compliance") {
+    await apple.addBuildToGroup(app.betaGroupId!, build.id);
+    if (row.whatsNew) await apple.setWhatsNew(build.id, row.whatsNew);
+    const detail = await apple.betaDetail(build.id);
+    if (!detail.autoNotifyEnabled) await apple.setAutoNotify(detail.id);
+    await submit(apple, build.id);
+    row.state = "in-review";
+    row.submittedAt = now;
+    row.message = null;
     return;
   }
-  await apple.addBuildToGroup(app.betaGroupId!, build.id);
-  if (row.whatsNew) await apple.setWhatsNew(build.id, row.whatsNew);
+  const detail = await apple.betaDetail(build.id);
+  row.appleState = detail.externalBuildState;
+  switch (detail.externalBuildState) {
+    case "READY_FOR_BETA_TESTING":
+    case "IN_BETA_TESTING":
+      row.state = "open";
+      row.message = null;
+      break;
+    case "BETA_APPROVED":
+      row.state = "approved";
+      if (!row.notifiedAt) {
+        try {
+          await apple.notifyTesters(build.id);
+        } catch (err) {
+          if (!(err instanceof AppleError && err.status === 409)) throw err;
+        }
+        row.notifiedAt = now;
+      }
+      break;
+    case "BETA_REJECTED":
+      row.state = "rejected";
+      row.message = "Apple's beta review did not approve this build. Apple's reasons are in App Store Connect: Apps, the app, TestFlight.";
+      break;
+    case "EXPIRED":
+      row.state = "expired";
+      break;
+    case "READY_FOR_BETA_SUBMISSION":
+      // Not with Apple's review yet, for example after a refused submission; ask again.
+      await submit(apple, build.id);
+      row.state = "in-review";
+      break;
+    case "MISSING_EXPORT_COMPLIANCE":
+      row.state = "needs-compliance";
+      row.message = COMPLIANCE_MESSAGE;
+      break;
+    default:
+      row.state = "in-review";
+  }
+}
+
+const COMPLIANCE_MESSAGE = "Apple needs the export compliance answer: give it on the app's TestFlight card in ourapps, set ITSAppUsesNonExemptEncryption in Info.plist, or answer it for this build in App Store Connect";
+
+async function submit(apple: AppleClient, buildId: string): Promise<void> {
   try {
-    await apple.submitForBetaReview(build.id);
+    await apple.submitForBetaReview(buildId);
   } catch (err) {
     // A build of a version Apple already reviewed may need no review, or may already be submitted.
     if (!(err instanceof AppleError && err.status === 409)) throw err;
   }
-  row.state = "distributed";
-  row.message = null;
 }
 
-// Run on a schedule: move pending builds on, fill in public links, and ask for a fresh build
-// before the newest one expires.
+// What testflight.apple.com shows a friend for the public link. null when the page could not be read.
+export async function checkInvitation(deps: Deps, url: string): Promise<LinkState | null> {
+  let res: Response;
+  try {
+    res = await deps.fetch(url, { headers: { "Accept-Language": "en-US,en;q=0.8", "User-Agent": "ourapps (+https://ourapps.app)" } });
+  } catch {
+    return null;
+  }
+  if (res.status === 404) return "missing";
+  if (!res.ok) return null;
+  const page = await res.text();
+  if (/isn(?:'|&#39;|&#x27;|’)t accepting any new testers/i.test(page)) return "not-accepting";
+  if (/This beta is full/i.test(page)) return "full";
+  if (/<title>\s*Join the /i.test(page)) return "open";
+  return null;
+}
+
+// Asks the app's repository to run its release workflow; the outcome is kept on the app.
+export async function requestBuild(env: Env, deps: Deps, app: AppRow, reason: string): Promise<void> {
+  const at = deps.now().toISOString();
+  let error: string | null = null;
+  try {
+    const secrets = await loadSecrets(env, app.developerId, ["githubToken"]);
+    await dispatchEvent(env, deps, secrets.githubToken, app.repo, RELEASE_EVENT, { app: app.id, reason });
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+  }
+  app.buildRequestedAt = at;
+  app.buildRequestError = error;
+  await Db.from(env).setBuildRequest(app.id, at, error);
+}
+
+// One app, now: moves its builds on and reads its invitation page. Used by the console and the schedule.
+export async function refreshTestflight(env: Env, deps: Deps, app: AppRow, apple?: AppleClient): Promise<void> {
+  if (!app.ascAppId || !app.betaGroupId) return;
+  const db = Db.from(env);
+  const client = apple ?? appleClient(env, deps, await loadSecrets(env, app.developerId, ["appleIssuerId", "appleKeyId", "applePrivateKey"]));
+  for (const row of (await db.pendingTestflightBuilds(app.id)).slice(0, 3)) await advanceOne(db, deps, client, app, row);
+  await checkLink(env, deps, client, app);
+}
+
+async function advanceOne(db: Db, deps: Deps, apple: AppleClient, app: AppRow, row: TestflightBuildRow): Promise<void> {
+  try {
+    await advanceBuild(apple, app, row, deps.now().toISOString());
+  } catch (err) {
+    row.message = err instanceof Error ? err.message : String(err);
+  }
+  row.updatedAt = deps.now().toISOString();
+  await db.updateTestflightBuild(row);
+}
+
+async function checkLink(env: Env, deps: Deps, apple: AppleClient, app: AppRow): Promise<void> {
+  const db = Db.from(env);
+  if (!app.testflightUrl && app.betaGroupId) {
+    const link = await apple.betaGroupLink(app.betaGroupId);
+    if (link) {
+      app.testflightUrl = link;
+      await db.setAppTestflight(app);
+    }
+  }
+  if (!app.testflightUrl) return;
+  const state = await checkInvitation(deps, app.testflightUrl);
+  const at = deps.now().toISOString();
+  if (state === null) return;
+  app.testflightLinkState = state;
+  app.testflightCheckedAt = at;
+  await db.setLinkState(app.id, state, at);
+}
+
+// Run on a schedule: move pending builds on, read each invitation page, and ask for a fresh build
+// before the newest one expires. Each run stays well inside the free plan's 50 outbound calls.
 export async function tickTestflight(env: Env, deps: Deps): Promise<void> {
   const db = Db.from(env);
   const apps = new Map<string, AppRow>();
@@ -193,29 +322,20 @@ export async function tickTestflight(env: Env, deps: Deps): Promise<void> {
     if (!clients.has(devId)) clients.set(devId, appleClient(env, deps, await loadSecrets(env, devId, ["appleIssuerId", "appleKeyId", "applePrivateKey"])));
     return clients.get(devId)!;
   };
-  // Each run stays well inside the free plan's 50 outbound calls.
-  for (const row of (await db.pendingTestflightBuilds()).slice(0, 5)) {
+  for (const row of (await db.pendingTestflightBuilds()).slice(0, 4)) {
     const app = apps.get(row.appId) ?? (await db.appById(row.appId));
     if (!app?.ascAppId || !app.betaGroupId) continue;
     apps.set(app.id, app);
     try {
-      await advanceBuild(await clientFor(app.developerId), app, row);
+      await advanceOne(db, deps, await clientFor(app.developerId), app, row);
     } catch (err) {
-      row.message = err instanceof Error ? err.message : String(err);
+      console.error(`testflight build ${row.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
-    row.updatedAt = deps.now().toISOString();
-    await db.updateTestflightBuild(row);
   }
-  for (const app of (await db.appsWithTestflight()).slice(0, 5)) {
+  for (const app of (await db.appsWithTestflight()).slice(0, 4)) {
     try {
       const apple = await clientFor(app.developerId);
-      if (!app.testflightUrl && app.betaGroupId) {
-        const link = await apple.betaGroupLink(app.betaGroupId);
-        if (link) {
-          app.testflightUrl = link;
-          await db.setAppTestflight(app);
-        }
-      }
+      await checkLink(env, deps, apple, app);
       await refreshIfExpiring(env, deps, db, apple, app);
     } catch (err) {
       console.error(`testflight ${app.id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -223,19 +343,43 @@ export async function tickTestflight(env: Env, deps: Deps): Promise<void> {
   }
 }
 
+// The first build is asked for when TestFlight is set up, or from the app's page; this keeps it alive.
 async function refreshIfExpiring(env: Env, deps: Deps, db: Db, apple: AppleClient, app: AppRow): Promise<void> {
-  const recent = (await db.testflightBuilds(app.id, 1))[0];
   const now = deps.now().getTime();
-  if (recent && now - Date.parse(recent.createdAt) < 7 * 86_400_000) return;
+  const week = 7 * 86_400_000;
+  if (app.buildRequestedAt && now - Date.parse(app.buildRequestedAt) < week) return;
+  const recent = (await db.testflightBuilds(app.id, 1))[0];
+  if (!recent || now - Date.parse(recent.createdAt) < week) return;
   const live = await apple.latestLiveBuild(app.ascAppId!);
   const expires = live?.expirationDate ? Date.parse(live.expirationDate) : null;
-  if (expires !== null && expires - now > REFRESH_DAYS * 86_400_000) return;
-  if (!live && !recent) return;
-  const secrets = await loadSecrets(env, app.developerId, ["githubToken"]);
-  await dispatchEvent(env, deps, secrets.githubToken, app.repo, RELEASE_EVENT, { app: app.id, reason: "testflight-expiry" });
-  // Recorded so the next run does not ask again within a week.
-  const at = deps.now().toISOString();
-  await db.insertTestflightBuild({ appId: app.id, version: "-", buildNumber: "-", uploadId: null, uploadFileId: null, buildId: null, whatsNew: null, state: "failed", message: "asked the repository for a fresh build before the TestFlight build expires", createdAt: at, updatedAt: at });
+  if (live && expires !== null && expires - now > REFRESH_DAYS * 86_400_000) return;
+  await requestBuild(env, deps, app, "testflight-expiry");
 }
 
 export const RELEASE_EVENT = "my-store-release";
+
+// Where an app set up for TestFlight stands, from the developer's side; the console's card and agents read it.
+export type TestflightStage = "no-build" | "waiting-for-upload" | "processing" | "needs-compliance" | "in-review" | "approved" | "open" | "link-closed" | "rejected" | "failed";
+
+export function testflightStage(app: AppRow, builds: TestflightBuildRow[]): TestflightStage {
+  if (app.testflightLinkState === "open") return "open";
+  const latest = builds[0];
+  const requestedAfter = app.buildRequestedAt && (!latest || app.buildRequestedAt > latest.createdAt);
+  if (requestedAfter && !app.buildRequestError) return "waiting-for-upload";
+  if (!latest) return "no-build";
+  if (builds.some((b) => b.state === "open")) return app.testflightLinkState ? "link-closed" : "approved";
+  switch (latest.state) {
+    case "uploading":
+    case "uploaded":
+    case "processing":
+      return "processing";
+    case "needs-compliance":
+    case "in-review":
+    case "approved":
+    case "rejected":
+    case "failed":
+      return latest.state;
+    default:
+      return "no-build";
+  }
+}

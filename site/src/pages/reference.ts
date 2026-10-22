@@ -258,7 +258,8 @@ function body(): Raw {
             <li><b>TestFlight setup, once per app.</b> You add the app in App Store Connect (Apple has no API for that); the TestFlight card on the app's page lists every field of Apple's New App form. ourapps finds it by bundle ID, makes an App Store profile, an external beta group with a public link (<code>/v1/betaGroups</code>), and fills in the beta review contact and description.</li>
             <li><b>Build.</b> Your workflow fetches certificate, key and the App Store profile from <code>/api/build/&lt;app&gt;/signing</code> with the app's build token and exports for <code>app-store-connect</code>.</li>
             <li><b>Upload.</b> The workflow asks ourapps to reserve an upload (<code>/v1/buildUploads</code>), sends the bytes straight to Apple's upload addresses, and tells ourapps the MD5. No Apple key in the repository.</li>
-            <li><b>Distribute.</b> Every ten minutes ourapps checks Apple; once the build is processed it adds it to the friends' group, sets What to Test from your release notes and submits it for beta review (the first build of each version).</li>
+            <li><b>Distribute.</b> Every ten minutes ourapps checks Apple; once the build is processed and has its export compliance answer, it adds it to the friends' group, sets What to Test from your release notes, submits it for beta review (the first build of each version) and, once approved, makes it available to the group.</li>
+            <li><b>Open.</b> ourapps reads the public invitation page; the install page offers the invitation only while that page accepts testers.</li>
             <li><b>Keep it alive.</b> Builds last 90 days; two weeks before expiry ourapps sends <code>my-store-release</code> to the repository for a fresh build.</li>
           </ol>
           <ul class="bullets">

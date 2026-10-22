@@ -85,7 +85,13 @@ repository for a fresh build before then (step 5), so friends keep the app indef
 
 Once per app the developer adds it in App Store Connect; Apple offers no API for this. The
 TestFlight card on the app's page in ourapps lists every field of Apple's New App form, notices
-when the app is there, and makes the App Store profile, the beta group and its public link.
+when the app is there, makes the App Store profile, the beta group and its public link, and sends
+the repository `my-store-release` (step 5) for the first build.
+
+The public link lets anyone with it join; nobody is invited one by one. Apple's page for the link
+refuses testers until a build in the group has passed beta review, so the install page offers
+the invitation only once ourapps has read that page and found it open; until then friends on
+iPhone see "coming soon", with the web version when there is one.
 
 A universal app needs nothing extra: build one `.ipa` with `TARGETED_DEVICE_FAMILY` set to `1,2`.
 Optionally say which devices the build targets with `install.ios.devices`, any of `"iphone"` and
@@ -137,9 +143,11 @@ Build with manual signing: identity `Apple Distribution` and the profile named
 `project.yml`). Passed as `xcodebuild` overrides they also reach Swift package resource bundles,
 which then fail with "requires a development team". Export with `method` `app-store-connect`,
 `signingStyle` `manual`, `teamID` `.teamId` and `provisioningProfiles` mapping the bundle ID to
-that profile name. Set `ITSAppUsesNonExemptEncryption` in Info.plist (`false` when the app only
-uses encryption built into iOS, such as HTTPS); without it Apple holds the build until the
-question is answered in App Store Connect. `CFBundleVersion` must be higher on every upload.
+that profile name. Set `ITSAppUsesNonExemptEncryption` in Info.plist when the developer has said what it should be
+(Apple: encryption built into iOS, such as HTTPS through URLSession, is typically exempt; linked
+third-party libraries count too). Without it each build waits for the export compliance answer,
+which the developer gives once on the app's TestFlight card in ourapps, or per build in App Store
+Connect. `CFBundleVersion` must be higher on every upload.
 Delete the keychain and `signing.json` when the job ends, also on failure.
 
 ## 4. Upload through ourapps
@@ -167,8 +175,10 @@ jq -n --arg f "$(jq -r .uploadFileId upload.json)" --arg m "$MD5" '{uploadFileId
 ```
 
 `whatsNew` is the version's release notes; TestFlight shows them to friends. ourapps checks
-Apple every ten minutes and, once the build is processed, adds it to the friends' group and
-sends it for beta review. The app's page in ourapps shows each upload's state.
+Apple every ten minutes: once the build is processed and has its export compliance answer, it
+adds the build to the friends' group, sends it for beta review, makes it available to the group
+when Apple approves it (App Store Connect's "Notify Testers"), and reads the invitation page. The
+app's page in ourapps shows each step and what it waits for.
 
 ## 5. Releases and fresh builds
 

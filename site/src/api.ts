@@ -132,16 +132,36 @@ export interface Me {
 // The developer's next step before TestFlight can be set up, in the order they meet them.
 export type TestflightNeed = "bundle-id" | "apple-key" | "signing" | "review-contact" | "store-app";
 
+// After set-up: what the invitation waits for.
+export type TestflightStage = "no-build" | "waiting-for-upload" | "processing" | "needs-compliance" | "in-review" | "approved" | "open" | "link-closed" | "rejected" | "failed";
+
+export interface TestflightBuild {
+  version: string;
+  buildNumber: string;
+  state: string;
+  appleState: string | null;
+  message: string | null;
+  uploadedAt: string;
+  submittedAt: string | null;
+  expiresAt: string | null;
+  updatedAt: string;
+}
+
 export interface TestflightStatus {
   setUp: boolean;
   // null with setUp false: ourapps can check with Apple whether the app is in App Store Connect yet.
   needs: TestflightNeed | null;
   // What to type into App Store Connect's New App form, until the app is set up.
   storeApp: { name: string; otherName: string; bundleId: string; sku: string } | null;
+  stage: TestflightStage | null;
   url: string | null;
+  // What testflight.apple.com shows a friend opening the invitation.
+  invitation: { state: "open" | "not-accepting" | "full" | "missing" | null; checkedAt: string | null };
+  buildRequest: { at: string; error: string | null } | null;
+  encryptionExempt: boolean;
   profile: string | null;
   contact: boolean;
-  builds: { version: string; buildNumber: string; state: string; message: string | null; updatedAt: string }[];
+  builds: TestflightBuild[];
 }
 
 export interface ReleaseStatus {

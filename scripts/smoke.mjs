@@ -182,7 +182,7 @@ async function keyedChecks() {
     // The throwaway app has no bundle ID, so neither call reaches Apple.
     const tf = await call("GET", P("/api/dev/apps/:id/testflight"), { pattern: "/api/dev/apps/:id/testflight" });
     expectStatus("GET /api/dev/apps/:id/testflight", tf, 200);
-    expectKeys("TestFlight shape", tf.json, ["setUp", "needs", "storeApp", "stage", "url", "invitation", "buildRequest", "encryptionExempt", "profile", "contact", "builds"]);
+    expectKeys("TestFlight shape", tf.json, ["setUp", "needs", "storeApp", "stage", "url", "invitation", "buildRequest", "profile", "contact", "builds"]);
     record(tf.json?.setUp === false && tf.json?.needs === "bundle-id", "a new app needs its bundle ID first", tf.json?.needs);
     const tfSetUp = await call("POST", P("/api/dev/apps/:id/testflight"), { pattern: "/api/dev/apps/:id/testflight" });
     record(tfSetUp.status === 200 && tfSetUp.json?.needs === "bundle-id", "POST /api/dev/apps/:id/testflight names the missing bundle ID", `${tfSetUp.status} ${tfSetUp.json?.needs}`);
@@ -200,7 +200,7 @@ async function keyedChecks() {
     expectStatus("GET /api/dev/audit", audit, 200);
 
     // Browser-only actions must refuse a key.
-    for (const [method, path, body] of [["POST", "/api/dev/keys", { name: "x" }], ["PUT", "/api/dev/secrets", {}], ["POST", "/api/dev/signing", {}], ["PUT", P("/api/dev/apps/:id/testflight/encryption"), { exempt: true }], ["DELETE", "/api/dev/me", {}], ["POST", "/api/dev/keys/revoke-all", undefined]]) {
+    for (const [method, path, body] of [["POST", "/api/dev/keys", { name: "x" }], ["PUT", "/api/dev/secrets", {}], ["POST", "/api/dev/signing", {}], ["DELETE", "/api/dev/me", {}], ["POST", "/api/dev/keys/revoke-all", undefined]]) {
       const pattern = path.replace(id, ":id");
       const r = await call(method, path, { body, pattern });
       expectStatus(`${method} ${pattern} refuses an API key`, r, 403);

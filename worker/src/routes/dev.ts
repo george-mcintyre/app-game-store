@@ -37,7 +37,6 @@ function publicApp(app: AppRow) {
     testflightCheckedAt: _checked,
     buildRequestedAt: _requested,
     buildRequestError: _requestError,
-    encryptionExempt: _exempt,
     ...rest
   } = app;
   return rest;
@@ -388,7 +387,6 @@ async function testflightView(db: Db, app: AppRow, dev: Developer, needs: Testfl
     // What testflight.apple.com shows a friend opening the invitation, and when ourapps last looked.
     invitation: { state: app.testflightLinkState ?? null, checkedAt: app.testflightCheckedAt ?? null },
     buildRequest: app.buildRequestedAt ? { at: app.buildRequestedAt, error: app.buildRequestError ?? null } : null,
-    encryptionExempt: app.encryptionExempt === true,
     profile: app.storeProfileName ?? null,
     contact: Boolean(reviewContact(dev)),
     builds: builds.map((b) => ({
@@ -433,27 +431,6 @@ export async function requestAppBuild(env: Env, deps: Deps, dev: Developer, id: 
   const app = await ownedApp(db, dev, id);
   if (!app.ascAppId) throw new HttpError(409, "set up TestFlight for this app first");
   await requestBuild(env, deps, app, "requested");
-  return json(await testflightView(db, app, dev, null));
-}
-
-// PUT /api/dev/apps/:id/testflight/encryption - dashboard only: the developer's export compliance
-// declaration. {"exempt": true} means no non-exempt encryption; ourapps gives Apple that answer for each build.
-export async function setEncryptionAnswer(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper, id: string): Promise<Response> {
-  requireSession(dev);
-  const db = Db.from(env);
-  const app = await ownedApp(db, dev, id);
-  const body = await readJson<{ exempt?: unknown }>(request);
-  if (typeof body.exempt !== "boolean") throw new HttpError(400, "exempt must be true or false");
-  await db.setEncryptionExempt(app.id, body.exempt);
-  app.encryptionExempt = body.exempt;
-  await audit(request, env, deps, dev.id, "encryption-declared", `${app.name}: ${body.exempt ? "no non-exempt encryption" : "answer withdrawn"}`);
-  if (body.exempt && app.ascAppId) {
-    try {
-      await refreshTestflight(env, deps, app);
-    } catch (err) {
-      console.error(`encryption answer ${app.id}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
   return json(await testflightView(db, app, dev, null));
 }
 

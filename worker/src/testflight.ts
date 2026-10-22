@@ -144,8 +144,9 @@ export async function commitUpload(env: Env, deps: Deps, app: AppRow, body: { up
   return { state: row.state };
 }
 
-// Moves one build on: processing, export compliance, into the friends' group with its notes and off to
-// beta review, then through the review until friends can install it.
+// Moves one build on: processing, into the friends' group with its notes and off to beta review, then
+// through the review until friends can install it. Apple's export compliance question gets "no
+// non-exempt encryption" for every build (ITSAppUsesNonExemptEncryption NO); the terms make that the developer's to keep true.
 export async function advanceBuild(apple: AppleClient, app: AppRow, row: TestflightBuildRow, now: string): Promise<void> {
   if (row.state === "uploaded" && row.uploadId) {
     const up = await apple.buildUploadState(row.uploadId);
@@ -173,20 +174,13 @@ export async function advanceBuild(apple: AppleClient, app: AppRow, row: Testfli
     row.message = `Apple marked the build ${build.processingState.toLowerCase()}`;
     return;
   }
-  if (build.usesNonExemptEncryption === null) {
-    if (!app.encryptionExempt) {
-      row.state = "needs-compliance";
-      row.message = COMPLIANCE_MESSAGE;
-      return;
-    }
-    await apple.setBuildEncryption(build.id, false);
-  }
-  if (row.state === "uploaded" || row.state === "processing" || row.state === "needs-compliance") {
+  if (build.usesNonExemptEncryption === null) await apple.setBuildEncryption(build.id, false);
+  if (row.state === "uploaded" || row.state === "processing") {
     await apple.addBuildToGroup(app.betaGroupId!, build.id);
     if (row.whatsNew) await apple.setWhatsNew(build.id, row.whatsNew);
     const detail = await apple.betaDetail(build.id);
     if (!detail.autoNotifyEnabled) await apple.setAutoNotify(detail.id);
-    await submit(apple, build.id);
+    await submit(apple, build.id, app);
     row.state = "in-review";
     row.submittedAt = now;
     row.message = null;
@@ -220,26 +214,34 @@ export async function advanceBuild(apple: AppleClient, app: AppRow, row: Testfli
       break;
     case "READY_FOR_BETA_SUBMISSION":
       // Not with Apple's review yet, for example after a refused submission; ask again.
-      await submit(apple, build.id);
+      await submit(apple, build.id, app);
       row.state = "in-review";
       break;
     case "MISSING_EXPORT_COMPLIANCE":
-      row.state = "needs-compliance";
-      row.message = COMPLIANCE_MESSAGE;
+      await apple.setBuildEncryption(build.id, false);
+      row.state = "processing";
       break;
     default:
       row.state = "in-review";
   }
 }
 
-const COMPLIANCE_MESSAGE = "Apple needs the export compliance answer: give it on the app's TestFlight card in ourapps, set ITSAppUsesNonExemptEncryption in Info.plist, or answer it for this build in App Store Connect";
-
-async function submit(apple: AppleClient, buildId: string): Promise<void> {
+async function submit(apple: AppleClient, buildId: string, app: AppRow, retried = false): Promise<void> {
   try {
     await apple.submitForBetaReview(buildId);
   } catch (err) {
     // A build of a version Apple already reviewed may need no review, or may already be submitted.
-    if (!(err instanceof AppleError && err.status === 409)) throw err;
+    if (err instanceof AppleError && err.status === 409) return;
+    // Apps set up before ourapps wrote the primary language's beta description.
+    if (!retried && err instanceof AppleError && /betaAppLocalization/i.test(err.message)) {
+      const found = await apple.setBetaDescription(app.ascAppId!, { description: app.description || app.tagline || app.name });
+      try {
+        return await submit(apple, buildId, app, true);
+      } catch (again) {
+        throw new Error(`${again instanceof Error ? again.message : String(again)} (${found})`);
+      }
+    }
+    throw err;
   }
 }
 
@@ -359,7 +361,7 @@ async function refreshIfExpiring(env: Env, deps: Deps, db: Db, apple: AppleClien
 export const RELEASE_EVENT = "my-store-release";
 
 // Where an app set up for TestFlight stands, from the developer's side; the console's card and agents read it.
-export type TestflightStage = "no-build" | "waiting-for-upload" | "processing" | "needs-compliance" | "in-review" | "approved" | "open" | "link-closed" | "rejected" | "failed";
+export type TestflightStage = "no-build" | "waiting-for-upload" | "processing" | "in-review" | "approved" | "open" | "link-closed" | "rejected" | "failed";
 
 export function testflightStage(app: AppRow, builds: TestflightBuildRow[]): TestflightStage {
   if (app.testflightLinkState === "open") return "open";
@@ -373,7 +375,6 @@ export function testflightStage(app: AppRow, builds: TestflightBuildRow[]): Test
     case "uploaded":
     case "processing":
       return "processing";
-    case "needs-compliance":
     case "in-review":
     case "approved":
     case "rejected":

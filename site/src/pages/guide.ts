@@ -33,7 +33,7 @@ function sections(origin: string, slug: string): Section[] {
         </ol>
         <h3>You, as things happen</h3>
         <ol class="steps">
-          <li><b>Answer the export compliance question once per iPhone app</b> on its TestFlight card. Apple's beta review then checks the first build of each new version; the card says what it is waiting for.</li>
+          <li><b>Wait for Apple's beta review</b> of the first build of each new iPhone version. The app's TestFlight card says what it is waiting for.</li>
           <li><b>Send the share link</b> to the person. The agent can create it and give you the URL and QR code; the message to your friend is yours.</li>
           <li><b>Before the signing certificate's yearly expiry</b> (the date is under <a href="/dev/settings#signing">Settings</a>), press <b>Replace certificate</b> there. ourapps makes the profile of every app on TestFlight again with it.</li>
           <li><b>Approve the release notes</b> for each version in <code>CHANGELOG.md</code>. An agent drafts them from the commits; they are shown to your friends as the revision history, so the final words are yours. <a href="/dev/guide#release-notes">How</a>.</li>
@@ -295,7 +295,7 @@ startButton.onclick = async () => {
           <li>The app has its <b>iPhone bundle ID</b>, iPhone signing is set up, and the beta review contact is saved (once for all apps; the card asks for it).</li>
           <li>Add the app in <a href="https://appstoreconnect.apple.com/apps" target="_blank" rel="noopener">App Store Connect</a>. Apple lets nobody else do this. The card lists every field of Apple's <b>New App</b> form with what to type, and ourapps registers the bundle ID with Apple first so it is in the form's list.</li>
           <li>While the app's page is open, the card notices the app within 15 seconds and finishes by itself: the App Store profile, a beta group with a public invitation link, and what Apple's beta review needs. It then asks the repository for the first build.</li>
-          <li>Answer Apple's export compliance question once, on the card. ourapps gives Apple that answer for every build.</li>
+          <li>ourapps answers Apple's export compliance question for every build: no non-exempt encryption (<code>ITSAppUsesNonExemptEncryption</code> false). Share only apps for which that is true.</li>
         </ol>
         <p>The invitation is a public link: anyone who has it can join, with no invitation per person. Apple's page for it refuses testers until a build has passed beta review, so the install page offers it only once ourapps has found that page open; until then friends on iPhone see "coming soon", with the web version when there is one.</p>
         <h3>Every release</h3>
@@ -303,7 +303,6 @@ startButton.onclick = async () => {
           <tr><th>State on the app page</th><th>Meaning</th></tr>
           <tr><td>uploading</td><td>The workflow is sending the build to Apple through ourapps</td></tr>
           <tr><td>with Apple, processing</td><td>Apple is processing the build</td></tr>
-          <tr><td>needs your answer</td><td>Apple wants the export compliance answer: give it once on the card, set <code>ITSAppUsesNonExemptEncryption</code> in Info.plist, or answer it for the build in App Store Connect</td></tr>
           <tr><td>in Apple's beta review</td><td>In the friends' group and with Apple's beta review; the first build of each version is reviewed</td></tr>
           <tr><td>friends can install it</td><td>Approved, and the invitation accepts testers</td></tr>
         </table>
@@ -486,7 +485,6 @@ suspend fun checkForUpdate(context: Context) {
           <tr><td>Web app opens but cannot reach its server</td><td>The server does not allow the web app's address. Add the exact address, for example <code>https://skull-web.yourname.workers.dev</code>, to the server's CORS list.</td></tr>
           <tr><td>Install page says the release cannot be read for a minute after a release</td><td>The release went public before <code>my-app.json</code> was uploaded. Create releases as drafts and publish them after every file is in.</td></tr>
           <tr><td>The TestFlight invitation says "This beta isn't accepting any new testers right now"</td><td>No build has passed Apple's beta review yet, or the public link is off. The app's TestFlight card says which, and what it waits for; friends are not offered the invitation meanwhile.</td></tr>
-          <tr><td>A build stays at "needs an answer"</td><td>Set <code>ITSAppUsesNonExemptEncryption</code> in Info.plist, or answer export compliance for that build in App Store Connect; ourapps carries on by itself.</td></tr>
           <tr><td>Nothing happens when tapping Open the invitation on iPhone</td><td>The page is inside another app's browser (Gmail, Instagram). Open in Safari. WhatsApp and Messages are fine.</td></tr>
           <tr><td>Android says "App not installed"</td><td>An older build signed with a different key is installed. Uninstall it first, or keep the signing key stable.</td></tr>
           <tr><td>Play Protect blocks the install</td><td>Tap More details, Install anyway. If there is no such button, the device policy forbids unknown sources (work phones).</td></tr>

@@ -314,7 +314,6 @@ const TF_STATE: Record<string, [string, "" | "ok" | "warn" | "bad" | "accent"]> 
   uploading: ["uploading", "accent"],
   uploaded: ["with Apple", "accent"],
   processing: ["Apple is processing it", "accent"],
-  "needs-compliance": ["needs your answer", "warn"],
   "in-review": ["in Apple's beta review", "accent"],
   approved: ["approved", "accent"],
   open: ["friends can install it", "ok"],
@@ -327,7 +326,6 @@ const STAGE_PILL: Record<TestflightStage, [string, "ok" | "warn" | "bad" | "acce
   "no-build": ["needs a build", "warn"],
   "waiting-for-upload": ["waiting for the build", "accent"],
   processing: ["Apple is processing it", "accent"],
-  "needs-compliance": ["needs your answer", "warn"],
   "in-review": ["in Apple's beta review", "accent"],
   approved: ["approved, opening", "accent"],
   open: ["open to friends", "ok"],
@@ -396,9 +394,8 @@ function testflightProgress(app: DevApp, t: TestflightStatus, stage: TestflightS
       <p class="small muted">Each build lasts 90 days; ourapps asks ${app.repo} for a fresh one two weeks before. A new version goes through Apple's beta review before friends get it; friends keep the previous build meanwhile.</p>
       ${repairLink()}`;
   }
-  const order: TestflightStage[][] = [[], ["no-build", "waiting-for-upload", "failed"], ["processing"], ["needs-compliance"], ["in-review", "rejected"], ["approved", "link-closed"]];
+  const order: TestflightStage[][] = [[], ["no-build", "waiting-for-upload", "failed"], ["processing"], ["in-review", "rejected"], ["approved", "link-closed"]];
   const at = order.findIndex((list) => list.includes(stage));
-  const exemptText = "You declared no non-exempt encryption; ourapps gives Apple this answer for every build.";
 
   let buildNow: Raw;
   if (stage === "failed") buildNow = html`${callout("bad", html`<p>Apple did not accept ${label}: ${b?.message ?? "no reason given"}.</p>`)}<p class="small">Fix the cause in the repository, then ask for a new build.</p>${askButton("Ask for a new build")}`;
@@ -407,12 +404,6 @@ function testflightProgress(app: DevApp, t: TestflightStatus, stage: TestflightS
     const late = t.buildRequest && Date.now() - Date.parse(t.buildRequest.at) > 2 * 3_600_000;
     buildNow = html`<p>ourapps asked ${app.repo} for a build ${ago(t.buildRequest?.at)}. The release workflow runs on GitHub (<a href="${actions}" target="_blank" rel="noopener">see the run</a>) and uploads the iPhone build through ourapps; it appears here as soon as it arrives.</p>${late ? html`${callout("warn", html`<p>No upload has arrived in over two hours. Open the run on GitHub: if it failed, its log says why.</p>`)}${askButton("Ask again")}` : ""}`;
   } else buildNow = html`<p>Nothing has been uploaded yet. The app's release workflow builds the iPhone app and uploads it through ourapps. Ask it for a build now; it runs on GitHub and takes a few minutes.</p>${askButton(`Ask ${app.repo} for a build`)}`;
-
-  const compliance = html`
-    <p>Apple asks of every build whether the app uses encryption that export rules do not exempt. In Apple's words, answer <b>No</b> when the app "uses no encryption, or only uses encryption that's exempt from export compliance requirements". Apple adds that encryption built into iOS, such as HTTPS through URLSession, is typically exempt, that third-party libraries the app links count too, and that exempt encryption can still call for a year-end self-classification report. <a href="https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations" target="_blank" rel="noopener">Apple's page</a> says how to decide.</p>
-    <p class="small muted">This is your declaration to Apple. ourapps passes it on for each build of ${app.name}.</p>
-    <div class="row wrap mt-s"><button class="btn sm" type="button" id="tf-exempt">No: none, or only exempt encryption</button><button class="btn sm secondary" type="button" id="tf-not-exempt">Yes, or I am not sure</button></div>
-    <div id="tf-asc-compliance" hidden>${callout("info", html`<p>Answer it in App Store Connect instead, where Apple asks the follow-up questions: Apps, ${app.name}, <b>TestFlight</b>, the build under <b>Builds</b>, <b>Provide Export Compliance Information</b>. ourapps notices the answer within ten minutes, or press Check with Apple.</p>`)}</div>`;
 
   const review = stage === "rejected"
     ? html`${callout("bad", html`<p>Apple's beta review did not approve ${label}. Apple's reasons are in <a href="${ASC_APPS}" target="_blank" rel="noopener">App Store Connect</a>: Apps, ${app.name}, TestFlight.</p>`)}<p class="small">Fix what Apple asks for, then ask for a new build.</p>${askButton("Ask for a new build")}`
@@ -427,17 +418,10 @@ function testflightProgress(app: DevApp, t: TestflightStatus, stage: TestflightS
     ? callout("warn", html`<p>${closed[t.invitation.state]}</p>`)
     : html`<p>Apple approved ${label} and ourapps made it available to the friends' group. Waiting for the invitation page to accept testers${t.invitation.checkedAt ? html` (still closed when checked ${ago(t.invitation.checkedAt)})` : ""}.</p>`;
 
-  const steps: { title: string; done: string | Raw; now: Raw; later: string; extra?: Raw }[] = [
+  const steps: { title: string; done: string | Raw; now: Raw; later: string }[] = [
     { title: "Set up with Apple", done: html`App Store profile <b>${t.profile ?? ""}</b>, the friends' group and its invitation link.`, now: html``, later: "" },
     { title: "A build from the repository", done: b ? `${label} arrived ${ago(b.uploadedAt)}.` : "Arrived.", now: buildNow, later: "The release workflow builds the iPhone app and uploads it through ourapps." },
-    { title: "Apple processes the build", done: "Processed.", now: html`<p>Apple is processing ${label}, uploaded ${ago(b?.uploadedAt)}. Nothing to do; this needs no answer from you.</p>`, later: "Apple checks every upload before it can be tested." },
-    {
-      title: "Export compliance answer",
-      done: t.encryptionExempt ? exemptText : "Answered for this build.",
-      now: compliance,
-      later: "Apple's question about encryption, asked of every build.",
-      extra: t.encryptionExempt ? html`<p class="small muted">${exemptText}</p>` : html`<details class="small mt-s"><summary>Answer now, so builds never wait for it</summary>${compliance}</details>`,
-    },
+    { title: "Apple processes the build", done: "Processed.", now: html`<p>Apple is processing ${label}, uploaded ${ago(b?.uploadedAt)}. Nothing to do: ourapps answers Apple's export compliance question for it.</p>`, later: "Apple checks every upload before it can be tested." },
     { title: "Apple's beta review", done: "Approved.", now: review, later: "Apple reviews the first build of each version." },
     { title: "Invitation opens to friends", done: "Open.", now: opening, later: "Friends can install once the invitation accepts testers." },
   ];
@@ -447,7 +431,7 @@ function testflightProgress(app: DevApp, t: TestflightStatus, stage: TestflightS
       ${steps.map((s, i) => {
         const cls = i < at ? "done" : i === at ? "now" : "muted-step";
         const mark = cls === "done" ? icon("check", "icon-16") : String(i + 1);
-        const body = cls === "done" ? html`<p>${s.done}</p>` : cls === "now" ? s.now : html`<p>${s.later}</p>${i === 3 && s.extra ? s.extra : ""}`;
+        const body = cls === "done" ? html`<p>${s.done}</p>` : cls === "now" ? s.now : html`<p>${s.later}</p>`;
         return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${s.title}</h3>${body}</div></li>`;
       })}
     </ol>
@@ -608,19 +592,11 @@ async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promi
     const key = JSON.stringify([t, me.secrets.apple, Boolean(me.secrets.signing), checking]);
     if (key === shown) return;
     shown = key;
-    // What the developer opened stays open when a check redraws the card.
-    const opened = box.querySelector<HTMLDetailsElement>("details")?.open ?? false;
-    const asked = box.querySelector("#tf-asc-compliance:not([hidden])") !== null;
     box.innerHTML = testflightCard(me, app, t, checking).html;
-    const details = box.querySelector<HTMLDetailsElement>("details");
-    if (details && opened) details.open = true;
-    if (asked) box.querySelector("#tf-asc-compliance")?.removeAttribute("hidden");
     wireCopy(box);
     box.querySelector<HTMLButtonElement>("#testflight-check")?.addEventListener("click", () => void check(true));
     const ask = box.querySelector<HTMLButtonElement>("#tf-ask-build");
     if (ask) ask.onclick = () => void act(ask, "Asking...", () => api<TestflightStatus>("POST", `${path}/build`), "Asked the repository for a build");
-    box.querySelectorAll<HTMLButtonElement>("#tf-exempt").forEach((b) => (b.onclick = () => void act(b, "Saving...", () => api<TestflightStatus>("PUT", `${path}/encryption`, { exempt: true }), "Answer saved; ourapps gives it to Apple")));
-    box.querySelectorAll<HTMLButtonElement>("#tf-not-exempt").forEach((b) => (b.onclick = () => b.closest("li, details")?.querySelector<HTMLElement>("#tf-asc-compliance")?.removeAttribute("hidden")));
     const repair = box.querySelector<HTMLButtonElement>("#tf-repair");
     if (repair) repair.onclick = () => void act(repair, "Setting up...", () => api<TestflightStatus>("POST", path, { repair: true }), "Set up again");
     const form = box.querySelector<HTMLFormElement>("#tf-contact");
@@ -951,6 +927,7 @@ const EVENT_LABELS: Record<string, string> = {
   "api-key-revoked": "API key revoked",
   "api-keys-revoked-all": "All API keys revoked",
   "build-token-rotated": "Build token rotated",
+  "encryption-declared": "Export compliance answer set",
   "app-created": "App created",
   "app-deleted": "App deleted",
   "signing-set-up": "iPhone signing set up",

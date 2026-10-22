@@ -25,6 +25,8 @@ type Store = {
   beta?: string;
   autoNotify?: boolean;
   invitation?: "closed" | "open" | "full";
+  // Beta localizations at Apple; the app's primary language is en-GB.
+  locales?: string[];
 };
 
 const JOIN_CLOSED = `<title>TestFlight - Apple</title><div class="beta-status"><span>This beta isn&#39;t accepting any new testers right now.</span></div>`;
@@ -44,8 +46,15 @@ function storeRoutes(state: Store) {
     },
     [`GET ${apple("/v1/apps/asc-1/betaAppReviewDetail")}`]: () => jsonRes({ data: { id: "rev-1", type: "betaAppReviewDetails", attributes: {} } }),
     [`PATCH ${apple("/v1/betaAppReviewDetails/rev-1")}`]: () => jsonRes({ data: { id: "rev-1", type: "betaAppReviewDetails", attributes: {} } }),
-    [`GET ${apple("/v1/apps/asc-1/betaAppLocalizations")}`]: () => jsonRes({ data: [] }),
-    [`POST ${apple("/v1/betaAppLocalizations")}`]: () => jsonRes({ data: { id: "loc-1", type: "betaAppLocalizations", attributes: {} } }, 201),
+    [`GET ${apple("/v1/apps/asc-1")}`]: () => jsonRes({ data: { id: "asc-1", type: "apps", attributes: { primaryLocale: "en-GB" } } }),
+    [`GET ${apple("/v1/apps/asc-1/betaAppLocalizations")}`]: () => jsonRes({ data: (state.locales ?? []).map((l) => ({ id: `loc-${l}`, type: "betaAppLocalizations", attributes: { locale: l, feedbackEmail: "g@example.com" } })) }),
+    [`POST ${apple("/v1/betaAppLocalizations")}`]: (c: Call) => {
+      const locale = JSON.parse(c.body!).data.attributes.locale as string;
+      state.locales = [...(state.locales ?? []), locale];
+      return jsonRes({ data: { id: `loc-${locale}`, type: "betaAppLocalizations", attributes: {} } }, 201);
+    },
+    [`PATCH ${apple("/v1/betaAppLocalizations/loc-en-US")}`]: () => jsonRes({ data: { id: "loc-en-US", type: "betaAppLocalizations", attributes: {} } }),
+    [`PATCH ${apple("/v1/betaAppLocalizations/loc-en-GB")}`]: () => jsonRes({ data: { id: "loc-en-GB", type: "betaAppLocalizations", attributes: {} } }),
     [`POST ${apple("/v1/buildUploads")}`]: () => jsonRes({ data: { id: "up-1", type: "buildUploads", attributes: {} } }, 201),
     [`POST ${apple("/v1/buildUploadFiles")}`]: () =>
       jsonRes({ data: { id: "file-1", type: "buildUploadFiles", attributes: { uploadOperations: [{ method: "PUT", url: "https://upload.example/part1", offset: 0, length: 9, requestHeaders: [{ name: "Content-Type", value: "application/octet-stream" }] }] } } }, 201),
@@ -67,7 +76,11 @@ function storeRoutes(state: Store) {
     [`POST ${apple("/v1/betaGroups/grp-1/relationships/builds")}`]: () => new Response(null, { status: 204 }),
     [`GET ${apple("/v1/builds/build-1/betaBuildLocalizations")}`]: () => jsonRes({ data: [] }),
     [`POST ${apple("/v1/betaBuildLocalizations")}`]: () => jsonRes({ data: { id: "bl-1", type: "betaBuildLocalizations", attributes: {} } }, 201),
-    [`POST ${apple("/v1/betaAppReviewSubmissions")}`]: () => jsonRes({ data: { id: "sub-1", type: "betaAppReviewSubmissions", attributes: {} } }, 201),
+    // Apple refuses review until the app's primary language has a beta description.
+    [`POST ${apple("/v1/betaAppReviewSubmissions")}`]: () =>
+      (state.locales ?? []).includes("en-GB")
+        ? jsonRes({ data: { id: "sub-1", type: "betaAppReviewSubmissions", attributes: {} } }, 201)
+        : jsonRes({ errors: [{ status: "422", detail: "betaAppLocalization must exist for an app" }] }, 422),
   };
 }
 
@@ -105,8 +118,8 @@ describe("TestFlight", () => {
     expect(posted).toMatchObject({ setUp: false, needs: "store-app", storeApp: { name: "Skull", otherName: "Skull by George", bundleId: "com.example.skull", sku: "skull" } });
   });
 
-  it("sets up, asks for the first build, follows it through beta review, and offers the invitation only once it accepts testers", async () => {
-    type View = { setUp: boolean; stage: string | null; invitation: { state: string | null }; buildRequest: { at: string; error: string | null } | null; encryptionExempt: boolean; builds: { state: string; message: string | null; appleState: string | null }[] };
+  it("sets up, asks for the first build, answers export compliance, follows it through beta review, and offers the invitation only once it accepts testers", async () => {
+    type View = { setUp: boolean; stage: string | null; invitation: { state: string | null }; buildRequest: { at: string; error: string | null } | null; builds: { state: string; message: string | null; appleState: string | null }[] };
     const state: Store = { storeApp: true };
     const routes = storeRoutes(state);
     const { appId, buildToken, linkId } = await readyApp(routes);
@@ -145,23 +158,15 @@ describe("TestFlight", () => {
     state.build = { processingState: "PROCESSING", usesNonExemptEncryption: null };
     await tickTestflight(env, d);
     expect((await view()).builds[0].state).toBe("processing");
+    // Processed without an export compliance answer: ourapps answers it, then sends the build to review.
     state.build = { processingState: "VALID", usesNonExemptEncryption: null };
     await tickTestflight(env, d);
-    expect(await view()).toMatchObject({ stage: "needs-compliance", builds: [{ state: "needs-compliance", message: expect.stringMatching(/TestFlight card/) }] });
-
-    // The export compliance declaration is the developer's, from a browser; ourapps gives it to Apple.
-    const { key } = (await (await handle(api(cookie, "POST", "/api/dev/keys", { name: "agent" }), env, d)).json()) as { key: string };
-    expect((await handle(api(null, "PUT", `/api/dev/apps/${appId}/testflight/encryption`, { exempt: true }, { Authorization: `Bearer ${key}` }), env, d)).status).toBe(403);
-    expect((await handle(api(cookie, "PUT", `/api/dev/apps/${appId}/testflight/encryption`, { exempt: "yes" }), env, d)).status).toBe(400);
-    const answered = (await (await handle(api(cookie, "PUT", `/api/dev/apps/${appId}/testflight/encryption`, { exempt: true }), env, d)).json()) as View;
-    expect(answered).toMatchObject({ encryptionExempt: true, stage: "in-review", builds: [{ state: "in-review" }] });
+    expect(await view()).toMatchObject({ stage: "in-review", builds: [{ state: "in-review", message: null }] });
     expect(JSON.parse(calls.find((c) => c.method === "PATCH" && c.url.endsWith("/v1/builds/build-1"))!.body!).data.attributes).toEqual({ usesNonExemptEncryption: false });
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/v1/betaGroups/grp-1/relationships/builds"))).toBe(true);
     expect(JSON.parse(calls.find((c) => c.method === "POST" && c.url.endsWith("/v1/betaBuildLocalizations"))!.body!).data.attributes).toEqual({ locale: "en-US", whatsNew: "Rematch button" });
     expect(state.autoNotify).toBe(true);
     expect(calls.some((c) => c.method === "POST" && c.url.endsWith("/v1/betaAppReviewSubmissions"))).toBe(true);
-    const events = await env.DB.prepare("SELECT event, detail FROM audit_log WHERE event = 'encryption-declared'").all<{ detail: string }>();
-    expect(events.results.map((e) => e.detail)).toEqual(["Skull: no non-exempt encryption"]);
 
     state.beta = "IN_BETA_REVIEW";
     await tickTestflight(env, d);
@@ -227,5 +232,27 @@ describe("TestFlight", () => {
     const again = fakeFetch({ ...routes, ...githubRoutes() });
     await tickTestflight(env, { ...deps, fetch: again.fetch });
     expect(again.calls.some((c) => c.url.endsWith("/dispatches"))).toBe(false);
+  });
+
+  it("adds the primary language's beta description when Apple refuses review without it", async () => {
+    const state: Store = { storeApp: true };
+    const routes = storeRoutes(state);
+    const { appId, buildToken } = await readyApp(routes);
+    const { fetch, calls } = fakeFetch({ ...routes, ...githubRoutes() });
+    const d = { ...deps, fetch };
+    await handle(api(cookie, "PUT", "/api/dev/review-contact", { firstName: "George", lastName: "McIntyre", email: "g@example.com", phone: "+44 7700 900123" }), env, d);
+    await handle(api(cookie, "POST", `/api/dev/apps/${appId}/testflight`), env, d);
+    expect(state.locales).toEqual(["en-GB"]);
+    // As an app set up before: only an en-US description.
+    state.locales = ["en-US"];
+    const auth = { Authorization: `Bearer ${buildToken}` };
+    await handle(api(null, "POST", `/api/build/${appId}/testflight/upload`, { version: "1.0", buildNumber: "7", fileName: "skull.ipa", fileSize: 9 }, auth), env, d);
+    await handle(api(null, "POST", `/api/build/${appId}/testflight/commit`, { uploadFileId: "file-1", md5: "0123456789abcdef0123456789abcdef" }, auth), env, d);
+    state.build = { processingState: "VALID", usesNonExemptEncryption: null };
+    await tickTestflight(env, d);
+    const view = (await (await handle(api(cookie, "GET", `/api/dev/apps/${appId}/testflight`), env, d)).json()) as { stage: string; builds: { state: string; message: string | null }[] };
+    expect(view).toMatchObject({ stage: "in-review", builds: [{ state: "in-review", message: null }] });
+    expect(state.locales).toEqual(["en-US", "en-GB"]);
+    expect(JSON.parse(calls.filter((c) => c.method === "POST" && c.url.endsWith("/v1/betaAppLocalizations")).at(-1)!.body!).data.attributes).toEqual({ locale: "en-GB", description: "Skull", feedbackEmail: "g@example.com" });
   });
 });

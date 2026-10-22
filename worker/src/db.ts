@@ -73,8 +73,6 @@ export interface AppRow {
   // When ourapps last asked the repository for a build, and why that failed if it did.
   buildRequestedAt?: string | null;
   buildRequestError?: string | null;
-  // The developer declared no non-exempt encryption; ourapps gives Apple that answer for each build.
-  encryptionExempt?: boolean;
   buildTokenHash: string;
   createdAt: string;
   updatedAt: string;
@@ -115,9 +113,9 @@ export interface AuditRow {
 }
 
 // A build from upload to friends: uploading (reserved at Apple), uploaded (bytes sent), processing,
-// needs-compliance (no export compliance answer), in-review (in the friends' group, with Apple's beta
-// review), approved (being made available), open (friends can install it); rejected, failed, expired end it.
-export type TestflightState = "uploading" | "uploaded" | "processing" | "needs-compliance" | "in-review" | "approved" | "open" | "rejected" | "failed" | "expired";
+// in-review (in the friends' group, with Apple's beta review), approved (being made available),
+// open (friends can install it); rejected, failed, expired end it.
+export type TestflightState = "uploading" | "uploaded" | "processing" | "in-review" | "approved" | "open" | "rejected" | "failed" | "expired";
 
 // What testflight.apple.com shows for the public link: open, "isn't accepting any new testers", "is full", or no such link.
 export type LinkState = "open" | "not-accepting" | "full" | "missing";
@@ -160,7 +158,6 @@ const appConvert = (r: Raw): Raw => ({
   screenshots: JSON.parse(r.screenshots as string),
   screenshotsByPlatform: JSON.parse((r.screenshotsByPlatform as string | undefined) ?? "{}"),
   showOnPage: r.showOnPage === 1,
-  encryptionExempt: r.encryptionExempt === 1,
 });
 
 export class Db {
@@ -394,10 +391,6 @@ export class Db {
     await this.d1.prepare("UPDATE apps SET build_requested_at = ?, build_request_error = ? WHERE id = ?").bind(at, error, appId).run();
   }
 
-  async setEncryptionExempt(appId: string, exempt: boolean): Promise<void> {
-    await this.d1.prepare("UPDATE apps SET encryption_exempt = ? WHERE id = ?").bind(exempt ? 1 : null, appId).run();
-  }
-
   async appsWithTestflight(): Promise<AppRow[]> {
     const res = await this.d1.prepare("SELECT * FROM apps WHERE asc_app_id IS NOT NULL").all<Raw>();
     return res.results.map((r) => row<AppRow>(r, appConvert)!);
@@ -422,7 +415,7 @@ export class Db {
 
   // Builds still on their way to friends, least recently checked first; optionally one app's only.
   async pendingTestflightBuilds(appId?: string): Promise<TestflightBuildRow[]> {
-    const states = "state IN ('uploaded', 'processing', 'needs-compliance', 'in-review', 'approved')";
+    const states = "state IN ('uploaded', 'processing', 'in-review', 'approved')";
     const res = appId
       ? await this.d1.prepare(`SELECT * FROM testflight_builds WHERE ${states} AND app_id = ? ORDER BY updated_at LIMIT 5`).bind(appId).all<Raw>()
       : await this.d1.prepare(`SELECT * FROM testflight_builds WHERE ${states} ORDER BY updated_at LIMIT 20`).all<Raw>();

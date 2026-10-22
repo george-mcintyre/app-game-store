@@ -133,7 +133,7 @@ export interface Me {
 export type TestflightNeed = "bundle-id" | "apple-key" | "signing" | "review-contact" | "store-app";
 
 // After set-up: what the invitation waits for.
-export type TestflightStage = "no-build" | "waiting-for-upload" | "processing" | "needs-compliance" | "in-review" | "approved" | "open" | "link-closed" | "rejected" | "failed";
+export type TestflightStage = "no-build" | "waiting-for-upload" | "processing" | "in-review" | "approved" | "open" | "link-closed" | "rejected" | "failed";
 
 export interface TestflightBuild {
   version: string;
@@ -158,7 +158,6 @@ export interface TestflightStatus {
   // What testflight.apple.com shows a friend opening the invitation.
   invitation: { state: "open" | "not-accepting" | "full" | "missing" | null; checkedAt: string | null };
   buildRequest: { at: string; error: string | null } | null;
-  encryptionExempt: boolean;
   profile: string | null;
   contact: boolean;
   builds: TestflightBuild[];

@@ -180,7 +180,7 @@ export async function advanceBuild(apple: AppleClient, app: AppRow, row: Testfli
     if (row.whatsNew) await apple.setWhatsNew(build.id, row.whatsNew);
     const detail = await apple.betaDetail(build.id);
     if (!detail.autoNotifyEnabled) await apple.setAutoNotify(detail.id);
-    await submit(apple, build.id);
+    await submit(apple, build.id, app);
     row.state = "in-review";
     row.submittedAt = now;
     row.message = null;
@@ -214,7 +214,7 @@ export async function advanceBuild(apple: AppleClient, app: AppRow, row: Testfli
       break;
     case "READY_FOR_BETA_SUBMISSION":
       // Not with Apple's review yet, for example after a refused submission; ask again.
-      await submit(apple, build.id);
+      await submit(apple, build.id, app);
       row.state = "in-review";
       break;
     case "MISSING_EXPORT_COMPLIANCE":
@@ -226,12 +226,22 @@ export async function advanceBuild(apple: AppleClient, app: AppRow, row: Testfli
   }
 }
 
-async function submit(apple: AppleClient, buildId: string): Promise<void> {
+async function submit(apple: AppleClient, buildId: string, app: AppRow, retried = false): Promise<void> {
   try {
     await apple.submitForBetaReview(buildId);
   } catch (err) {
     // A build of a version Apple already reviewed may need no review, or may already be submitted.
-    if (!(err instanceof AppleError && err.status === 409)) throw err;
+    if (err instanceof AppleError && err.status === 409) return;
+    // Apps set up before ourapps wrote the primary language's beta description.
+    if (!retried && err instanceof AppleError && /betaAppLocalization/i.test(err.message)) {
+      const found = await apple.setBetaDescription(app.ascAppId!, { description: app.description || app.tagline || app.name });
+      try {
+        return await submit(apple, buildId, app, true);
+      } catch (again) {
+        throw new Error(`${again instanceof Error ? again.message : String(again)} (${found})`);
+      }
+    }
+    throw err;
   }
 }
 

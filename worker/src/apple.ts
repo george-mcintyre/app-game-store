@@ -157,12 +157,19 @@ export class AppleClient {
     });
   }
 
-  async setBetaDescription(storeAppId: string, text: { description: string; feedbackEmail: string }): Promise<void> {
-    const res = await this.call<{ data: Resource<{ locale: string }>[] }>("GET", `/v1/apps/${storeAppId}/betaAppLocalizations?limit=50`);
-    const attributes = { description: text.description.slice(0, 4000), feedbackEmail: text.feedbackEmail };
-    const existing = res.data.find((l) => l.attributes.locale === "en-US") ?? res.data[0];
-    if (existing) await this.call("PATCH", `/v1/betaAppLocalizations/${existing.id}`, { data: { type: "betaAppLocalizations", id: existing.id, attributes } });
-    else await this.call("POST", "/v1/betaAppLocalizations", { data: { type: "betaAppLocalizations", attributes: { locale: "en-US", ...attributes }, relationships: { app: { data: { type: "apps", id: storeAppId } } } } });
+  // Beta review needs a description in every beta localization, and one in the app's primary language.
+  // Returns the locales found, for error messages.
+  async setBetaDescription(storeAppId: string, text: { description: string; feedbackEmail?: string }): Promise<string> {
+    const app = await this.call<{ data: Resource<{ primaryLocale?: string }> }>("GET", `/v1/apps/${storeAppId}?fields[apps]=primaryLocale`);
+    const primary = app.data.attributes.primaryLocale ?? "en-US";
+    const res = await this.call<{ data: Resource<{ locale: string; feedbackEmail?: string | null }>[] }>("GET", `/v1/apps/${storeAppId}/betaAppLocalizations?limit=50`);
+    const feedbackEmail = text.feedbackEmail ?? res.data.find((l) => l.attributes.feedbackEmail)?.attributes.feedbackEmail ?? undefined;
+    const attributes = { description: text.description.slice(0, 4000), ...(feedbackEmail ? { feedbackEmail } : {}) };
+    for (const l of res.data) await this.call("PATCH", `/v1/betaAppLocalizations/${l.id}`, { data: { type: "betaAppLocalizations", id: l.id, attributes } });
+    if (!res.data.some((l) => l.attributes.locale === primary)) {
+      await this.call("POST", "/v1/betaAppLocalizations", { data: { type: "betaAppLocalizations", attributes: { locale: primary, ...attributes }, relationships: { app: { data: { type: "apps", id: storeAppId } } } } });
+    }
+    return `primary ${primary}; beta localizations before: ${res.data.map((l) => l.attributes.locale).join(", ") || "none"}`;
   }
 
   // Reserves an upload; the workflow sends the bytes straight to Apple with the returned operations.

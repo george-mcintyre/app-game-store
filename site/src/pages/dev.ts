@@ -385,7 +385,7 @@ function testflightProgress(app: DevApp, t: TestflightStatus, stage: TestflightS
   const askButton = (text: string) => html`<button class="btn sm mt-s" type="button" id="tf-ask-build">${text}</button>`;
   const friends = stage === "open"
     ? html`<p class="small muted">Friends on iPhone and iPad see <b>Open the invitation</b> on the install page.</p>`
-    : html`<p class="small muted">Until the invitation opens, friends on iPhone and iPad see <b>Coming to iPhone soon</b> on the install page, with the web version when there is one; they are not sent to an invitation that refuses them.</p>`;
+    : html`<p class="small muted">Until the invitation opens, the install page tells friends on iPhone and iPad that the app is coming soon, and offers the web version when there is one.</p>`;
   if (stage === "open") {
     return html`
       ${friends}

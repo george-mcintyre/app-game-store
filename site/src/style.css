@@ -145,8 +145,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
 .mb { margin-bottom: 16px; }
 .row { display: flex; gap: 12px; align-items: center; }
 .row.wrap { flex-wrap: wrap; }
-/* A heading next to pills and buttons keeps room for its words; what does not fit moves to the next line. */
+/* A card heading keeps room for its words; on phones it has its own line and the pills and buttons go below it. */
 .row.wrap > h2.grow, .row.wrap > h3.grow, .row.wrap > .card-title { flex: 1 1 12rem; }
+@media (max-width: 640px) { .row.wrap > h2.grow, .row.wrap > h3.grow, .row.wrap > .card-title { flex-basis: 100%; } }
 .card-title p { margin: 2px 0 0; }
 .row.top { align-items: flex-start; }
 .grow { flex: 1; min-width: 0; }

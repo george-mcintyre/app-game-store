@@ -122,9 +122,9 @@ export async function appsPage(root: HTMLElement): Promise<void> {
         ? html`<div class="card">${emptyState("apps", "No apps yet", "An app is a name, an icon, a few lines and the GitHub repository that publishes it.", html`<a class="btn mt-s" href="/dev/apps/new">Add your first app</a>`)}</div>`
         : html`<div class="app-grid">${apps.map((a) => html`
             <div class="app-card">
-              ${appIcon(a.name, a.iconUrl || a.releaseIcon, "md")}
+              <a class="app-card-icon" href="/dev/apps/${a.id}" tabindex="-1" aria-hidden="true">${appIcon(a.name, a.iconUrl || a.releaseIcon, "md")}</a>
               <div>
-                <div class="name">${a.name}</div>
+                <a class="name" href="/dev/apps/${a.id}">${a.name}</a>
                 <div class="meta"><span>${a.repo}</span>${a.showOnPage ? pill("on your page", "accent") : ""}</div>
                 <div class="small muted" style="margin-top:4px">${a.tagline || "No tagline yet"}</div>
                 <div class="actions"><a class="btn sm" href="/dev/apps/${a.id}">Edit</a><a class="btn sm secondary" href="/dev/apps/${a.id}/links">Share links</a><a class="btn sm ghost" href="/dev/apps/${a.id}/preview">Preview</a></div>

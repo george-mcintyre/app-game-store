@@ -368,7 +368,7 @@ function testflightCard(me: Me, app: DevApp, t: TestflightStatus, checking: bool
     <div class="card mt">
       <a id="testflight"></a>
       <div class="row wrap">
-        <h2 class="grow">TestFlight <span class="faint small">how friends install on iPhone and iPad</span></h2>
+        <div class="grow card-title"><h2>TestFlight</h2><p class="small faint">How friends install on iPhone and iPad.</p></div>
         ${status}
         ${t.setUp ? html`<button class="btn sm secondary" type="button" id="testflight-check">${checking ? "Checking..." : "Check with Apple"}</button>` : ""}
       </div>

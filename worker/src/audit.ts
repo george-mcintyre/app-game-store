@@ -12,7 +12,6 @@ export type AuditEvent =
   | "api-key-revoked"
   | "api-keys-revoked-all"
   | "build-token-rotated"
-  | "encryption-declared"
   | "app-created"
   | "app-deleted"
   | "terms-accepted"

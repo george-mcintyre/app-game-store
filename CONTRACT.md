@@ -143,11 +143,9 @@ Build with manual signing: identity `Apple Distribution` and the profile named
 `project.yml`). Passed as `xcodebuild` overrides they also reach Swift package resource bundles,
 which then fail with "requires a development team". Export with `method` `app-store-connect`,
 `signingStyle` `manual`, `teamID` `.teamId` and `provisioningProfiles` mapping the bundle ID to
-that profile name. Set `ITSAppUsesNonExemptEncryption` in Info.plist when the developer has said what it should be
-(Apple: encryption built into iOS, such as HTTPS through URLSession, is typically exempt; linked
-third-party libraries count too). Without it each build waits for the export compliance answer,
-which the developer gives once on the app's TestFlight card in ourapps, or per build in App Store
-Connect. `CFBundleVersion` must be higher on every upload.
+that profile name. Set `ITSAppUsesNonExemptEncryption` to `false` in Info.plist. ourapps also gives Apple that
+answer for any build that arrives without it, so no build waits for export compliance; distribute
+through ourapps only apps that use no non-exempt encryption (the terms, section 5). `CFBundleVersion` must be higher on every upload.
 Delete the keychain and `signing.json` when the job ends, also on failure.
 
 ## 4. Upload through ourapps
@@ -175,8 +173,8 @@ jq -n --arg f "$(jq -r .uploadFileId upload.json)" --arg m "$MD5" '{uploadFileId
 ```
 
 `whatsNew` is the version's release notes; TestFlight shows them to friends. ourapps checks
-Apple every ten minutes: once the build is processed and has its export compliance answer, it
-adds the build to the friends' group, sends it for beta review, makes it available to the group
+Apple every ten minutes: once the build is processed, it answers export compliance where the
+build has no answer, adds the build to the friends' group, sends it for beta review, makes it available to the group
 when Apple approves it (App Store Connect's "Notify Testers"), and reads the invitation page. The
 app's page in ourapps shows each step and what it waits for.
 

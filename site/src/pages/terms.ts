@@ -43,6 +43,7 @@ export function termsBody(): Raw {
         <li>You are responsible for the apps you share: what they do, what they collect, and that you have the right to the code, the images and the names in them. Write the privacy summary on each app honestly; friends rely on it.</li>
         <li>Share links are private by obscurity. Send them to people you mean to, and revoke them when you change your mind.</li>
         <li>Apple's and Google's developer agreements apply to you, not to us. In particular, TestFlight builds go through Apple's beta review.</li>
+        <li>For each TestFlight build the service answers Apple's export compliance question for you: the app uses no encryption, or only encryption exempt from export compliance requirements. Share through the service only apps for which that is true.</li>
         <li>Keep your GitHub and Apple accounts secure; the service can only be as safe as the sign-in in front of it.</li>
         <li>Do not use the service to distribute anything unlawful, deceptive or harmful, or to reach people who did not ask for it.</li>
       </ul>

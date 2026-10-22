@@ -28,7 +28,7 @@ tokens or sessions, and no way to forge any of them (forging a keyed hash needs 
   keys). They are never returned by any endpoint; the console sees presence and save dates.
 - Cookie sessions refuse state-changing requests whose `Origin` is not this site.
 - API keys have a scope (`read` or `manage`) and an optional expiry (default 90 days in the
-  console, maximum one year). Keys cannot create or revoke keys. Every key is revocable alone
+  console, at most one year when set, or none). Keys cannot create or revoke keys. Every key is revocable alone
   or all at once.
 - Decryption is on demand and field-level: install pages decrypt only the GitHub token; the
   Apple private key is decrypted only while setting up signing or TestFlight, brokering a
@@ -39,7 +39,7 @@ tokens or sessions, and no way to forge any of them (forging a keyed hash needs 
 - The signing key is written only by `POST /api/dev/signing` from a browser session (validated as
   a 2048-bit RSA PKCS#8 key); `PUT /api/dev/secrets` cannot set it.
 - The Apple key is validated as an EC P-256 PKCS#8 key before it is stored; GitHub tokens must
-  match the `github_pat_` or `ghp_` shape.
+  match the `github_pat_`, `ghp_` or `gho_` shape.
 - Security events (sign-in, sign-out, credential saves and removals, signing setup, key creation
   and revocation, build token rotation, app deletion) are written to the audit log
   and shown under Settings, Security, with "Sign out everywhere" next to them.
@@ -69,7 +69,9 @@ Rotating `LINK_SECRET` only invalidates download links that are less than an hou
 - API key: revoke it on the Agents page (or revoke all).
 - Build token: rotate it on the app page and update the repository secret. If it may have been
   used, also replace the certificate under Settings and revoke the old one in the Apple developer
-  portal (installed builds signed with it stop opening; publish a new release first).
+  portal. Apple refuses uploads signed with a revoked certificate and may mark builds signed with
+  it that are not yet submitted for review as invalid; apps already on the App Store are
+  unaffected.
 - Suspected account takeover: Settings, Sign out everywhere; Agents, Revoke all keys; then
   rotate the two external credentials above.
 

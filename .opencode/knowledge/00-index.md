@@ -27,6 +27,7 @@ from the latest GitHub Release and serves artefacts through signed one-hour link
 - Every page, document and public file carries "Copyright Level N Ltd 2026" (site footers via
   `storeFrame` and `shell`, plus README, CONTRACT.md, agents.md). Keep it when adding pages.
 - Public example content uses the invented "Poker Night" app, never a real app name.
+- User-facing text (site, guide, reference, agents.md, CONTRACT.md, README, SECURITY, messages) states only what is: no history, no "still", "older", "now", "no longer offered", no announced changes, no warnings about roads not taken. Changelogs and the example app's invented release notes are the exception. Owner's standing rule.
 
 ## Where to change X
 

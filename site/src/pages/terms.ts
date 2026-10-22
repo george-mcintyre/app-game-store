@@ -55,7 +55,7 @@ export function termsBody(): Raw {
       <p>Credentials can be removed one by one in Settings. Deleting an app removes its links and its TestFlight records. Deleting your account (Settings, Profile) removes everything we hold about you at once; apps already installed through TestFlight keep working until their build expires, which we cannot change. The signing certificate, the App Store profiles and the apps in App Store Connect remain on your Apple account; remove them there.</p>
 
       <h2>8. The service itself</h2>
-      <p>ourapps is provided free and as is. We aim to keep it running and to give notice before any withdrawal, but we make no promise of availability and accept no liability for loss arising from its use, to the extent the law allows. We may change these terms; when we do, you are asked to accept the new version at your next sign-in, and the version you accepted is shown in your profile.</p>
+      <p>ourapps is provided free and as is. We aim to keep it running and to give notice before any withdrawal, but we make no promise of availability and accept no liability for loss arising from its use, to the extent the law allows. We may change these terms; when we do, you are asked to accept the current version the next time you open the console, and the version you accepted is shown in your profile.</p>
 
       <h2>9. Contact</h2>
       <p>Level N Ltd. Questions about these terms or about your data: use the contact details on <a href="https://www.level-n.com" target="_blank" rel="noopener">level-n.com</a>. Security problems: report them privately at <a href="https://github.com/george-mcintyre/ourapps/security/advisories/new" target="_blank" rel="noopener">github.com/george-mcintyre/ourapps/security</a>. Please do not post personal details or security problems in public issues.</p>
@@ -88,8 +88,8 @@ function acceptCard(me: Me): Raw {
   const changed = me.developer.termsAcceptedVersion !== null;
   return html`
     <div class="card pad-l mt" style="border-color:var(--accent)">
-      <h2 style="margin-top:0">${changed ? "The terms have changed" : "Before you start"}</h2>
-      <p class="muted">${changed ? `You accepted version ${me.developer.termsAcceptedVersion}; please read and accept version ${TERMS_VERSION}.` : "Read these terms once; they say what we hold about you and your friends and why. The console opens as soon as you accept."}</p>
+      <h2 style="margin-top:0">${changed ? "Accept the current terms" : "Before you start"}</h2>
+      <p class="muted">${changed ? `You accepted version ${me.developer.termsAcceptedVersion}; version ${TERMS_VERSION} is current. Please read and accept it.` : "Read these terms once; they say what we hold about you and your friends and why. The console opens as soon as you accept."}</p>
       <label class="check mt"><input type="checkbox" id="agree" /> <span>I have read the terms and the data statement and I accept them.</span></label>
       <div class="form-actions"><button class="btn lg" id="accept" disabled>Accept and continue</button><form method="post" action="/api/auth/logout" style="display:inline"><button class="btn secondary" type="submit">Sign out instead</button></form></div>
       <div id="error" class="mt-s"></div>

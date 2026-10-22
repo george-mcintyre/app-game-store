@@ -114,14 +114,14 @@ function sections(origin: string, slug: string): Section[] {
         </ol>
 
         <h3 id="apple-setup">iPhone signing</h3>
-        <p>Saving the App Store Connect key sets up iPhone signing by itself; <b>Set up iPhone signing</b> under <a href="/dev/settings#signing">Settings</a> runs it again. Nothing is done by hand in the Apple developer portal:</p>
+        <p>Saving the App Store Connect key sets up iPhone signing by itself; if it did not finish, press <b>Set up iPhone signing</b> under <a href="/dev/settings#signing">Settings</a>. Nothing is done by hand in the Apple developer portal:</p>
         <ol class="steps">
           <li>Your browser makes a private key and a certificate request. ourapps asks Apple for an <b>Apple Distribution</b> certificate with it and keeps the key encrypted like your credentials.</li>
           <li>When an app goes on TestFlight, ourapps finds or creates the App ID for its <b>iPhone bundle ID</b> and makes its <b>App Store</b> profile.</li>
           <li>The release workflow fetches certificate, key and profile with the app's build token from <code>/api/build/&lt;app&gt;/signing</code>, so the repository holds no Apple secrets. The <a href="/contract.md">contract</a> shows the exact commands.</li>
         </ol>
         ${callout("info", html`<p>TestFlight needs the app added once in App Store Connect; the app's page lists the exact values. See <a href="#testflight">step 6</a>.</p>`)}
-        <p class="small muted">The certificate lasts a year: replace it under Settings before then and publish a release. Replacing leaves the old certificate valid until it expires or you revoke it in the developer portal.</p>
+        <p class="small muted">The certificate lasts a year: press <b>Replace certificate</b> under Settings before then. ourapps makes the App Store profile of every app on TestFlight again with the new one, and the next build uses it. The old certificate stays valid until it expires or you revoke it in the developer portal.</p>
 
         <h3 id="cloudflare">Cloudflare account (web apps)</h3>
         <p>Web apps run from your own free Cloudflare account. Cloudflare serves plain files without a request limit or a charge, your repository's workflow deploys them, and ourapps only links to the address. ourapps never sees the token.</p>
@@ -136,14 +136,14 @@ function sections(origin: string, slug: string): Section[] {
         <ul class="bullets small">
           <li><b>The address is public.</b> Anyone who has it can open the app, and revoking a share link does not stop them. Keep anything private behind the app's own sign-in.</li>
           <li><b>Unity and other pre-compressed builds:</b> Cloudflare compresses files itself, so build without pre-compression, or turn on Unity's Decompression Fallback.</li>
-          <li><b>Older apps</b> that publish <code>web.zip</code> are still served by ourapps at their link addresses; moving them frees ourapps' shared allowance for installs. Once a release drops <code>web.zip</code>, the old link addresses redirect to the new one, so icons already on friends' home screens keep working.</li>
+          <li><b>Apps that publish <code>web.zip</code></b> are served by ourapps at their link addresses and use ourapps' shared allowance. When the latest release has no <code>web.zip</code> and <code>install.pwa</code> names another address, the link addresses redirect there, so icons on friends' home screens keep opening the app.</li>
         </ul>
 
         <h3 id="android-setup">Android signing</h3>
         <p>Android needs no account and no console credential, only a signing key your workflow uses. Create one once:</p>
         <pre><code>keytool -genkeypair -v -keystore release.keystore -alias app -keyalg RSA -keysize 2048 -validity 10000
 base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BASE64</code></pre>
-        <p>Keep the keystore and passwords; an APK signed with a different key cannot update an installed app. From 2026 Google is rolling out developer verification for installs on certified phones; a free "limited distribution" account covering up to 20 devices is planned. Check <a href="https://developer.android.com/developer-verification" target="_blank" rel="noopener">developer.android.com/developer-verification</a> when the time comes.</p>
+        <p>Keep the keystore and passwords; an APK signed with a different key cannot update an installed app. Google's developer verification rules for installs on certified Android phones, and its free limited distribution accounts for sharing with up to 20 devices, are at <a href="https://developer.android.com/developer-verification" target="_blank" rel="noopener">developer.android.com/developer-verification</a>.</p>
       `,
     },
     {
@@ -156,7 +156,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
           <tr><th>Field</th><th>Shows up as</th><th>Tip</th></tr>
           <tr><td>Name, tagline, icon</td><td>The header of the install page</td><td>Icon square, 512 pixels or more, https URL. Blank icon falls back to my-app.json, then to a generated tile.</td></tr>
           <tr><td>Description</td><td>About section, with "more" when long</td><td>Say what it is and why you made it. Two or three short paragraphs beat one long one.</td></tr>
-          <tr><td>What's new</td><td>Its own section, with the version</td><td>Update when you publish.</td></tr>
+          <tr><td>What's new</td><td>The What's new section</td><td>Shown only when the latest release has no notes of its own; release notes from CHANGELOG.md take precedence.</td></tr>
           <tr><td>Privacy summary</td><td>App privacy card</td><td>Plain words: what is stored, where it goes, who can see it.</td></tr>
           <tr><td>Size, compatibility, age</td><td>Facts strip and Information</td><td>Compatibility is free text, for example "iOS 17 or later".</td></tr>
           <tr><td>Screenshots</td><td>Preview carousel, per version</td><td>A general list plus optional lists for iPhone, iPad, Android and Web, one URL per line, in their own proportions. A version without its own list shows the general one; a single list is shown for every version. Blank lists fall back to my-app.json (<code>screenshots</code> and <code>screenshotsByPlatform</code>), then to generated previews. On a phone or tablet the page shows the matching version; on a computer, a tab per version.</td></tr>
@@ -184,7 +184,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
           <li>Builds the signed APK and, for iPhone apps, an <code>.ipa</code> signed for the App Store, which it uploads to TestFlight through ourapps.</li>
           <li>Creates a GitHub Release as a draft, uploads <code>icon.png</code>, screenshots, the <code>.apk</code> and <code>my-app.json</code> last, then publishes it. A release that goes public before its files are in makes install pages fail until <code>my-app.json</code> arrives.</li>
           <li>Writes every URL inside my-app.json as a release-asset API URL (<code>https://api.github.com/repos/owner/name/releases/assets/123</code>). Private repositories work this way and nothing is guessable; the console turns them into short-lived links for the phone.</li>
-          <li>For iPhone apps: fetches the certificate, its key and the App Store profile from the console with the build token, uploads the build through ourapps, and also runs on the <code>my-store-release</code> event ourapps sends before a TestFlight build expires. The <a href="/contract.md">contract</a> spells out every step.</li>
+          <li>For iPhone apps: fetches the certificate, its key and the App Store profile from the console with the build token, uploads the build through ourapps, and also runs on the <code>my-store-release</code> event ourapps sends for the first build, when you ask for a build on the app's TestFlight card, and two weeks before a TestFlight build expires. The <a href="/contract.md">contract</a> spells out every step.</li>
         </ol>
         ${callout("info", html`<p><b>Let an agent do it.</b> On <a href="/dev/agents">Agents and API</a> there is a prompt, pre-filled for your app, that you paste into a coding agent working inside the repository. It writes the workflow and the my-app.json generation to the contract.</p>`)}
         <h3>What my-app.json looks like</h3>
@@ -228,7 +228,7 @@ base64 -i release.keystore | pbcopy   # paste as the secret ANDROID_KEYSTORE_BAS
         <p>Headings like <code>### Added</code> become "Added:" labels on the page; bullets stay bullets; GitHub's generated "by @user in ..." and "Full Changelog" lines are dropped; links to GitHub appear only when the repository is public. The Latest release card in the console says whether the release shipped a changelog. An agent can draft the entry from the commits; the words to your friends are yours to approve.</p>
 
         <h3 id="web-apps">Web apps: home screen and permissions</h3>
-        <p>The web version runs from your own Cloudflare account (<a href="#cloudflare">setup</a>). Its build carries a web app manifest, the Apple home screen tags and a copy of ourapps' small banner script (<code>https://ourapps.app/web/install-banner.js</code>), which offers "Add to home screen": Chrome's native install prompt on Android, the exact Share steps on iPhone Safari, and an "open in Safari" hint inside in-app browsers. Once added, the app launches from the icon in standalone mode and the banner never shows again. Apps still published as <code>web.zip</code> get the same pieces added by ourapps.</p>
+        <p>The web version runs from your own Cloudflare account (<a href="#cloudflare">setup</a>). Its build carries a web app manifest, the Apple home screen tags and a copy of ourapps' small banner script (<code>https://ourapps.app/web/install-banner.js</code>), which offers "Add to home screen": Chrome's native install prompt on Android, the exact Share steps on iPhone Safari, and an "open in Safari" hint inside in-app browsers. Once added, the app launches from the icon in standalone mode and the banner never shows again. Apps published as <code>web.zip</code> get the same pieces added by ourapps.</p>
         <p>No web page can place a shortcut on its own; the user's single tap is required by both platforms. The banner makes that tap obvious.</p>
         <h3>Camera and microphone without asking every time</h3>
         <p>Permissions are stored per origin, and the home screen app shares the origin, so a grant survives. What to know:</p>
@@ -252,10 +252,10 @@ startButton.onclick = async () => {
         <p>Open the app in the console. The <b>Latest release</b> card shows the tag, the version, the platforms and the assets it found, or the exact reason it could not read the release. Tap <b>Check again</b> after you push a fix. Common reasons:</p>
         <table class="table">
           <tr><th>Message</th><th>Fix</th></tr>
-          <tr><td>private repository needs a GitHub token</td><td>Save the token in Settings and make sure the repository is selected on it.</td></tr>
-          <tr><td>no published release found</td><td>Publish a release that is not a draft or pre-release. The latest one is used.</td></tr>
+          <tr><td>no release visible on owner/name</td><td>The repository does not exist, has no published release, or is private and needs a GitHub token. Save the token in Settings with the repository selected on it.</td></tr>
+          <tr><td>no published release visible on owner/name</td><td>Publish a release that is not a draft or pre-release (the latest one is used), or add the repository to the GitHub token.</td></tr>
           <tr><td>has no asset named my-app.json</td><td>The workflow must upload the file with exactly that name.</td></tr>
-          <tr><td>my-app.json is invalid: ...</td><td>The message names the field. URLs must be https; schema must be 1.</td></tr>
+          <tr><td>my-app.json for <i>app</i> is invalid: ...</td><td>The message names the field. URLs must be https; schema must be 1.</td></tr>
         </table>
       `,
     },
@@ -267,7 +267,7 @@ startButton.onclick = async () => {
         <h3>Good habits</h3>
         <ul class="bullets">
           <li><b>One link per person or group.</b> Labels like "Mum and Dad" or "Tuesday board game crowd" let you revoke one without touching the others. Rename a link any time with <b>Rename</b> next to its label; its address does not change.</li>
-          <li><b>Expiry</b> is optional. Friends who installed keep the app when a link expires or is revoked; only new installs stop.</li>
+          <li><b>Expiry</b> is optional. Friends who installed keep the app when a link expires or is revoked, and only new installs stop; a <code>web.zip</code> app served at the link's own address stops opening.</li>
           <li><b>QR code.</b> Each active link shows one and you can download it as a file for a printed card.</li>
         </ul>
         <h3>Sending it</h3>
@@ -302,7 +302,8 @@ startButton.onclick = async () => {
         <table class="table">
           <tr><th>State on the app page</th><th>Meaning</th></tr>
           <tr><td>uploading</td><td>The workflow is sending the build to Apple through ourapps</td></tr>
-          <tr><td>with Apple, processing</td><td>Apple is processing the build</td></tr>
+          <tr><td>with Apple</td><td>The upload is complete and Apple has the file</td></tr>
+          <tr><td>Apple is processing it</td><td>Apple checks the build; ourapps answers Apple's export compliance question for it</td></tr>
           <tr><td>in Apple's beta review</td><td>In the friends' group and with Apple's beta review; the first build of each version is reviewed</td></tr>
           <tr><td>friends can install it</td><td>Approved, and the invitation accepts testers</td></tr>
         </table>
@@ -315,7 +316,7 @@ startButton.onclick = async () => {
       title: "7. Updates and auto-update (agent does the work)",
       sub: [{ id: "auto-update", title: "Auto-update" }],
       body: html`
-        <p><b>Android and web do not update on their own, iPhone does.</b> TestFlight installs new iPhone builds itself; Android has no store in the background, so an installed copy stays as it is until someone taps Update. Here is what each side does.</p>
+        <p><b>Android does not update on its own; iPhone and web apps do.</b> TestFlight installs new iPhone builds itself and a web app loads the new version when it opens; Android has no store in the background, so an installed copy stays as it is until someone taps Update. Here is what each side does.</p>
         <table class="table">
           <tr><th>Who</th><th>What happens</th></tr>
           <tr><td>You</td><td>Bump the version, push a tag. The workflow publishes a release and uploads the iPhone build to TestFlight; the share link serves the new version at once.</td></tr>
@@ -327,7 +328,7 @@ startButton.onclick = async () => {
           <li><b>Version numbers must go up:</b> Android <code>versionCode</code> and iOS <code>CFBundleVersion</code>, or the phone refuses the update as "older".</li>
           <li><b>Never change the Android signing key.</b> A different key means uninstall and reinstall, with data loss.</li>
           <li><b>TestFlight builds expire</b> 90 days after upload. ourapps asks the repository for a fresh build two weeks before, so this needs nothing from you; the app's page shows each build's state.</li>
-          <li><b>Removing someone:</b> revoke their link. Installed copies keep working; TestFlight testers can be removed in App Store Connect. There is no remote uninstall, same as any app.</li>
+          <li><b>Removing someone:</b> revoke their link. Installed copies keep working, apart from <code>web.zip</code> apps served at that link's address; TestFlight testers can be removed in App Store Connect. There is no remote uninstall, same as any app.</li>
         </ul>
 
         <h3 id="auto-update">Auto-update: let the app check for itself</h3>
@@ -388,7 +389,7 @@ suspend fun checkForUpdate(context: Context) {
       body: html`
         <p>Everything in this console is also an API, so a coding agent can do the repetitive parts.</p>
         <ol class="steps">
-          <li>On <a href="/dev/agents">Agents and API</a>, create an API key. It is shown once; store it as the environment variable <code>OURAPPS_API_KEY</code> where the agent runs. A key acts as you, except it cannot create or revoke keys; revoke it there at any time.</li>
+          <li>On <a href="/dev/agents">Agents and API</a>, create an API key. It is shown once; store it as the environment variable <code>OURAPPS_API_KEY</code> where the agent runs. A key acts as you, except for what needs you in a browser: creating and revoking keys, credentials, iPhone signing, accepting the terms, signing out everywhere and deleting the account. Revoke it there at any time.</li>
           <li>Copy prompt 1 into an agent working inside the app repository. It sets up the release workflow, my-app.json and the TestFlight upload.</li>
           <li>Copy prompt 2 into an agent that should drive the console: register apps, check releases, set up TestFlight, make share links.</li>
         </ol>
@@ -397,8 +398,8 @@ suspend fun checkForUpdate(context: Context) {
         <ul class="bullets">
           <li>Each credential field is encrypted on its own (AES-256-GCM) under a key derived for your account from a secret that exists only in the server's secret store, never in the database.</li>
           <li>API keys, build tokens and sign-in sessions are stored as keyed hashes. A copy of the database cannot be used to sign in or to forge a key.</li>
-          <li>API keys have a scope (read only, or manage) and an expiry. They can never create keys or change credentials; those need you in a browser.</li>
-          <li>Settings, Security shows every security event on your account and has "Sign out everywhere".</li>
+          <li>API keys have a scope (read only, or manage) and an optional expiry. They can never create keys or change credentials; those need you in a browser.</li>
+          <li>Settings, Security shows your recent security events and has "Sign out everywhere".</li>
         </ul>
       `,
     },
@@ -456,8 +457,8 @@ suspend fun checkForUpdate(context: Context) {
         <ul class="bullets">
           <li>Your release files stay in your GitHub repository, public or private. Phones never receive a GitHub address; they receive a signed one-hour link to this service, which fetches the file with your token and streams it on.</li>
           <li>Share links are random ids, never listed, never indexed, revocable at any time, and may carry an expiry. A revoked link shows "no longer active"; the friend keeps what they installed.</li>
-          <li>Web apps run on their own address (your Cloudflare account, or a per-link address for older <code>web.zip</code> apps), so they cannot read your console session.</li>
-          <li>Every response carries HSTS, a strict Content Security Policy, no-sniff, frame-deny and cross-origin isolation headers.</li>
+          <li>Web apps run on their own address (your Cloudflare account, or a per-link address for <code>web.zip</code> apps), so they cannot read your console session.</li>
+          <li>Every response carries HSTS, a strict Content Security Policy, no-sniff, frame-deny and a cross-origin opener policy.</li>
         </ul>
 
         <h3 id="security-you">What is yours to do</h3>
@@ -477,14 +478,14 @@ suspend fun checkForUpdate(context: Context) {
       body: html`
         <table class="table">
           <tr><th>Symptom</th><th>Cause and fix</th></tr>
-          <tr><td>No icon or version in the console, yellow notice about a GitHub token</td><td>No token saved, or the repository is not selected on it. Settings, GitHub token.</td></tr>
+          <tr><td>No icon or version in the console; the app's Latest release card says the console cannot read a release</td><td>The card lists the cause. Usually no GitHub token is saved, or the repository is not selected on it: Settings, GitHub token.</td></tr>
           <tr><td>Latest release says "no asset named my-app.json"</td><td>The workflow uploaded it under another name or to a pre-release. Names are exact; the latest non-draft, non-pre-release is used.</td></tr>
           <tr><td>The TestFlight card stays at "Add the app in App Store Connect"</td><td>The app is not in App Store Connect yet, or was added with another bundle ID. Follow the card's steps and choose the bundle ID it names; the card moves on by itself within 15 seconds, or press Check now.</td></tr>
           <tr><td>A fresh-build request fails with a GitHub 404</td><td>The token cannot write to that repository. Edit the token on GitHub: add the repository, Contents read and write.</td></tr>
           <tr><td>Release fails at the web deploy with "register a workers.dev subdomain"</td><td>The Cloudflare account has no workers.dev subdomain yet. Workers &amp; Pages, choose one, then run the release again. Renaming it later moves every web app's address.</td></tr>
           <tr><td>Web app opens but cannot reach its server</td><td>The server does not allow the web app's address. Add the exact address, for example <code>https://skull-web.yourname.workers.dev</code>, to the server's CORS list.</td></tr>
-          <tr><td>Install page says the release cannot be read for a minute after a release</td><td>The release went public before <code>my-app.json</code> was uploaded. Create releases as drafts and publish them after every file is in.</td></tr>
-          <tr><td>The TestFlight invitation says "This beta isn't accepting any new testers right now"</td><td>No build has passed Apple's beta review yet, or the public link is off. The app's TestFlight card says which, and what it waits for; friends are not offered the invitation meanwhile.</td></tr>
+          <tr><td>Install page says the app has no published build yet, for a minute after a release</td><td>The release went public before <code>my-app.json</code> was uploaded. Create releases as drafts and publish them after every file is in.</td></tr>
+          <tr><td>The TestFlight invitation says "This beta isn't accepting any new testers right now"</td><td>No build has passed Apple's beta review yet, or the public link is off. The app's TestFlight card says which, and what it waits for. Until it opens, the install page tells friends on iPhone and iPad that the app is coming soon.</td></tr>
           <tr><td>Nothing happens when tapping Open the invitation on iPhone</td><td>The page is inside another app's browser (Gmail, Instagram). Open in Safari. WhatsApp and Messages are fine.</td></tr>
           <tr><td>Android says "App not installed"</td><td>An older build signed with a different key is installed. Uninstall it first, or keep the signing key stable.</td></tr>
           <tr><td>Play Protect blocks the install</td><td>Tap More details, Install anyway. If there is no such button, the device policy forbids unknown sources (work phones).</td></tr>
@@ -497,11 +498,11 @@ suspend fun checkForUpdate(context: Context) {
       body: html`
         <ul class="bullets">
           <li><b>Apple Developer Program:</b> 99 US dollars a year. <b>TestFlight:</b> up to 10,000 people per app through the public link; each build lasts 90 days and ourapps asks for a fresh one before then; Apple reviews the first build of each version.</li>
-          <li><b>Android and web:</b> no device limit and no account. Google is phasing in developer verification for installs on certified phones from 2026, with a free small-distribution tier planned.</li>
+          <li><b>Android and web:</b> no device limit and no account. Google's developer verification rules for installs on certified Android phones, and its free limited distribution accounts for sharing with up to 20 devices, are at <a href="https://developer.android.com/developer-verification" target="_blank" rel="noopener">developer.android.com/developer-verification</a>.</li>
           <li><b>Share links:</b> unlimited, and they only expire when you set a date.</li>
           <li><b>GitHub:</b> free. Releases are free storage; private repositories get 2,000 Actions minutes a month, and macOS minutes count ten times. A lean iOS job takes 8 to 15 minutes, so budget roughly 15 iPhone builds a month on the free tier, or run iOS builds on your own Mac.</li>
           <li><b>ourapps itself:</b> free. It runs on Cloudflare's free tier: 100,000 requests a day, which is thousands of install pages.</li>
-          <li><b>File size:</b> GitHub Release assets up to 2 GB each. Phones download through the console, so keep builds reasonable for mobile data.</li>
+          <li><b>File size:</b> GitHub Release assets up to 2 GB each. Android phones download the APK through ourapps, so keep builds reasonable for mobile data.</li>
         </ul>
       `,
     },

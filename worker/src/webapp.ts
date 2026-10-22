@@ -403,8 +403,8 @@ async function findWebZip(env: Env, deps: Deps, app: AppRow, token: string | und
   return asset.url;
 }
 
-// The web version's new address once a release drops web.zip for one hosted elsewhere, so home
-// screen icons made from a link address still open the app.
+// Where the web version lives when the latest release has no web.zip, so home screen icons made
+// from a link address open the app.
 async function movedTo(env: Env, deps: Deps, app: AppRow, token: string | undefined): Promise<string | null> {
   const pwa = (await loadManifest(env, deps, app, token)).install.pwa;
   if (!pwa || isBundleUrl(pwa, null)) return null;

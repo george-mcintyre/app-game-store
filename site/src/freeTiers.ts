@@ -26,7 +26,7 @@ export interface Category {
 }
 
 export const PRINCIPLES: string[] = [
-  "Check the source page before relying on a number: free tiers change, and some services in this list closed or lost their free plan this year.",
+  "Check the source page before relying on a number: free tiers change.",
   "Prefer a hard stop to overage billing. A free plan that stops at the limit cannot surprise you with a bill; one that bills past it needs a spending alert.",
   "Limits are usually per account, not per app. Two apps on one Cloudflare or LiveKit account share one allowance.",
   "Watch for pausing and deletion: several free databases pause after a week or archive after ten days without use, which suits a weekly game night but not a monthly one.",
@@ -82,11 +82,11 @@ export const CATEGORIES: Category[] = [
       },
       {
         id: "partyserver",
-        name: "PartyServer (successor to PartyKit)",
+        name: "PartyServer",
         plan: "runs on your own Cloudflare account",
         free: ["A small library on top of Durable Objects; costs are your Cloudflare free plan's."],
         catches: [
-          "Hosted PartyKit shuts down on 23 October 2026 and deletes its data; `npx partykit deploy` stops working that day. Use PartyServer on your own account instead.",
+          "There is no hosted service: it runs on your own Cloudflare account and is deployed with Wrangler.",
         ],
         setup: [
           "`npm install partyserver partysocket`; write a class that extends `Server`.",
@@ -263,7 +263,7 @@ export const CATEGORIES: Category[] = [
         free: ["25 monthly active users (devices); a full call screen."],
         catches: [
           "Past 25 devices it bills $0.99 each.",
-          "Embedding meet.jit.si instead is not a free shortcut: the room creator must sign in and meetings stop at 95 minutes (since 9 October 2026).",
+          "Embedding meet.jit.si instead is not a free shortcut: the room creator must sign in and meetings stop at 95 minutes.",
         ],
         setup: [
           "Create a key pair at jaas.8x8.vc; store `JAAS_APP_ID`, `JAAS_KEY_ID`, `JAAS_PRIVATE_KEY`; sign a JWT per user.",
@@ -366,7 +366,7 @@ export const CATEGORIES: Category[] = [
         name: "Turso",
         plan: "Free",
         free: ["5 GB, 500 million rows read and 10 million written a month, 100 databases."],
-        catches: ["Free databases are archived after 10 days without use; `turso group unarchive` restores them. Turso is joining Supabase, so terms may change."],
+        catches: ["Free databases are archived after 10 days without use; `turso group unarchive` restores them."],
         setup: ["`turso db create`; store `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`; `@libsql/client`."],
         env: ["TURSO_DATABASE_URL", "TURSO_AUTH_TOKEN"],
         fits: "SQLite-style apps used at least every 10 days.",
@@ -389,7 +389,7 @@ export const CATEGORIES: Category[] = [
         plan: "Spark",
         free: ["1 GiB, 50,000 reads, 20,000 writes and 20,000 deletes a day; sign-in for 50,000 monthly users."],
         catches: [
-          "Cloud Storage (files) now needs the paid Blaze plan; on Spark it fails with 402 or 403.",
+          "Cloud Storage (files) needs the paid Blaze plan; on Spark it fails with 402 or 403.",
           "Only 5 email-link sign-ins a day on Spark.",
         ],
         setup: ["Register a web app; `initializeApp(config)`, `getFirestore()`, `getAuth()`; deploy security rules first."],
@@ -506,7 +506,7 @@ export const CATEGORIES: Category[] = [
         name: "Cloudflare Access",
         plan: "Zero Trust Free",
         free: ["Puts an email-based login in front of any hostname; up to 500 Access applications."],
-        catches: ["The free seat count was not confirmed on the pages read (commonly 50, unverified); turn on seat expiration."],
+        catches: ["The free seat count is unverified (commonly 50); turn on seat expiration."],
         setup: ["Zero Trust dashboard, Access, Applications: add the hostname and an allow policy listing family email addresses."],
         fits: "Locking an admin page or a web app to named people.",
         sources: ["https://developers.cloudflare.com/cloudflare-one/account-limits/"],
@@ -636,7 +636,7 @@ export const CATEGORIES: Category[] = [
         catches: [
           "Must not power the app for other people. Anthropic: developers may not \"route requests through Free, Pro, or Max plan credentials on behalf of their users\". OpenAI: \"You may not share your account credentials or make your account available to anyone else.\" GitHub: \"a single login may not be shared by multiple people.\"",
           "Allowed instead: each user brings their own API key, or signs in with their own plan through an official flow (OpenAI's Sign in with ChatGPT preview, the GitHub Copilot SDK with each user's own token).",
-          "GitHub Models was retired on 30 July 2026; Hugging Face Inference Providers has no free allowance for free accounts.",
+          "Hugging Face Inference Providers has no free allowance for free accounts.",
         ],
         setup: ["Use it to write the app. For AI inside the app, pick one of the options above."],
         fits: "Building, not running.",
@@ -666,7 +666,7 @@ export const CATEGORIES: Category[] = [
           "Add a manifest and service worker; `pushManager.subscribe()` from a button; send with the `web-push` package.",
         ],
         env: ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"],
-        fits: "Web apps served by ourapps, which already offer to add themselves to the home screen.",
+        fits: "Web apps shared through ourapps: their banner offers adding them to the home screen, which iPhone needs for web push.",
         sources: ["https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/"],
       },
       {
@@ -769,7 +769,7 @@ export const CATEGORIES: Category[] = [
         name: "SendGrid, and text messages (SMS)",
         plan: "no free plans",
         verdict: "avoid",
-        free: ["SendGrid: a 60-day trial only (the free plan ended in 2025). SMS: trials only (Twilio's 100 messages to verified numbers)."],
+        free: ["SendGrid: a 60-day trial only. SMS: trials only (Twilio's 100 messages to verified numbers)."],
         catches: ["Use email, push or ntfy instead of text messages."],
         setup: ["Not applicable for a free setup."],
         fits: "Not a free option.",
@@ -874,7 +874,7 @@ export const CATEGORIES: Category[] = [
         id: "cloudflare-observability",
         name: "Cloudflare Web Analytics and Workers Logs",
         plan: "free",
-        free: ["Privacy-first page analytics; Workers Logs 200,000 events a day kept 3 days (from 1 December 2026: 0.5 GB a day kept 7 days)."],
+        free: ["Privacy-first page analytics; Workers Logs 200,000 events a day kept 3 days."],
         catches: ["No custom events in Web Analytics."],
         setup: ["Paste the analytics snippet; set `\"observability\": { \"enabled\": true, \"head_sampling_rate\": 0.1 }` in `wrangler.jsonc`."],
         fits: "Apps already on Cloudflare.",
@@ -995,7 +995,7 @@ export const CATEGORIES: Category[] = [
         name: "Oracle Always Free, Google Cloud, AWS Lambda",
         plan: "always-free allowances",
         free: ["Oracle: Arm machines up to 4 cores and 24 GB in total. Google: one e2-micro and 2 million Cloud Run requests a month. AWS Lambda: 1 million requests a month."],
-        catches: ["All need a card or billing account; Oracle reclaims idle machines; new AWS free accounts close after 6 months unless upgraded."],
+        catches: ["All need a card or billing account; Oracle reclaims idle machines; AWS free-plan accounts close after 6 months unless upgraded."],
         setup: ["Follow the provider's quick start; keep secrets in its secret manager."],
         fits: "An always-on server, if you watch the idle rules.",
         sources: ["https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm", "https://cloud.google.com/free/docs/free-cloud-features", "https://aws.amazon.com/lambda/pricing/"],
@@ -1003,10 +1003,10 @@ export const CATEGORIES: Category[] = [
       {
         id: "fly-io",
         name: "Fly.io",
-        plan: "no free plan for new users",
+        plan: "no free plan",
         verdict: "avoid",
         free: ["A short trial only."],
-        catches: ["Free plans ended in October 2024 for new organisations."],
+        catches: ["Every machine is billed once the trial ends."],
         setup: ["Not applicable for a free setup."],
         fits: "Not a free option.",
         sources: ["https://fly.io/docs/about/free-trial/"],

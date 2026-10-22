@@ -1,4 +1,4 @@
-// Developer dashboard routes, all behind the session cookie.
+// Developer dashboard routes: a browser session or an API key; requireSession marks the browser-only ones.
 import { SCREENSHOT_PLATFORMS, TERMS_VERSION, type ScreenshotPlatform } from "@my/store-shared";
 import { audit } from "../audit.js";
 import { RESERVED_SLUGS, apiKeyHash, clearSessionCookie, masterKeys, newApiKey, normaliseSlug, requireSession, type AuthedDeveloper } from "../auth.js";

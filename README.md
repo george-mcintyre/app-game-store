@@ -57,7 +57,7 @@ steps: `SECURITY.md`.
 
 Native iPhone and Android apps (and anything that compiles to them), and web apps and web games
 that the app's workflow deploys to the developer's own free Cloudflare account; the install page
-links to them. Apps that already ship `web.zip` are still served by ourapps. ourapps never hosts
+links to them. A `web.zip` release asset is served by ourapps at a per-link address. ourapps never hosts
 an app's API or database. Details and limits: `/reference` (source `site/src/pages/reference.ts`);
 the diagrams by app type are in `site/public/reference/` (PNG masters, WebP for the site),
 generated from the prompts in `docs/diagram-prompts.md`.
@@ -71,7 +71,7 @@ endpoint in agents.md on a throwaway app and cleans up (`scripts/smoke.mjs`).
 
 Only a few steps need a human: signing in with GitHub, creating the GitHub token and the Apple
 App Store Connect key (saving it sets up iPhone signing: ourapps creates the distribution
-certificate and App IDs), the TestFlight review contact, adding each iPhone app once in App Store
+certificate; each app's App ID is made when the app is set up for TestFlight), the TestFlight review contact, adding each iPhone app once in App Store
 Connect, the Android keystore, creating an API key for the agent, and sending links to people. Everything else (registering the app, the release workflow, releases,
 share links, checks) is done by a coding agent with the prompts on `/dev/agents`. The guide's
 TL;DR at `/dev/guide#tldr` is the definitive list.
@@ -130,7 +130,7 @@ needs an OAuth App whose callback is `<PUBLIC_ORIGIN>/api/auth/callback`.
 
 ## Deploy
 
-The Cloudflare Worker and D1 database are named `app-game-store` (the repository's former name)
+The Cloudflare Worker and D1 database are named `app-game-store`
 and must keep that name: the Worker's secrets cannot be copied to a new one.
 
 ```
@@ -144,8 +144,8 @@ npx wrangler secret put GITHUB_OAUTH_CLIENT_SECRET
 npm run build -w site && npx wrangler deploy
 ```
 
-`PUBLIC_ORIGIN` in `wrangler.jsonc` must match the deployed host; change it when the
-custom domain is attached.
+`PUBLIC_ORIGIN` in `wrangler.jsonc` is the deployed host (`https://ourapps.app`); sign-in callbacks
+and links are built from it.
 
 Source: https://github.com/george-mcintyre/ourapps. The source is public for reading and
 review; it is not open source. All rights reserved, see `LICENSE`. Outside contributions are not

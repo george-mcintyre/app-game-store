@@ -27,7 +27,7 @@ export function matchRoute(pathname: string): Route {
   if (parts.length === 0) return { page: "landing" };
   if (parts[0] === "l") {
     if (parts.length === 2) return { page: "install", linkId: parts[1] };
-    // Wait-page addresses from earlier links open the install page.
+    // /l/<id>/wait/<anything> opens the install page.
     if (parts.length === 4 && parts[2] === "wait") return { page: "install", linkId: parts[1] };
     return { page: "not-found" };
   }

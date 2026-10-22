@@ -38,8 +38,8 @@ export async function landing(root: HTMLElement): Promise<void> {
         <section class="hero">
           <div>
             <span class="pill accent">${icon("bot", "icon-16")} Built with AI agents, shared with friends</span>
-            <h1 style="margin-top:14px">Agentic programming with AI is enabling us to build apps for the people we know.</h1>
-            <p class="lead">A coding agent and an evening now produce a real app for your poker table, your family, your club. Not every app belongs in an app store. ourapps is how yours gets onto their phones: send a link, they tap it, it lands on their home screen.</p>
+            <h1 style="margin-top:14px">Agentic programming with AI lets us build apps for the people we know.</h1>
+            <p class="lead">A coding agent and an evening produce a real app for your poker table, your family, your club. Not every app belongs in an app store. ourapps is how yours gets onto their phones: send a link, they tap it, it lands on their home screen.</p>
             <div class="ctas">
               ${me ? html`<a class="btn lg" href="/dev">Open your console ${icon("arrow")}</a>` : html`<a class="btn lg" href="/api/auth/github">${icon("github")} Sign in with GitHub</a>`}
               <a class="btn lg secondary" href="/example">See an example: Poker Night</a>
@@ -91,7 +91,7 @@ export async function landing(root: HTMLElement): Promise<void> {
             <div class="card"><div class="num">3</div><h3>iPhone through TestFlight</h3><p class="muted">ourapps signs each iPhone build, uploads it to TestFlight and sends it to your friends, and asks for a fresh build before one expires.</p></div>
           </div>
           <div class="card mt pad-l row wrap" style="justify-content:space-between">
-            <div style="flex:1 1 260px"><h3>Agents welcome</h3><p class="muted small">Everything in the console is also an API. Give your coding agent an API key and the prompt from the guide, and it can register apps, publish releases and hand you share links.</p></div>
+            <div style="flex:1 1 260px"><h3>Agents welcome</h3><p class="muted small">Everything in the console is also an API. Give your coding agent an API key and the prompts on the Agents and API page, and it can register apps, publish releases and hand you share links.</p></div>
             <div class="row wrap"><a class="btn secondary" href="/reference">Technical reference</a><a class="btn secondary" href="/agents.md">Read agents.md ${icon("external")}</a></div>
           </div>
         </section>
@@ -112,7 +112,7 @@ export async function devPage(root: HTMLElement, slug: string): Promise<void> {
       root,
       storeFrame(
         html`
-          ${owner ? html`<div class="owner-bar"><span class="pill">You</span> This is your public page. Apps appear here when "Show on my page" is on. <a href="/dev/apps">Manage apps</a></div>` : ""}
+          ${owner ? html`<div class="owner-bar"><span class="pill">You</span> This is your public page. Apps appear here when "Show on my public page" is on. <a href="/dev/apps">Manage apps</a></div>` : ""}
           <div class="dev-hero">
             ${avatar(data.developer.displayName, null, "lg")}
             <div><h1>${data.developer.displayName}</h1><p class="muted" style="margin:2px 0 0">Builds apps for friends and family.</p></div>
@@ -193,8 +193,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   const name = app.name || data.release?.fallbackName || "App";
   const icon0 = app.iconUrl || data.release?.fallbackIcon || null;
   const description = app.description || data.release?.fallbackDescription || "";
-  // Older responses have no per-platform sets; the general list then covers everything.
-  const sets: ScreenshotSets = data.screenshots ?? { all: app.screenshots.length > 0 ? app.screenshots : (data.release?.fallbackScreenshots ?? []) };
+  const sets: ScreenshotSets = data.screenshots;
   const views = availableViews(data.release?.install, (v) => Boolean(sets[v]?.length));
   const current = chooseView(views, d.platform, d.device);
   const tabbed = showTabs(d.platform, views);
@@ -231,7 +230,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     storeFrame(
       html`
         ${opts.example ? html`<div class="owner-bar"><span class="pill">Example</span> This is the page a friend would get for an imaginary app. Nothing installs. <a href="/example">Why Poker Night</a> <a href="/dev">Build yours</a></div>` : ""}
-        ${opts.preview ? html`<div class="owner-bar"><span class="pill">Preview</span> This is how the install page looks to a friend. Install buttons are shown but the share link does not exist yet. <a href="/dev/apps/${app.id}">Back to the app</a></div>` : ""}
+        ${opts.preview ? html`<div class="owner-bar"><span class="pill">Preview</span> This is how the install page looks to a friend. Install buttons are shown; this preview is not a share link. <a href="/dev/apps/${app.id}">Back to the app</a></div>` : ""}
         ${owner && !opts.preview && !opts.example ? html`<div class="owner-bar"><span class="pill">You</span> You are the developer of this app. <a href="/dev/apps/${app.id}">Edit</a> <a href="/dev/apps/${app.id}/links">Links</a></div>` : ""}
         ${(owner || opts.preview) && !opts.example && data.release?.install.ios && !data.release.install.ios.testflight
           ? html`<div class="owner-bar"><span class="pill warn">iPhone</span> TestFlight is not open yet, so friends on iPhone and iPad see "Coming to ${d.device} soon". <a href="/dev/apps/${app.id}#testflight">What it is waiting for</a></div>`
@@ -447,28 +446,30 @@ function installPanel(view: ViewKind | null, data: LinkPage, d: Detected, name: 
   if (view === "web") return remote ? webOnComputer(install.pwa!, name) : pwaSteps(install.pwa!, d.platform);
   if (remote) return remoteCard(view, install, pageUrl);
   if (view === "android") return androidSteps(install.android!.apk, name);
-  if (install.ios?.testflight) return testflightSteps(name, d.device, install.ios.testflight);
+  const note = deviceNote(install.ios?.devices, d.device);
+  if (install.ios?.testflight) return testflightSteps(name, d.device, install.ios.testflight, note);
   return iosComingSoon(name, d.device, install.pwa);
 }
 
 const TESTFLIGHT_APP = "https://apps.apple.com/app/testflight/id899247664";
 
 // iPhone and iPad installs go through Apple's TestFlight app: no settings to change, nothing to approve.
-function testflightSteps(name: string, device: string, invite: string): Raw {
+function testflightSteps(name: string, device: string, invite: string, note: string): Raw {
   return html`
     <div class="install-card" id="testflight-card">
       <h3>${icon("phone", "icon-20")} Install on this ${device}</h3>
       <p class="muted small">Your ${device} installs ${name} through TestFlight, Apple's free app for sharing apps before the App Store.</p>
+      ${note ? callout("warn", html`<p class="small">${note}</p>`) : ""}
       <ol class="steps">
         <li><b>Get TestFlight</b> from the App Store, if you do not have it yet.<a class="btn block secondary mt-s" href="${TESTFLIGHT_APP}">Get TestFlight</a></li>
         <li>Come back here and open the invitation. TestFlight opens.<a class="btn block mt-s" href="${invite}">Open the invitation</a></li>
         <li>In TestFlight tap <b>Accept</b>, then <b>Install</b>. ${name} appears on your home screen.</li>
       </ol>
-      <p class="tiny faint mt-s">TestFlight keeps ${name} up to date; say yes to automatic updates when it asks. If the invitation says it is not open yet, Apple is still checking the newest version; try again later today.</p>
+      <p class="tiny faint mt-s">TestFlight keeps ${name} up to date; say yes to automatic updates when it asks. If TestFlight says the beta isn't accepting testers, try again later today.</p>
     </div>`;
 }
 
-// Until the app is on TestFlight; the web version stands in when there is one.
+// Until the invitation accepts testers; the web version stands in when there is one.
 function iosComingSoon(name: string, device: string, pwa: string | null): Raw {
   return html`
     <div class="install-card">
@@ -485,7 +486,7 @@ function remoteCard(view: "iphone" | "ipad" | "android", install: Install, pageU
       ? html`<li>Tap <b>Get</b>; the app downloads.</li><li>The first time, allow installs from the browser when Android asks.</li><li>Tap <b>Install</b>.</li>`
       : install.ios?.testflight
         ? html`<li>Get Apple's free <b>TestFlight</b> app from the App Store.</li><li>Tap <b>Open the invitation</b> on this page, on the ${device}.</li><li>In TestFlight tap <b>Accept</b>, then <b>Install</b>.</li>`
-        : html`<li>The ${device} version is on its way; the web version works there now.</li>`;
+        : html`<li>The ${device} version is coming soon${install.pwa ? "; the web version works there meanwhile" : ""}.</li>`;
   return html`
     <div class="install-card remote-card">
       <div class="qr">${qrSvg(pageUrl)}</div>

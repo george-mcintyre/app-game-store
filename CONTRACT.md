@@ -184,12 +184,16 @@ The release carries `my-app.json` with `install.ios` set to
 `{ "bundleId": "<bundle id>", "testflight": "<.testflight.url from step 3, or https://testflight.apple.com when null>" }`;
 ourapps shows its own invitation link in its place. The `.ipa` is not a release asset.
 
-Before the newest TestFlight build expires, ourapps asks the repository for a fresh one:
+ourapps asks the repository for a build when TestFlight is set up for the app, when the
+developer asks for one on the app's TestFlight card, and two weeks before the newest TestFlight
+build expires:
 
 ```
 POST https://api.github.com/repos/<owner>/<repo>/dispatches
-{ "event_type": "my-store-release", "client_payload": { "app": "<STORE_APP_ID>", "reason": "testflight-expiry" } }
+{ "event_type": "my-store-release", "client_payload": { "app": "<STORE_APP_ID>", "reason": "<reason>" } }
 ```
+
+`reason` is `testflight-set-up`, `requested` or `testflight-expiry`.
 
 Handle it like a manual release of the current version with a higher build number:
 
@@ -284,14 +288,13 @@ An app that already runs its own Cloudflare Worker can serve the build from it i
 
 ### Served by the store from `web.zip`
 
-Apps that publish it keep working: a release-asset URL whose asset is named exactly `web.zip` is
-a bundle of the built site that the store copies and serves at `https://<linkId>.ourapps.app/`,
+A release-asset URL whose asset is named exactly `web.zip` is a bundle of the built site that the store copies and serves at `https://<linkId>.ourapps.app/`,
 one origin per share link, nothing from the console shared with it. On the first request after a
 release the store fetches the zip, unpacks it once into its storage and serves single files from
 there; the release is re-checked at most once a minute. These requests count against ourapps'
-shared allowance, which is why new web apps go on the developer's own account. When a release
-drops `web.zip` and `install.pwa` names an address elsewhere, the link addresses redirect there,
-so home screen icons made from them keep opening the app.
+shared allowance; the developer's own Cloudflare account has no such limit. When the latest
+release has no `web.zip` and `install.pwa` names an address elsewhere, the link addresses
+redirect there, so home screen icons made from them open the app.
 
 - Limits: zip at most 25 MB, at most 32 MB unpacked, any file at most 24 MB, at most 2,000
   files, at most 8 MB of compressed (deflated) content. Build it uncompressed:
@@ -322,7 +325,8 @@ TestFlight updates iPhone apps itself. Android apps do not update by themselves;
 
 - TestFlight: up to 10,000 people per app through the public link; each build lasts 90 days
   (ourapps asks for a fresh one before then); Apple reviews the first build of each version.
-- The Apple Distribution certificate lasts a year; replace it under Settings, then publish.
+- The Apple Distribution certificate lasts a year; replace it under Settings before it expires.
+  ourapps makes each app's App Store profile again with it, and the next build uses it.
 - macOS GitHub Actions minutes cost ten times Linux minutes against the free allowance;
   keep the iOS job lean or document a local Xcode signing path.
 

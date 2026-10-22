@@ -46,7 +46,7 @@ export async function smallPage(root: HTMLElement): Promise<void> {
           <ul class="bullets">
             <li><b>Your AI subscription builds the app; it cannot run it for others.</b> Using Claude, ChatGPT, Gemini or Copilot with a coding agent to write the app is what those plans are for. Routing other people's requests through your personal plan breaks the providers' terms. Use on-device models, free model tiers, or let each person bring their own key.</li>
             <li><b>Free plans have conditions.</b> Some pause after a week unused, some are for non-commercial use only, and some free AI tiers train on what you send them. Some are not available to apps used in the UK and Europe.</li>
-            <li><b>Free tiers change.</b> Several popular ones closed or ended this year. The list below was checked on ${CHECKED}, and every entry links to the provider's own page.</li>
+            <li><b>Free tiers change.</b> The list below was checked on ${CHECKED}, and every entry links to the provider's own page.</li>
           </ul>
 
           <div class="card pad-l mt">

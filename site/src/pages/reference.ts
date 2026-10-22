@@ -244,7 +244,7 @@ function body(): Raw {
             <tr><td>.ipa</td><td>uploaded by your workflow to Apple, through upload addresses ourapps reserves</td><td>TestFlight installs it; ourapps never stores it</td></tr>
             <tr><td>.apk</td><td>your GitHub release</td><td>streamed through ourapps on a signed link; not stored</td></tr>
             <tr><td>Web version</td><td>your Cloudflare account (or any host)</td><td><b>linked</b>, not proxied: the install page opens the address in <code>install.pwa</code></td></tr>
-            <tr><td>web.zip (apps that already ship it)</td><td>your GitHub release</td><td><b>copied</b>: unpacked once per release into ourapps storage, served from <code>https://&lt;link&gt;.ourapps.app/</code></td></tr>
+            <tr><td>web.zip bundle</td><td>your GitHub release</td><td><b>copied</b>: unpacked once per release into ourapps storage, served from <code>https://&lt;link&gt;.ourapps.app/</code></td></tr>
             <tr><td>my-app.json, CHANGELOG.md, icon, screenshots (general and per version)</td><td>your GitHub release</td><td>read by ourapps for the install page; images on signed links</td></tr>
             <tr><td>API, database, WebSockets, files your app uses</td><td>your host</td><td>called by the app directly</td></tr>
           </table>
@@ -279,14 +279,14 @@ function body(): Raw {
 unzip app.apks universal.apk</code></pre></li>
             <li>Served as <code>application/vnd.android.package-archive</code> on a signed link valid for one hour.</li>
             <li>Keep one signing key forever and raise <code>versionCode</code> every release, or updates fail.</li>
-            <li>The phone asks once to allow installs from the browser; Play Protect may warn about an unfamiliar developer. Google is phasing in developer verification for installs on certified phones from 2026.</li>
+            <li>The phone asks once to allow installs from the browser; Play Protect may warn about an unfamiliar developer. Google's developer verification rules for installs on certified Android phones, and its free limited distribution accounts for sharing with up to 20 devices, are at <a href="https://developer.android.com/developer-verification" target="_blank" rel="noopener">developer.android.com/developer-verification</a>.</li>
             <li>No device limit.</li>
           </ul>
         </section>
 
         <section id="web">
           <h2>Web apps</h2>
-          <p><code>install.pwa</code> in my-app.json is the address the install page opens. Web apps run from the developer's own free Cloudflare account: the release workflow deploys the build as a Worker with files only, and Cloudflare serves plain files without a request limit or a charge. ourapps links to the address and never proxies it. A release asset named exactly <code>web.zip</code> is the older <b>bundle</b> mode, still served by ourapps for apps that ship one.</p>
+          <p><code>install.pwa</code> in my-app.json is the address the install page opens. Web apps run from the developer's own free Cloudflare account: the release workflow deploys the build as a Worker with files only, and Cloudflare serves plain files without a request limit or a charge. ourapps links to the address and never proxies it. A release asset named exactly <code>web.zip</code> is <b>bundle</b> mode: ourapps unpacks it and serves it at <code>https://&lt;link&gt;.ourapps.app/</code>, from ourapps' shared allowance.</p>
           <h3>On your own Cloudflare account</h3>
           <table class="table">
             <tr><th>Rule</th><th>Detail</th></tr>
@@ -301,7 +301,7 @@ unzip app.apks universal.apk</code></pre></li>
           <h3>How a web.zip bundle is served</h3>
           <ol class="steps">
             <li>The first request after a new release fetches web.zip with your GitHub token and checks it against the limits below.</li>
-            <li>The files are unpacked once into about 2 MB packs in ourapps storage (a handful of writes per release) and kept until the next release replaces them.</li>
+            <li>The files are unpacked into about 2 MB packs in ourapps storage (a handful of writes per release). Packs are kept for 30 days and unpacked again when needed after that.</li>
             <li>Each request reads one file from the edge cache or its pack. The release is re-checked at most once a minute, so a new release goes live within a minute.</li>
             <li>The site is served at <code>https://&lt;link&gt;.ourapps.app/</code>, its own origin per share link, at the root.</li>
           </ol>
@@ -330,20 +330,20 @@ unzip app.apks universal.apk</code></pre></li>
           <table class="table">
             <tr><th>Tool</th><th>What to do</th></tr>
             <tr><td>Unity Web (Unity 6)</td><td>On your Cloudflare account: Compression Format "Disabled", or Brotli with Decompression Fallback. As web.zip served by ourapps: Brotli or Gzip work as built. Native multithreading needs <code>Cross-Origin-Opener-Policy: same-origin</code>, <code>Cross-Origin-Embedder-Policy: require-corp</code> and <code>Cross-Origin-Resource-Policy: cross-origin</code> in <code>_headers</code>. Unity lists iOS Safari 15 or later and Chrome 58 or later on Android as supported mobile browsers; test on real phones, where memory is the usual limit. The 32 MB unpacked limit applies to web.zip.</td></tr>
-            <tr><td>Godot 4</td><td>The single-threaded web export (default since 4.3) needs nothing. Thread or extension support needs the two cross-origin isolation headers in <code>_headers</code>.</td></tr>
+            <tr><td>Godot 4</td><td>The single-threaded web export (the default in Godot 4.3 and later) needs nothing. Thread or extension support needs the two cross-origin isolation headers in <code>_headers</code>.</td></tr>
             <tr><td>Flutter web</td><td>The default base href <code>/</code> works at the root of the app's address; the path URL strategy works thanks to the index fallback.</td></tr>
             <tr><td>Next.js</td><td><code>output: "export"</code> only. Not available as static files: server rendering, incremental regeneration, route handlers that read the request, middleware, rewrites, redirects and headers in next.config, Server Actions, the default image optimiser. Anything needing those: host it yourself and use a link.</td></tr>
             <tr><td>Vite, Angular, Astro, SvelteKit static</td><td>Static output, deployed to your Cloudflare account. SvelteKit needs the static adapter.</td></tr>
             <tr><td>Phaser, PlayCanvas, Three.js, Babylon.js</td><td>Static output; nothing special.</td></tr>
             <tr><td>Capacitor, Cordova</td><td>Native shells: publish the .ipa and .apk; optionally deploy the same web build to your Cloudflare account.</td></tr>
-            <tr><td>React Native and Expo</td><td>Build the .ipa with the App Store profile for TestFlight and a universal .apk (local builds or your own CI); Expo's web output can ship as web.zip.</td></tr>
+            <tr><td>React Native and Expo</td><td>Build the .ipa with the App Store profile for TestFlight and a universal .apk (local builds or your own CI); Expo's web output deploys to your Cloudflare account like any static build.</td></tr>
           </table>
         </section>
 
         <section id="backend">
           <h2>Your backend</h2>
           <ul class="bullets">
-            <li>Host it anywhere with HTTPS. Native apps call it directly; web bundles call it cross-origin, so set CORS for the link origins.</li>
+            <li>Host it anywhere with HTTPS. Native apps call it directly; web apps call it cross-origin, so allow the web app's address in CORS (for <code>web.zip</code> apps, the link origins).</li>
             <li>WebSockets and server-sent events work from all three flavours.</li>
             <li>ourapps does not proxy, meter or see your app's traffic; its request and storage limits are not yours.</li>
             <li>Typical stacks: Cloudflare Workers with D1 or Durable Objects, Supabase, Firebase, Fly.io, Render, a VPS, a machine at home behind a tunnel.</li>
@@ -359,8 +359,8 @@ unzip app.apks universal.apk</code></pre></li>
             <tr><td>Android devices</td><td>none</td><td>n/a</td></tr>
             <tr><td>Signed download links</td><td>valid one hour; the page makes fresh ones on every load</td><td>ourapps</td></tr>
             <tr><td>Web app on your Cloudflare account</td><td>20,000 files per deploy, 25 MB per file, 100 Workers per account; plain files served without a request limit</td><td>Cloudflare</td></tr>
-            <tr><td>web.zip (apps that ship it)</td><td>25 MB zipped, 32 MB unpacked, 24 MB per file, 2,000 files, 8 MB compressed content</td><td>ourapps</td></tr>
-            <tr><td>New web release live</td><td>within a minute</td><td>ourapps</td></tr>
+            <tr><td>web.zip bundle</td><td>25 MB zipped, 32 MB unpacked, 24 MB per file, 2,000 files, 8 MB compressed content</td><td>ourapps</td></tr>
+            <tr><td>New web.zip release live</td><td>within a minute</td><td>ourapps</td></tr>
             <tr><td>Release assets</td><td>under 2 GB each</td><td>GitHub</td></tr>
             <tr><td>Whole service</td><td>100,000 requests a day and 1,000 storage writes a day on Cloudflare's free plan, shared by all developers; a web.zip release uses a handful of writes, and every visit to a web.zip app counts</td><td>Cloudflare</td></tr>
           </table>

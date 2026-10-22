@@ -130,8 +130,8 @@ export async function logoutEverywhere(request: Request, env: Env, deps: Deps, d
   });
 }
 
-// Finds a session by hashed id; rows under the previous master key, plain SHA-256 or the raw
-// id (written before hashing) are rewritten under the current key.
+// Finds a session by hashed id; rows under the previous master key, plain SHA-256 or the raw id
+// are rewritten under the current key.
 async function lookupSession(env: Env, id: string, now: string): Promise<Developer | null> {
   const db = Db.from(env);
   const candidates = [...(await tokenHashCandidates(masterKeys(env), "session", id)), id];
@@ -201,7 +201,7 @@ export function requireSession(dev: AuthedDeveloper): void {
   if (dev.authVia !== "session") throw new HttpError(403, "this action needs the dashboard, not an API key");
 }
 
-// Browser sessions must have accepted the current terms; API keys were created after acceptance.
+// Browser sessions must have accepted the current terms; API keys are not gated by them.
 export function requireTerms(dev: AuthedDeveloper, version: string): void {
   if (dev.authVia === "session" && dev.termsAcceptedVersion !== version) throw new HttpError(403, "accept the terms to continue");
 }

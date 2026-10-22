@@ -103,7 +103,7 @@ export class AppleClient {
     return app ? { id: app.id, name: app.attributes.name } : null;
   }
 
-  // An App Store profile (no device list) for TestFlight builds, made again when it lacks the certificate.
+  // An App Store profile for TestFlight builds, made again when it lacks the certificate.
   async ensureStoreProfile(name: string, bundleIdRes: string, certificateId: string): Promise<{ id: string; uuid: string; profileContent: string; expirationDate: string }> {
     const old = await this.findProfileByName(name);
     const certs = asList(old?.relationships?.certificates?.data).map((c) => c.id);
@@ -206,7 +206,7 @@ export class AppleClient {
       : null;
   }
 
-  // The developer's export compliance answer for one build.
+  // Apple's export compliance answer for one build.
   async setBuildEncryption(buildId: string, usesNonExemptEncryption: boolean): Promise<void> {
     await this.call("PATCH", `/v1/builds/${buildId}`, { data: { type: "builds", id: buildId, attributes: { usesNonExemptEncryption } } });
   }

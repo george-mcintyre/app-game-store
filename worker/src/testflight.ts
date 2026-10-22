@@ -232,7 +232,7 @@ async function submit(apple: AppleClient, buildId: string, app: AppRow, retried 
   } catch (err) {
     // A build of a version Apple already reviewed may need no review, or may already be submitted.
     if (err instanceof AppleError && err.status === 409) return;
-    // Apps set up before ourapps wrote the primary language's beta description.
+    // Apple refuses review without a beta description in the app's primary language: write it, try once more.
     if (!retried && err instanceof AppleError && /betaAppLocalization/i.test(err.message)) {
       const found = await apple.setBetaDescription(app.ascAppId!, { description: app.description || app.tagline || app.name });
       try {

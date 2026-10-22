@@ -84,7 +84,7 @@ export interface LinkPage {
   releaseError: string | null;
   history: HistoryEntry[];
   // The general list and the per-platform lists; the page picks one per version.
-  screenshots?: ScreenshotSets;
+  screenshots: ScreenshotSets;
 }
 
 export interface ShareLink {

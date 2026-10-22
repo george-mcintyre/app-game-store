@@ -66,7 +66,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <div style="padding:24px 0 8px">
             <span class="pill accent">Worked example</span>
             <h1 style="font-size:40px;margin-top:12px">Poker Night</h1>
-            <p class="lead muted" style="font-size:19px">An app for eight people, built in an evening with a coding agent, installed from one link. Imaginary, but every detail is something ourapps does today.</p>
+            <p class="lead muted" style="font-size:19px">An app for eight people, built in an evening with a coding agent, installed from one link. Imaginary, but every detail is something ourapps does.</p>
             <div class="ctas row wrap"><a class="btn" href="/example/poker-night">See the page your friends get ${icon("arrow")}</a>${me ? html`<a class="btn secondary" href="/dev">Open your console</a>` : html`<a class="btn secondary" href="/api/auth/github">${icon("github")} Build yours</a>`}</div>
           </div>
 
@@ -129,7 +129,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
               <ul>
                 <li><b>No device limit.</b> A share link can reach as many Android phones as you like.</li>
                 <li>Android asks once per phone to allow installs from the browser, and Play Protect may warn about an unknown developer. The install page walks through both.</li>
-                <li>Google is phasing in developer verification for installs on certified phones from 2026; a free small-distribution tier is planned.</li>
+                <li>Google's developer verification rules for installs on certified Android phones, and its free limited distribution accounts for sharing with up to 20 devices, are at <a href="https://developer.android.com/developer-verification" target="_blank" rel="noopener">developer.android.com/developer-verification</a>.</li>
                 <li>Web apps have no limits and no prompts beyond "Add to Home Screen".</li>
               </ul>
             </div>
@@ -140,7 +140,7 @@ export async function examplePage(root: HTMLElement): Promise<void> {
           <p><b>iPhone updates itself; Android waits for a tap.</b> TestFlight installs new iPhone builds; on Android no store runs in the background, so an installed copy stays as it is until the friend taps Update. What that takes:</p>
           <div class="compare">
             <div class="card"><h3>For your friends</h3><ul><li><b>iPhone:</b> TestFlight installs the new version, by itself when automatic updates are on. Settings and saved data stay.</li><li><b>Android:</b> tap Update, tap Install when the phone asks. Data stays as long as you signed with the same key.</li><li><b>Web app:</b> nothing; it refreshes itself.</li></ul></div>
-            <div class="card"><h3>For you</h3><ul><li>Push a tag. The workflow publishes a release; the share link serves it at once.</li><li>ourapps uploads the iPhone build to TestFlight and sends it to your friends once Apple has processed it.</li><li>Bump the version numbers (Android versionCode, iOS CFBundleVersion) or phones will refuse the update.</li><li>Do not change the Android signing key, ever.</li></ul></div>
+            <div class="card"><h3>For you</h3><ul><li>Push a tag. The workflow publishes a release; the share link serves it at once.</li><li>ourapps uploads the iPhone build to TestFlight and sends it to your friends once Apple has processed it and, for a new version, approved it in beta review.</li><li>Bump the version numbers (Android versionCode, iOS CFBundleVersion) or phones will refuse the update.</li><li>Do not change the Android signing key, ever.</li></ul></div>
           </div>
 
           <h2>Setting up auto-update</h2>

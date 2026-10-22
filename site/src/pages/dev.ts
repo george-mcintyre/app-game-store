@@ -412,7 +412,7 @@ function testflightProgress(app: DevApp, t: TestflightStatus, stage: TestflightS
   const closed: Record<string, string> = {
     "not-accepting": `Apple lists ${label} as ready, but the invitation still says "This beta isn't accepting any new testers right now" (checked ${ago(t.invitation.checkedAt)}). In App Store Connect: Apps, ${app.name}, TestFlight, the group Friends (ourapps), make sure the public link is on.`,
     full: `The invitation says the beta is full. In App Store Connect: Apps, ${app.name}, TestFlight, the group Friends (ourapps), raise or remove the public link's tester limit.`,
-    missing: "Apple says the invitation link no longer exists. Press Set up again below; ourapps turns the public link back on.",
+    missing: "Apple says the invitation link does not exist. Press Set up again below; ourapps turns the public link on.",
   };
   const opening = stage === "link-closed" && t.invitation.state && closed[t.invitation.state]
     ? callout("warn", html`<p>${closed[t.invitation.state]}</p>`)
@@ -928,6 +928,7 @@ const EVENT_LABELS: Record<string, string> = {
   "api-keys-revoked-all": "All API keys revoked",
   "build-token-rotated": "Build token rotated",
   "encryption-declared": "Export compliance answer set",
+  "terms-accepted": "Terms accepted",
   "app-created": "App created",
   "app-deleted": "App deleted",
   "signing-set-up": "iPhone signing set up",
@@ -1050,7 +1051,7 @@ export async function settings(root: HTMLElement, note = "", signingNote?: { res
       <div class="card mt">
         <a id="security"></a>
         <div class="row wrap"><h2 class="grow">Security</h2><button class="btn sm danger" id="logout-all">Sign out everywhere</button></div>
-        <p class="small muted">How your credentials are kept: each field is encrypted on its own with AES-256-GCM under a key derived for your account alone; the master secret lives only in the server's secret store, never in the database or in code. API keys, build tokens and sessions are stored as keyed hashes, so a copy of the database cannot be used to sign in. Credentials can only be changed from this page with a fresh browser session, never with an API key.</p>
+        <p class="small muted">How your credentials are kept: each field is encrypted on its own with AES-256-GCM under a key derived for your account alone; the master secret lives only in the server's secret store, never in the database or in code. API keys, build tokens and sessions are stored as keyed hashes, so a copy of the database cannot be used to sign in. Credentials can only be changed from this page in a browser session, never with an API key.</p>
         <h3 class="mt">Recent activity</h3>
         ${events.length === 0 ? html`<p class="small muted">Nothing recorded yet.</p>` : html`<table class="table small mt-s">${events.slice(0, 25).map((e) => html`<tr><td style="white-space:nowrap">${fmtDate(e.createdAt, true)}</td><td><b>${EVENT_LABELS[e.event] ?? e.event}</b>${e.detail ? html` <span class="muted">${e.detail}</span>` : ""}</td><td class="faint">${e.country ?? ""}</td></tr>`)}</table>`}
         <p class="tiny faint mt-s">Anything here you do not recognise: sign out everywhere, revoke your API keys on the Agents page, and replace the GitHub token and Apple key at their sources.</p>

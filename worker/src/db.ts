@@ -391,8 +391,9 @@ export class Db {
     await this.d1.prepare("UPDATE apps SET build_requested_at = ?, build_request_error = ? WHERE id = ?").bind(at, error, appId).run();
   }
 
+  // Least recently checked first, so the schedule reaches every app in turn.
   async appsWithTestflight(): Promise<AppRow[]> {
-    const res = await this.d1.prepare("SELECT * FROM apps WHERE asc_app_id IS NOT NULL").all<Raw>();
+    const res = await this.d1.prepare("SELECT * FROM apps WHERE asc_app_id IS NOT NULL ORDER BY testflight_checked_at").all<Raw>();
     return res.results.map((r) => row<AppRow>(r, appConvert)!);
   }
 

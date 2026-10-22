@@ -35,6 +35,12 @@ export function linkActive(link: LinkRow, now: Date): boolean {
   return true;
 }
 
+// Once TestFlight is set up through ourapps, friends get its invitation only while testflight.apple.com
+// says it accepts testers; until then the page offers the web version or says the iPhone version is coming.
+function openInvitation(app: AppRow): string | null {
+  return app.testflightLinkState === "open" ? (app.testflightUrl ?? null) : null;
+}
+
 // GET /api/public/dev/:slug - a developer's opted-in apps, details only.
 export async function devPage(env: Env, slug: string): Promise<Response> {
   const db = Db.from(env);
@@ -57,9 +63,7 @@ export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Deve
     const release = await resolveRelease(env, deps, app, secrets.githubToken);
     manifest = await signManifestLinks(env, deps, dev.id, await loadManifest(env, deps, app, secrets.githubToken));
     if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = linkId ? webAppUrl(env, linkId) : null;
-    // The public link ourapps made wins over one written into my-app.json.
-    // Once TestFlight is set up, ourapps' public link (null until Apple approves the first build) wins.
-    if (manifest.install.ios && app.ascAppId) manifest.install.ios.testflight = app.testflightUrl ?? null;
+    if (manifest.install.ios && app.ascAppId) manifest.install.ios.testflight = openInvitation(app);
     manifest.icon = await sign(manifest.icon);
     manifest.screenshots = await signAll(manifest.screenshots ?? []);
   } catch (err) {
@@ -129,7 +133,7 @@ export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<
     throw new HttpError(503, "no release of this app is available right now");
   }
   if (isBundleUrl(manifest.install.pwa, release)) manifest.install.pwa = webAppUrl(env, linkId);
-  if (manifest.install.ios && app.ascAppId) manifest.install.ios.testflight = app.testflightUrl ?? null;
+  if (manifest.install.ios && app.ascAppId) manifest.install.ios.testflight = openInvitation(app);
   return json({
     name: app.name || manifest.name,
     version: manifest.version,

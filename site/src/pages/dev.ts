@@ -1,5 +1,5 @@
 import { SCREENSHOT_PLATFORMS, type ScreenshotPlatform } from "@my/store-shared";
-import { ApiError, api, whoAmI, type ApiKey, type AuditEvent, type DevApp, type Me, type ReleaseStatus, type SecretStatus, type ShareLink, type SigningSetUp, type TestflightNeed, type TestflightStatus } from "../api.js";
+import { ApiError, api, whoAmI, type ApiKey, type AuditEvent, type DevApp, type Me, type ReleaseStatus, type SecretStatus, type ShareLink, type SigningSetUp, type TestflightNeed, type TestflightStage, type TestflightStatus } from "../api.js";
 import { html, raw, type Raw } from "../html.js";
 import { navigate } from "../nav.js";
 import { qrSvg, shareOrCopy } from "../qr.js";
@@ -310,14 +310,36 @@ export async function appForm(root: HTMLElement, appId: string | null): Promise<
   }
 }
 
-const TF_STATE: Record<string, [string, "ok" | "warn" | "bad" | "accent"]> = {
+const TF_STATE: Record<string, [string, "" | "ok" | "warn" | "bad" | "accent"]> = {
   uploading: ["uploading", "accent"],
   uploaded: ["with Apple", "accent"],
   processing: ["Apple is processing it", "accent"],
-  distributed: ["sent to friends", "ok"],
-  "needs-compliance": ["needs an answer", "warn"],
+  "needs-compliance": ["needs your answer", "warn"],
+  "in-review": ["in Apple's beta review", "accent"],
+  approved: ["approved", "accent"],
+  open: ["friends can install it", "ok"],
+  rejected: ["not approved by Apple", "bad"],
   failed: ["failed", "bad"],
+  expired: ["expired", ""],
 };
+
+const STAGE_PILL: Record<TestflightStage, [string, "ok" | "warn" | "bad" | "accent"]> = {
+  "no-build": ["needs a build", "warn"],
+  "waiting-for-upload": ["waiting for the build", "accent"],
+  processing: ["Apple is processing it", "accent"],
+  "needs-compliance": ["needs your answer", "warn"],
+  "in-review": ["in Apple's beta review", "accent"],
+  approved: ["approved, opening", "accent"],
+  open: ["open to friends", "ok"],
+  "link-closed": ["invitation not open", "warn"],
+  rejected: ["not approved by Apple", "bad"],
+  failed: ["build failed", "bad"],
+};
+
+// Stages that wait on Apple or the repository; the card checks again by itself while one of them lasts.
+const TF_WAITING: TestflightStage[] = ["waiting-for-upload", "processing", "in-review", "approved", "link-closed"];
+const TF_CHECK_MS = 60_000;
+const TF_CHECK_FOR_MS = 30 * 60_000;
 
 const ASC_APPS = "https://appstoreconnect.apple.com/apps";
 // While the app is not in App Store Connect yet, the card asks Apple this often, for this long.
@@ -328,10 +350,21 @@ function copyable(text: string): Raw {
   return html`<code>${text}</code> <button type="button" class="btn sm ghost" data-copy="${text}">${icon("copy")} Copy</button>`;
 }
 
-// TestFlight: the steps before it works, then the friends' invitation link and the latest uploads.
+function ago(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `${Math.round(hours / 24)} days ago`;
+}
+
+// TestFlight: the steps before it works, then the steps from the first build to an open invitation.
 function testflightCard(me: Me, app: DevApp, t: TestflightStatus, checking: boolean): Raw {
-  const status = t.setUp
-    ? t.url ? pill("invitation ready", "ok", true) : pill("waiting for Apple's first review", "accent")
+  const stage = t.setUp ? (t.stage ?? "no-build") : null;
+  const status = stage
+    ? pill(STAGE_PILL[stage][0], STAGE_PILL[stage][1], true)
     : checking ? pill("checking with Apple", "accent") : t.needs === "store-app" ? pill("waiting for App Store Connect", "accent") : pill("not set up", "warn");
   return html`
     <div class="card mt">
@@ -339,20 +372,96 @@ function testflightCard(me: Me, app: DevApp, t: TestflightStatus, checking: bool
       <div class="row wrap">
         <h2 class="grow">TestFlight <span class="faint small">how friends install on iPhone and iPad</span></h2>
         ${status}
-        ${t.setUp ? html`<button class="btn sm secondary" type="button" id="testflight-check" title="Make sure the profile, the friends' group and the review details at Apple are up to date">Update</button>` : ""}
+        ${t.setUp ? html`<button class="btn sm secondary" type="button" id="testflight-check">${checking ? "Checking..." : "Check with Apple"}</button>` : ""}
       </div>
-      ${t.setUp ? testflightLive(t) : testflightSteps(me, app, t, checking)}
+      ${t.setUp ? testflightProgress(app, t, stage!) : testflightSteps(me, app, t, checking)}
       <div id="testflight-result"></div>
     </div>`;
 }
 
-function testflightLive(t: TestflightStatus): Raw {
+// After set-up: each step from the first build to friends installing, what is done, what is awaited, and from whom.
+function testflightProgress(app: DevApp, t: TestflightStatus, stage: TestflightStage): Raw {
+  const b = t.builds[0];
+  const label = b ? `version ${b.version} (build ${b.buildNumber})` : "the build";
+  const actions = `https://github.com/${app.repo}/actions`;
+  const askButton = (text: string) => html`<button class="btn sm mt-s" type="button" id="tf-ask-build">${text}</button>`;
+  const friends = stage === "open"
+    ? html`<p class="small muted">Friends on iPhone and iPad see <b>Open the invitation</b> on the install page.</p>`
+    : html`<p class="small muted">Until the invitation opens, friends on iPhone and iPad see <b>Coming to iPhone soon</b> on the install page, with the web version when there is one; they are not sent to an invitation that refuses them.</p>`;
+  if (stage === "open") {
+    return html`
+      ${friends}
+      <dl class="kv mt-s"><dt>Invitation</dt><dd><a href="${t.url ?? ""}" target="_blank" rel="noopener">${t.url ?? ""}</a> ${pill("accepts testers", "ok")} <span class="faint small">checked ${ago(t.invitation.checkedAt)}</span></dd><dt>Profile</dt><dd>${t.profile ?? ""}</dd></dl>
+      ${buildTable(t)}
+      <p class="small muted">Each build lasts 90 days; ourapps asks ${app.repo} for a fresh one two weeks before. A new version goes through Apple's beta review before friends get it; friends keep the previous build meanwhile.</p>
+      ${repairLink()}`;
+  }
+  const order: TestflightStage[][] = [[], ["no-build", "waiting-for-upload", "failed"], ["processing"], ["needs-compliance"], ["in-review", "rejected"], ["approved", "link-closed"]];
+  const at = order.findIndex((list) => list.includes(stage));
+  const exemptText = "You declared no non-exempt encryption; ourapps gives Apple this answer for every build.";
+
+  let buildNow: Raw;
+  if (stage === "failed") buildNow = html`${callout("bad", html`<p>Apple did not accept ${label}: ${b?.message ?? "no reason given"}.</p>`)}<p class="small">Fix the cause in the repository, then ask for a new build.</p>${askButton("Ask for a new build")}`;
+  else if (t.buildRequest?.error) buildNow = html`${callout("bad", html`<p>ourapps could not ask ${app.repo} for a build: ${t.buildRequest.error}</p>`)}<p class="small">The GitHub token in <a href="/dev/settings#credentials">Settings</a> needs <b>Contents: read and write</b> on ${app.repo}. Fix it, then ask again.</p>${askButton("Ask again")}`;
+  else if (stage === "waiting-for-upload") {
+    const late = t.buildRequest && Date.now() - Date.parse(t.buildRequest.at) > 2 * 3_600_000;
+    buildNow = html`<p>ourapps asked ${app.repo} for a build ${ago(t.buildRequest?.at)}. The release workflow runs on GitHub (<a href="${actions}" target="_blank" rel="noopener">see the run</a>) and uploads the iPhone build through ourapps; it appears here as soon as it arrives.</p>${late ? html`${callout("warn", html`<p>No upload has arrived in over two hours. Open the run on GitHub: if it failed, its log says why.</p>`)}${askButton("Ask again")}` : ""}`;
+  } else buildNow = html`<p>Nothing has been uploaded yet. The app's release workflow builds the iPhone app and uploads it through ourapps. Ask it for a build now; it runs on GitHub and takes a few minutes.</p>${askButton(`Ask ${app.repo} for a build`)}`;
+
+  const compliance = html`
+    <p>Apple asks of every build whether the app uses encryption that export rules do not exempt. In Apple's words, answer <b>No</b> when the app "uses no encryption, or only uses encryption that's exempt from export compliance requirements". Apple adds that encryption built into iOS, such as HTTPS through URLSession, is typically exempt, that third-party libraries the app links count too, and that exempt encryption can still call for a year-end self-classification report. <a href="https://developer.apple.com/documentation/security/complying-with-encryption-export-regulations" target="_blank" rel="noopener">Apple's page</a> says how to decide.</p>
+    <p class="small muted">This is your declaration to Apple. ourapps passes it on for each build of ${app.name}.</p>
+    <div class="row wrap mt-s"><button class="btn sm" type="button" id="tf-exempt">No: none, or only exempt encryption</button><button class="btn sm secondary" type="button" id="tf-not-exempt">Yes, or I am not sure</button></div>
+    <div id="tf-asc-compliance" hidden>${callout("info", html`<p>Answer it in App Store Connect instead, where Apple asks the follow-up questions: Apps, ${app.name}, <b>TestFlight</b>, the build under <b>Builds</b>, <b>Provide Export Compliance Information</b>. ourapps notices the answer within ten minutes, or press Check with Apple.</p>`)}</div>`;
+
+  const review = stage === "rejected"
+    ? html`${callout("bad", html`<p>Apple's beta review did not approve ${label}. Apple's reasons are in <a href="${ASC_APPS}" target="_blank" rel="noopener">App Store Connect</a>: Apps, ${app.name}, TestFlight.</p>`)}<p class="small">Fix what Apple asks for, then ask for a new build.</p>${askButton("Ask for a new build")}`
+    : html`<p>${b?.appleState === "IN_BETA_REVIEW" ? "Apple is reviewing" : "Waiting for Apple to review"} ${label}${b?.submittedAt ? `, sent ${ago(b.submittedAt)}` : ""}. Apple reviews the first build of each version before people outside your team can install it; later builds of the same version may need no review. Nothing to do: ourapps checks every ten minutes and moves on when Apple answers.</p>`;
+
+  const closed: Record<string, string> = {
+    "not-accepting": `Apple lists ${label} as ready, but the invitation still says "This beta isn't accepting any new testers right now" (checked ${ago(t.invitation.checkedAt)}). In App Store Connect: Apps, ${app.name}, TestFlight, the group Friends (ourapps), make sure the public link is on.`,
+    full: `The invitation says the beta is full. In App Store Connect: Apps, ${app.name}, TestFlight, the group Friends (ourapps), raise or remove the public link's tester limit.`,
+    missing: "Apple says the invitation link no longer exists. Press Set up again below; ourapps turns the public link back on.",
+  };
+  const opening = stage === "link-closed" && t.invitation.state && closed[t.invitation.state]
+    ? callout("warn", html`<p>${closed[t.invitation.state]}</p>`)
+    : html`<p>Apple approved ${label} and ourapps made it available to the friends' group. Waiting for the invitation page to accept testers${t.invitation.checkedAt ? html` (still closed when checked ${ago(t.invitation.checkedAt)})` : ""}.</p>`;
+
+  const steps: { title: string; done: string | Raw; now: Raw; later: string; extra?: Raw }[] = [
+    { title: "Set up with Apple", done: html`App Store profile <b>${t.profile ?? ""}</b>, the friends' group and its invitation link.`, now: html``, later: "" },
+    { title: "A build from the repository", done: b ? `${label} arrived ${ago(b.uploadedAt)}.` : "Arrived.", now: buildNow, later: "The release workflow builds the iPhone app and uploads it through ourapps." },
+    { title: "Apple processes the build", done: "Processed.", now: html`<p>Apple is processing ${label}, uploaded ${ago(b?.uploadedAt)}. Nothing to do; this needs no answer from you.</p>`, later: "Apple checks every upload before it can be tested." },
+    {
+      title: "Export compliance answer",
+      done: t.encryptionExempt ? exemptText : "Answered for this build.",
+      now: compliance,
+      later: "Apple's question about encryption, asked of every build.",
+      extra: t.encryptionExempt ? html`<p class="small muted">${exemptText}</p>` : html`<details class="small mt-s"><summary>Answer now, so builds never wait for it</summary>${compliance}</details>`,
+    },
+    { title: "Apple's beta review", done: "Approved.", now: review, later: "Apple reviews the first build of each version." },
+    { title: "Invitation opens to friends", done: "Open.", now: opening, later: "Friends can install once the invitation accepts testers." },
+  ];
   return html`
-    <dl class="kv mt-s"><dt>Invitation</dt><dd>${t.url ? html`<a href="${t.url}" target="_blank" rel="noopener">${t.url}</a>` : "appears once Apple approves the first build"}</dd><dt>Profile</dt><dd>${t.profile ?? ""}</dd></dl>
-    ${t.builds.length > 0
-      ? html`<table class="table small mt-s">${t.builds.map((b) => html`<tr><td>${b.version} (${b.buildNumber})</td><td>${pill(TF_STATE[b.state]?.[0] ?? b.state, TF_STATE[b.state]?.[1] ?? "accent")}</td><td class="faint">${b.message ?? ""} ${fmtDate(b.updatedAt, true)}</td></tr>`)}</table>`
-      : html`<p class="small muted">No build uploaded yet. The release workflow uploads each iPhone build through ourapps; ourapps sends it to friends once Apple has processed it.</p>`}
-    <p class="small muted">Apple reviews the first build of each version before friends can install it. Each build lasts 90 days; ourapps asks the repository for a fresh one before then.</p>`;
+    ${friends}
+    <ol class="timeline">
+      ${steps.map((s, i) => {
+        const cls = i < at ? "done" : i === at ? "now" : "muted-step";
+        const mark = cls === "done" ? icon("check", "icon-16") : String(i + 1);
+        const body = cls === "done" ? html`<p>${s.done}</p>` : cls === "now" ? s.now : html`<p>${s.later}</p>${i === 3 && s.extra ? s.extra : ""}`;
+        return html`<li class="${cls}"><div class="mark">${mark}</div><div><h3>${s.title}</h3>${body}</div></li>`;
+      })}
+    </ol>
+    ${t.builds.length > 1 ? buildTable(t) : ""}
+    ${repairLink()}`;
+}
+
+function buildTable(t: TestflightStatus): Raw {
+  if (t.builds.length === 0) return html``;
+  return html`<table class="table small mt-s">${t.builds.map((b) => html`<tr><td>${b.version} (${b.buildNumber})</td><td>${pill(TF_STATE[b.state]?.[0] ?? b.state, TF_STATE[b.state]?.[1] ?? "accent")}</td><td class="faint">${b.message ?? ""} ${fmtDate(b.updatedAt, true)}</td></tr>`)}</table>`;
+}
+
+function repairLink(): Raw {
+  return html`<p class="tiny faint mt-s">Something changed at Apple, such as the group or the profile being deleted? <button class="link-btn" type="button" id="tf-repair">Set up again</button></p>`;
 }
 
 // Every step before TestFlight works, in order: done ones say what was saved, the current one says
@@ -474,16 +583,46 @@ async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promi
   let busy = false;
   let lastCheck = 0;
   let timer: number | undefined;
-  const pollUntil = Date.now() + TF_POLL_FOR_MS;
+  let pollUntil = Date.now() + (t.setUp ? TF_CHECK_FOR_MS : TF_POLL_FOR_MS);
+  // Runs one change at Apple or GitHub and shows the answer; the button shows it is busy meanwhile.
+  const act = async (button: HTMLButtonElement, busyText: string, call: () => Promise<TestflightStatus>, done: string) => {
+    button.disabled = true;
+    button.textContent = busyText;
+    try {
+      t = await call();
+      shown = "";
+      render();
+      toast(done);
+      pollUntil = Date.now() + TF_CHECK_FOR_MS;
+      schedule();
+    } catch (err) {
+      button.disabled = false;
+      shown = "";
+      render();
+      showError(root, err, "#testflight-result");
+    }
+  };
 
   // Draws the card again only when something on it changed, so typing in the form is never lost.
   const render = (checking = false) => {
     const key = JSON.stringify([t, me.secrets.apple, Boolean(me.secrets.signing), checking]);
     if (key === shown) return;
     shown = key;
+    // What the developer opened stays open when a check redraws the card.
+    const opened = box.querySelector<HTMLDetailsElement>("details")?.open ?? false;
+    const asked = box.querySelector("#tf-asc-compliance:not([hidden])") !== null;
     box.innerHTML = testflightCard(me, app, t, checking).html;
+    const details = box.querySelector<HTMLDetailsElement>("details");
+    if (details && opened) details.open = true;
+    if (asked) box.querySelector("#tf-asc-compliance")?.removeAttribute("hidden");
     wireCopy(box);
     box.querySelector<HTMLButtonElement>("#testflight-check")?.addEventListener("click", () => void check(true));
+    const ask = box.querySelector<HTMLButtonElement>("#tf-ask-build");
+    if (ask) ask.onclick = () => void act(ask, "Asking...", () => api<TestflightStatus>("POST", `${path}/build`), "Asked the repository for a build");
+    box.querySelectorAll<HTMLButtonElement>("#tf-exempt").forEach((b) => (b.onclick = () => void act(b, "Saving...", () => api<TestflightStatus>("PUT", `${path}/encryption`, { exempt: true }), "Answer saved; ourapps gives it to Apple")));
+    box.querySelectorAll<HTMLButtonElement>("#tf-not-exempt").forEach((b) => (b.onclick = () => b.closest("li, details")?.querySelector<HTMLElement>("#tf-asc-compliance")?.removeAttribute("hidden")));
+    const repair = box.querySelector<HTMLButtonElement>("#tf-repair");
+    if (repair) repair.onclick = () => void act(repair, "Setting up...", () => api<TestflightStatus>("POST", path, { repair: true }), "Set up again");
     const form = box.querySelector<HTMLFormElement>("#tf-contact");
     if (form) {
       form.onsubmit = async (e) => {
@@ -512,15 +651,17 @@ async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promi
     removeEventListener("focus", onFocus);
     document.removeEventListener("visibilitychange", onFocus);
   };
+  // Before set-up: waiting for the app in App Store Connect. After: waiting on the repository or Apple.
   const schedule = () => {
     clearTimeout(timer);
-    if (t.setUp || t.needs !== "store-app") return;
+    const waiting = t.setUp ? TF_WAITING.includes(t.stage ?? "no-build") : t.needs === "store-app";
+    if (!waiting) return;
     if (Date.now() > pollUntil) {
       const note = box.querySelector<HTMLElement>("#tf-poll-note");
       if (note) note.textContent = "Stopped checking by itself after 20 minutes. Press Check now once the app is in App Store Connect.";
       return;
     }
-    timer = window.setTimeout(() => (document.visibilityState === "visible" ? void check(false) : schedule()), TF_POLL_MS);
+    timer = window.setTimeout(() => (document.visibilityState === "visible" ? void check(false) : schedule()), t.setUp ? TF_CHECK_MS : TF_POLL_MS);
   };
   const check = async (byHand: boolean) => {
     if (!box.isConnected) return stop();
@@ -528,6 +669,7 @@ async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promi
     busy = true;
     lastCheck = Date.now();
     const wasSetUp = t.setUp;
+    const wasStage = t.stage;
     const button = box.querySelector<HTMLButtonElement>("#testflight-check");
     if (button) {
       button.disabled = true;
@@ -538,7 +680,8 @@ async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promi
       t = await api<TestflightStatus>("POST", path);
       render();
       if (t.setUp && !wasSetUp) toast("TestFlight is set up");
-      else if (byHand) toast(t.needs === "store-app" ? "Not in App Store Connect yet" : "Up to date");
+      else if (t.stage === "open" && wasStage !== "open") toast("The invitation is open: friends can install");
+      else if (byHand) toast(t.setUp ? "Checked with Apple" : t.needs === "store-app" ? "Not in App Store Connect yet" : "Up to date");
       schedule();
     } catch (err) {
       render();
@@ -548,7 +691,7 @@ async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promi
       const still = box.querySelector<HTMLButtonElement>("#testflight-check");
       if (still?.disabled) {
         still.disabled = false;
-        still.textContent = t.setUp ? "Update" : "Check now";
+        still.textContent = t.setUp ? "Check with Apple" : "Check now";
       }
     }
   };
@@ -566,16 +709,17 @@ async function loadTestflightCard(root: HTMLElement, me: Me, app: DevApp): Promi
   };
   function onFocus(): void {
     if (!box!.isConnected) return stop();
-    if (document.visibilityState !== "visible" || t.setUp || busy) return;
-    if (t.needs === "store-app") void check(false);
-    else void refresh();
+    if (document.visibilityState !== "visible" || busy) return;
+    if (t.setUp ? TF_WAITING.includes(t.stage ?? "no-build") : t.needs === "store-app") void check(false);
+    else if (!t.setUp || t.stage !== "open") void refresh();
   }
 
   render();
   if (location.hash === "#testflight") box.scrollIntoView();
   addEventListener("focus", onFocus);
   document.addEventListener("visibilitychange", onFocus);
-  if (!t.setUp && t.needs === null) await check(false);
+  // A set-up app is checked with Apple once on opening, unless friends can already install it.
+  if ((!t.setUp && t.needs === null) || (t.setUp && t.stage !== "open")) await check(false);
   else schedule();
 }
 

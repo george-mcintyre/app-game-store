@@ -188,13 +188,36 @@ export class AppleClient {
     return { state: st?.state ?? "UNKNOWN", errors: (st?.errors ?? []).map((e) => e.description ?? e.code ?? "error") };
   }
 
-  async findBuild(storeAppId: string, version: string, buildNumber: string): Promise<{ id: string; processingState: string; usesNonExemptEncryption: boolean | null; expirationDate: string | null } | null> {
-    const res = await this.call<{ data: Resource<{ processingState: string; usesNonExemptEncryption: boolean | null; expirationDate: string | null }>[] }>(
+  async findBuild(storeAppId: string, version: string, buildNumber: string): Promise<{ id: string; processingState: string; usesNonExemptEncryption: boolean | null; expirationDate: string | null; expired: boolean } | null> {
+    const res = await this.call<{ data: Resource<{ processingState: string; usesNonExemptEncryption: boolean | null; expirationDate: string | null; expired?: boolean }>[] }>(
       "GET",
       `/v1/builds?filter[app]=${storeAppId}&filter[version]=${encodeURIComponent(buildNumber)}&filter[preReleaseVersion.version]=${encodeURIComponent(version)}&limit=1`,
     );
     const b = res.data[0];
-    return b ? { id: b.id, processingState: b.attributes.processingState, usesNonExemptEncryption: b.attributes.usesNonExemptEncryption ?? null, expirationDate: b.attributes.expirationDate ?? null } : null;
+    return b
+      ? { id: b.id, processingState: b.attributes.processingState, usesNonExemptEncryption: b.attributes.usesNonExemptEncryption ?? null, expirationDate: b.attributes.expirationDate ?? null, expired: b.attributes.expired === true }
+      : null;
+  }
+
+  // The developer's export compliance answer for one build.
+  async setBuildEncryption(buildId: string, usesNonExemptEncryption: boolean): Promise<void> {
+    await this.call("PATCH", `/v1/builds/${buildId}`, { data: { type: "builds", id: buildId, attributes: { usesNonExemptEncryption } } });
+  }
+
+  // Where the build stands for external testers (ExternalBetaState), and the record that holds it.
+  async betaDetail(buildId: string): Promise<{ id: string; externalBuildState: string; autoNotifyEnabled: boolean }> {
+    const res = await this.call<{ data: Resource<{ externalBuildState?: string; autoNotifyEnabled?: boolean }> }>("GET", `/v1/builds/${buildId}/buildBetaDetail`);
+    return { id: res.data.id, externalBuildState: res.data.attributes.externalBuildState ?? "UNKNOWN", autoNotifyEnabled: res.data.attributes.autoNotifyEnabled === true };
+  }
+
+  // Apple then makes the build available to its external groups as soon as beta review approves it.
+  async setAutoNotify(betaDetailId: string): Promise<void> {
+    await this.call("PATCH", `/v1/buildBetaDetails/${betaDetailId}`, { data: { type: "buildBetaDetails", id: betaDetailId, attributes: { autoNotifyEnabled: true } } });
+  }
+
+  // The "Notify Testers" step of App Store Connect: makes an approved build available to its groups.
+  async notifyTesters(buildId: string): Promise<void> {
+    await this.call("POST", "/v1/buildBetaNotifications", { data: { type: "buildBetaNotifications", relationships: { build: { data: { type: "builds", id: buildId } } } } });
   }
 
   // The newest build that has not expired, to know when the next one is due.

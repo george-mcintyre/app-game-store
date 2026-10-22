@@ -67,6 +67,14 @@ export interface AppRow {
   storeProfileUuid?: string | null;
   storeProfileName?: string | null;
   storeProfileBase64?: string | null;
+  // What the public invitation page said when last checked, and when.
+  testflightLinkState?: LinkState | null;
+  testflightCheckedAt?: string | null;
+  // When ourapps last asked the repository for a build, and why that failed if it did.
+  buildRequestedAt?: string | null;
+  buildRequestError?: string | null;
+  // The developer declared no non-exempt encryption; ourapps gives Apple that answer for each build.
+  encryptionExempt?: boolean;
   buildTokenHash: string;
   createdAt: string;
   updatedAt: string;
@@ -106,9 +114,13 @@ export interface AuditRow {
   createdAt: string;
 }
 
-// uploading: reserved at Apple; uploaded: bytes sent; processing: Apple is processing; distributed: in the
-// beta group and sent for beta review; needs-compliance: the build lacks an export compliance answer.
-export type TestflightState = "uploading" | "uploaded" | "processing" | "distributed" | "needs-compliance" | "failed";
+// A build from upload to friends: uploading (reserved at Apple), uploaded (bytes sent), processing,
+// needs-compliance (no export compliance answer), in-review (in the friends' group, with Apple's beta
+// review), approved (being made available), open (friends can install it); rejected, failed, expired end it.
+export type TestflightState = "uploading" | "uploaded" | "processing" | "needs-compliance" | "in-review" | "approved" | "open" | "rejected" | "failed" | "expired";
+
+// What testflight.apple.com shows for the public link: open, "isn't accepting any new testers", "is full", or no such link.
+export type LinkState = "open" | "not-accepting" | "full" | "missing";
 
 export interface TestflightBuildRow {
   id: number;
@@ -121,6 +133,11 @@ export interface TestflightBuildRow {
   whatsNew: string | null;
   state: TestflightState;
   message: string | null;
+  // Apple's external beta state, when the review was asked for, when testers were notified, and when the build expires.
+  appleState?: string | null;
+  submittedAt?: string | null;
+  notifiedAt?: string | null;
+  expiresAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -143,6 +160,7 @@ const appConvert = (r: Raw): Raw => ({
   screenshots: JSON.parse(r.screenshots as string),
   screenshotsByPlatform: JSON.parse((r.screenshotsByPlatform as string | undefined) ?? "{}"),
   showOnPage: r.showOnPage === 1,
+  encryptionExempt: r.encryptionExempt === 1,
 });
 
 export class Db {
@@ -368,6 +386,18 @@ export class Db {
       .run();
   }
 
+  async setLinkState(appId: string, state: LinkState | null, at: string): Promise<void> {
+    await this.d1.prepare("UPDATE apps SET testflight_link_state = ?, testflight_checked_at = ? WHERE id = ?").bind(state, at, appId).run();
+  }
+
+  async setBuildRequest(appId: string, at: string, error: string | null): Promise<void> {
+    await this.d1.prepare("UPDATE apps SET build_requested_at = ?, build_request_error = ? WHERE id = ?").bind(at, error, appId).run();
+  }
+
+  async setEncryptionExempt(appId: string, exempt: boolean): Promise<void> {
+    await this.d1.prepare("UPDATE apps SET encryption_exempt = ? WHERE id = ?").bind(exempt ? 1 : null, appId).run();
+  }
+
   async appsWithTestflight(): Promise<AppRow[]> {
     const res = await this.d1.prepare("SELECT * FROM apps WHERE asc_app_id IS NOT NULL").all<Raw>();
     return res.results.map((r) => row<AppRow>(r, appConvert)!);
@@ -390,13 +420,20 @@ export class Db {
     return res.results.map((r) => row<TestflightBuildRow>(r)!);
   }
 
-  async pendingTestflightBuilds(): Promise<TestflightBuildRow[]> {
-    const res = await this.d1.prepare("SELECT * FROM testflight_builds WHERE state IN ('uploaded', 'processing', 'needs-compliance') ORDER BY id LIMIT 20").all<Raw>();
+  // Builds still on their way to friends, least recently checked first; optionally one app's only.
+  async pendingTestflightBuilds(appId?: string): Promise<TestflightBuildRow[]> {
+    const states = "state IN ('uploaded', 'processing', 'needs-compliance', 'in-review', 'approved')";
+    const res = appId
+      ? await this.d1.prepare(`SELECT * FROM testflight_builds WHERE ${states} AND app_id = ? ORDER BY updated_at LIMIT 5`).bind(appId).all<Raw>()
+      : await this.d1.prepare(`SELECT * FROM testflight_builds WHERE ${states} ORDER BY updated_at LIMIT 20`).all<Raw>();
     return res.results.map((r) => row<TestflightBuildRow>(r)!);
   }
 
   async updateTestflightBuild(b: TestflightBuildRow): Promise<void> {
-    await this.d1.prepare("UPDATE testflight_builds SET build_id = ?, whats_new = ?, state = ?, message = ?, updated_at = ? WHERE id = ?").bind(b.buildId, b.whatsNew, b.state, b.message, b.updatedAt, b.id).run();
+    await this.d1
+      .prepare("UPDATE testflight_builds SET build_id = ?, whats_new = ?, state = ?, message = ?, apple_state = ?, submitted_at = ?, notified_at = ?, expires_at = ?, updated_at = ? WHERE id = ?")
+      .bind(b.buildId, b.whatsNew, b.state, b.message, b.appleState ?? null, b.submittedAt ?? null, b.notifiedAt ?? null, b.expiresAt ?? null, b.updatedAt, b.id)
+      .run();
   }
 
   // Signing certificate

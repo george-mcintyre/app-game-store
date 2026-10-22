@@ -233,6 +233,9 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
         ${opts.example ? html`<div class="owner-bar"><span class="pill">Example</span> This is the page a friend would get for an imaginary app. Nothing installs. <a href="/example">Why Poker Night</a> <a href="/dev">Build yours</a></div>` : ""}
         ${opts.preview ? html`<div class="owner-bar"><span class="pill">Preview</span> This is how the install page looks to a friend. Install buttons are shown but the share link does not exist yet. <a href="/dev/apps/${app.id}">Back to the app</a></div>` : ""}
         ${owner && !opts.preview && !opts.example ? html`<div class="owner-bar"><span class="pill">You</span> You are the developer of this app. <a href="/dev/apps/${app.id}">Edit</a> <a href="/dev/apps/${app.id}/links">Links</a></div>` : ""}
+        ${(owner || opts.preview) && !opts.example && data.release?.install.ios && !data.release.install.ios.testflight
+          ? html`<div class="owner-bar"><span class="pill warn">iPhone</span> TestFlight is not open yet, so friends on iPhone and iPad see "Coming to ${d.device} soon". <a href="/dev/apps/${app.id}#testflight">What it is waiting for</a></div>`
+          : ""}
         <header class="product">
           ${appIcon(name, icon0, "xl")}
           <div>

@@ -11,7 +11,7 @@ import { EDITABLE_SECRET_FIELDS, appleReady, loadSecrets, saveSecrets, secretsSu
 import { CHANGELOG_ASSET } from "../history.js";
 import { fetchManifest, loadManifest, resolveRelease } from "../upstream.js";
 import { webHosting } from "../webapp.js";
-import { localNeed, renewStoreProfile, reviewContact, setUpTestflight, storeAppForm, type TestflightNeed } from "../testflight.js";
+import { localNeed, refreshTestflight, renewStoreProfile, requestBuild, reviewContact, setUpTestflight, storeAppForm, testflightStage, type TestflightNeed } from "../testflight.js";
 import { buildLinkPage } from "./public.js";
 
 type AppInput = Partial<Record<"name" | "tagline" | "description" | "whatsNew" | "size" | "minOs" | "ageNote" | "privacySummary" | "iconUrl" | "repo" | "manifestUrl" | "bundleId", string>> & {
@@ -24,8 +24,22 @@ function buildTokenHash(env: Env, token: string): Promise<string> {
   return tokenHash(masterKeys(env), "build-token", token);
 }
 
+// The App object agents.md documents; TestFlight detail is in the TestFlight view.
 function publicApp(app: AppRow) {
-  const { buildTokenHash: _hash, storeProfileBase64: _profile, ...rest } = app;
+  const {
+    buildTokenHash: _hash,
+    storeProfileBase64: _profile,
+    storeProfileId: _pid,
+    storeProfileUuid: _puuid,
+    storeProfileName: _pname,
+    betaGroupId: _group,
+    testflightLinkState: _link,
+    testflightCheckedAt: _checked,
+    buildRequestedAt: _requested,
+    buildRequestError: _requestError,
+    encryptionExempt: _exempt,
+    ...rest
+  } = app;
   return rest;
 }
 
@@ -353,8 +367,9 @@ export async function revokeLink(env: Env, deps: Deps, dev: Developer, id: strin
 }
 
 // GET /api/dev/apps/:id/testflight - where TestFlight stands for the app and its latest uploads.
-// The next step only the developer can take is in "needs"; null with setUp false means ourapps can go
-// ahead (POST) and find out whether the app is in App Store Connect yet.
+// Before set-up, "needs" names the developer's next step; null with setUp false means ourapps can go
+// ahead (POST) and find out whether the app is in App Store Connect yet. After set-up, "stage" says
+// what the invitation waits for.
 export async function testflightStatus(env: Env, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
@@ -368,20 +383,88 @@ async function testflightView(db: Db, app: AppRow, dev: Developer, needs: Testfl
     needs,
     // What to type into App Store Connect's New App form, until the app is set up.
     storeApp: app.ascAppId || !app.bundleId ? null : storeAppForm(app, dev),
+    stage: app.ascAppId ? testflightStage(app, builds) : null,
     url: app.testflightUrl ?? null,
+    // What testflight.apple.com shows a friend opening the invitation, and when ourapps last looked.
+    invitation: { state: app.testflightLinkState ?? null, checkedAt: app.testflightCheckedAt ?? null },
+    buildRequest: app.buildRequestedAt ? { at: app.buildRequestedAt, error: app.buildRequestError ?? null } : null,
+    encryptionExempt: app.encryptionExempt === true,
     profile: app.storeProfileName ?? null,
     contact: Boolean(reviewContact(dev)),
-    builds: builds.filter((b) => b.version !== "-").map((b) => ({ version: b.version, buildNumber: b.buildNumber, state: b.state, message: b.message, updatedAt: b.updatedAt })),
+    builds: builds.map((b) => ({
+      version: b.version,
+      buildNumber: b.buildNumber,
+      state: b.state,
+      appleState: b.appleState ?? null,
+      message: b.message,
+      uploadedAt: b.createdAt,
+      submittedAt: b.submittedAt ?? null,
+      expiresAt: b.expiresAt ?? null,
+      updatedAt: b.updatedAt,
+    })),
   };
 }
 
-// POST /api/dev/apps/:id/testflight - set TestFlight up, or bring it up to date. Answers 200 either
-// way: "needs" names the step that is still the developer's, such as adding the app in App Store Connect.
-export async function setUpAppTestflight(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+// POST /api/dev/apps/:id/testflight - sets TestFlight up, then asks the repository for the first build.
+// Once set up it checks with Apple now; body {"repair": true} runs the set-up again. Always 200.
+export async function setUpAppTestflight(request: Request, env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
   const db = Db.from(env);
   const app = await ownedApp(db, dev, id);
-  const needs = await setUpTestflight(env, deps, dev, app);
+  const body = await optionalJson<{ repair?: unknown }>(request);
+  let needs: TestflightNeed | null = null;
+  if (!app.ascAppId || body.repair === true) {
+    const wasSetUp = Boolean(app.ascAppId);
+    needs = await setUpTestflight(env, deps, dev, app);
+    if (!needs && !wasSetUp && (await db.testflightBuilds(app.id, 1)).length === 0) await requestBuild(env, deps, app, "testflight-set-up");
+  }
+  if (!needs && app.ascAppId) {
+    try {
+      await refreshTestflight(env, deps, app);
+    } catch (err) {
+      throw new HttpError(502, err instanceof Error ? err.message : String(err));
+    }
+  }
   return json(await testflightView(db, app, dev, needs));
+}
+
+// POST /api/dev/apps/:id/testflight/build - asks the app's repository for a release now.
+export async function requestAppBuild(env: Env, deps: Deps, dev: Developer, id: string): Promise<Response> {
+  const db = Db.from(env);
+  const app = await ownedApp(db, dev, id);
+  if (!app.ascAppId) throw new HttpError(409, "set up TestFlight for this app first");
+  await requestBuild(env, deps, app, "requested");
+  return json(await testflightView(db, app, dev, null));
+}
+
+// PUT /api/dev/apps/:id/testflight/encryption - dashboard only: the developer's export compliance
+// declaration. {"exempt": true} means no non-exempt encryption; ourapps gives Apple that answer for each build.
+export async function setEncryptionAnswer(request: Request, env: Env, deps: Deps, dev: AuthedDeveloper, id: string): Promise<Response> {
+  requireSession(dev);
+  const db = Db.from(env);
+  const app = await ownedApp(db, dev, id);
+  const body = await readJson<{ exempt?: unknown }>(request);
+  if (typeof body.exempt !== "boolean") throw new HttpError(400, "exempt must be true or false");
+  await db.setEncryptionExempt(app.id, body.exempt);
+  app.encryptionExempt = body.exempt;
+  await audit(request, env, deps, dev.id, "encryption-declared", `${app.name}: ${body.exempt ? "no non-exempt encryption" : "answer withdrawn"}`);
+  if (body.exempt && app.ascAppId) {
+    try {
+      await refreshTestflight(env, deps, app);
+    } catch (err) {
+      console.error(`encryption answer ${app.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return json(await testflightView(db, app, dev, null));
+}
+
+async function optionalJson<T extends object>(request: Request): Promise<Partial<T>> {
+  const raw = await request.text();
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw) as Partial<T>;
+  } catch {
+    throw new HttpError(400, "body must be JSON");
+  }
 }
 
 // PUT /api/dev/review-contact - who Apple's TestFlight beta review contacts.

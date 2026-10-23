@@ -147,13 +147,13 @@ DELETE /api/dev/links/:id         -> { "ok": true }
 
 GET /api/public/links/:id         (no auth) -> install page data (the preview shape, see above), 410 when expired or revoked, 404 when unknown
 GET /api/public/links/:id/qr.svg  (no auth) -> SVG QR code of the link
-GET /api/public/links/:id/latest  (no auth) -> { "name", "version", "testflightUrl": string | null, "android": { "apkUrl" } | null, "pwa", "linksExpireAt" }
+GET /api/public/links/:id/latest  (no auth) -> { "name", "version", "testflightUrl": string | null, "testflightVersion": string | null, "android": { "apkUrl" } | null, "pwa", "linksExpireAt" }
                                   "pwa" is the URL to open: https://<linkId>.ourapps.app/ when the release ships web.zip, else the manifest's own URL, else null
 ```
 
 Give the developer the `url`; one link per person or group is the convention so links can be revoked one at a time.
 
-`/latest` returns 503 `{"error": "no release of this app is available right now"}` when no release can be read (none published, or the developer's GitHub token cannot see the repository); treat that as "no update". It is what an installed app polls to offer updates: compare `version` with the running version, then open `android.apkUrl`, or `testflightUrl` on iPhone (TestFlight also updates the app by itself). The signed links inside are good for one hour, so fetch right before opening. Recommend a dedicated link labelled "In-app updates" that is never revoked.
+`/latest` returns 503 `{"error": "no release of this app is available right now"}` when no release can be read (none published, or the developer's GitHub token cannot see the repository); treat that as "no update". It is what an installed app polls to offer updates: compare `version` with the running version, then open `android.apkUrl`, or `testflightUrl` on iPhone (TestFlight also updates the app by itself). On iPhone compare with `testflightVersion`, the newest build Apple has approved, which can be older than `version` while a new one is in beta review. The signed links inside are good for one hour, so fetch right before opening. Recommend a dedicated link labelled "In-app updates" that is never revoked.
 
 ## Limits worth telling the developer
 

@@ -62,6 +62,8 @@ export interface Release {
   fallbackIcon: string;
   fallbackDescription: string;
   fallbackScreenshots: string[];
+  // The version TestFlight installs, when it differs from the release; null when TestFlight is not open.
+  testflightVersion?: string | null;
 }
 
 export interface HistoryEntry {

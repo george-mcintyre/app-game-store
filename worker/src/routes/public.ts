@@ -41,6 +41,12 @@ function openInvitation(app: AppRow): string | null {
   return app.testflightLinkState === "open" ? (app.testflightUrl ?? null) : null;
 }
 
+// The version TestFlight gives friends: the newest build Apple has approved, which can be older than the release.
+async function testflightVersion(env: Env, app: AppRow): Promise<string | null> {
+  if (!app.ascAppId) return null;
+  return (await Db.from(env).latestOpenBuild(app.id))?.version ?? null;
+}
+
 // GET /api/public/dev/:slug - a developer's opted-in apps, details only.
 export async function devPage(env: Env, slug: string): Promise<Response> {
   const db = Db.from(env);
@@ -92,6 +98,7 @@ export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Deve
           fallbackIcon: manifest.icon,
           fallbackDescription: manifest.description,
           fallbackScreenshots: manifest.screenshots ?? [],
+          testflightVersion: manifest.install.ios?.testflight ? await testflightVersion(env, app) : null,
         }
       : null,
     releaseError: manifestError,
@@ -139,6 +146,8 @@ export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<
     version: manifest.version,
     // TestFlight installs and updates iPhone apps; an app can open this link.
     testflightUrl: manifest.install.ios?.testflight ?? null,
+    // What TestFlight installs; compare with this on iPhone, not with version.
+    testflightVersion: manifest.install.ios?.testflight ? await testflightVersion(env, app) : null,
     android: manifest.install.android ? { apkUrl: manifest.install.android.apk } : null,
     pwa: manifest.install.pwa,
     linksExpireAt: new Date((Math.floor(deps.now().getTime() / 1000) + 60 * 60) * 1000).toISOString(),

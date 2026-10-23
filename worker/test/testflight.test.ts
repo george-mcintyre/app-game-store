@@ -190,6 +190,11 @@ describe("TestFlight", () => {
     expect(checked).toMatchObject({ stage: "open", invitation: { state: "open" } });
     expect(await page()).toBe("https://testflight.apple.com/join/AbCd1234");
     expect(await latest()).toBe("https://testflight.apple.com/join/AbCd1234");
+    // The release is 0.1.0, but TestFlight has the build Apple approved: 1.0.
+    const full = (await (await handle(api(null, "GET", `/api/public/links/${linkId}`), env, d)).json()) as { release: { version: string; testflightVersion: string | null } };
+    expect(full.release).toMatchObject({ version: "0.1.0", testflightVersion: "1.0" });
+    const upd = (await (await handle(api(null, "GET", `/api/public/links/${linkId}/latest`), env, d)).json()) as { version: string; testflightVersion: string | null };
+    expect(upd).toMatchObject({ version: "0.1.0", testflightVersion: "1.0" });
   });
 
   it("asks the repository for a build on request", async () => {

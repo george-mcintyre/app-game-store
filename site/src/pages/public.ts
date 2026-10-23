@@ -202,14 +202,16 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
   const blocked = Boolean(d.inApp && !d.inApp.installWorks) || !data.release;
   const history = data.history ?? [];
   // The latest release's notes are the truth; the dashboard field only fills in when there are none.
-  const latest = history.find((h) => h.version === data.release?.version) ?? history[0];
+  // iPhone and iPad get what TestFlight has, which can be older than the latest release.
+  const version = d.platform === "ios" && data.release?.install.ios?.testflight && data.release.testflightVersion ? data.release.testflightVersion : data.release?.version;
+  const latest = history.find((h) => h.version === version) ?? history[0];
   const whatsNew = latest?.notes || app.whatsNew || "";
   const updated = latest?.date ?? (history.length === 0 ? app.updatedAt : null);
   const owner = opts.me?.developer.id === data.developer.id;
   setTheme("store", `${name} by ${data.developer.displayName}`);
 
   const facts: Raw[] = [];
-  if (data.release) facts.push(html`<div class="fact"><b>Version</b><span>${data.release.version}</span></div>`);
+  if (data.release) facts.push(html`<div class="fact"><b>Version</b><span>${version}</span></div>`);
   if (app.ageNote) facts.push(html`<div class="fact"><b>Age</b><span>${app.ageNote}</span></div>`);
   if (data.release && data.release.maxPlayers > 1) facts.push(html`<div class="fact"><b>Players</b><span>${data.release.minPlayers === data.release.maxPlayers ? data.release.minPlayers : `${data.release.minPlayers} to ${data.release.maxPlayers}`}</span></div>`);
   if (app.size) facts.push(html`<div class="fact"><b>Size</b><span>${app.size}</span></div>`);
@@ -221,7 +223,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
     ["Size", app.size],
     ["Compatibility", app.minOs || compat(data)],
     ["Age", app.ageNote],
-    ["Version", data.release?.version ?? ""],
+    ["Version", version ?? ""],
     ["Updated", updated ? new Date(updated).toLocaleDateString(undefined, { dateStyle: "medium" }) : ""],
   ];
 
@@ -265,7 +267,7 @@ export function renderInstall(root: HTMLElement, data: LinkPage, opts: InstallOp
           <button class="link-btn readmore-btn" id="more" hidden>more</button>
         </section>
 
-        ${whatsNew ? html`<section class="store-section"><h2>What's new</h2>${data.release ? html`<p class="sub">Version ${data.release.version}</p>` : ""}${notesHtml(whatsNew)}</section>` : ""}
+        ${whatsNew ? html`<section class="store-section"><h2>What's new</h2>${data.release ? html`<p class="sub">Version ${version}</p>` : ""}${notesHtml(whatsNew)}</section>` : ""}
 
         <section class="store-section">
           <h2>App privacy</h2>
@@ -444,7 +446,7 @@ function installPanel(view: ViewKind | null, data: LinkPage, d: Detected, name: 
   if (view === null) return html`<div class="install-card"><h3>Not on ${deviceWord} yet</h3><p class="muted">There is no ${deviceWord} version of ${name} at the moment.</p></div>`;
   const remote = d.platform === "other";
   if (view === "web") return remote ? webOnComputer(install.pwa!, name) : pwaSteps(install.pwa!, d.platform);
-  if (remote) return remoteCard(view, install, pageUrl);
+  if (remote) return remoteCard(view, install, pageUrl, data.release!.testflightVersion ?? null, data.release!.version);
   if (view === "android") return androidSteps(install.android!.apk, name);
   const note = deviceNote(install.ios?.devices, d.device);
   if (install.ios?.testflight) return testflightSteps(name, d.device, install.ios.testflight, note);
@@ -479,13 +481,13 @@ function iosComingSoon(name: string, device: string, pwa: string | null): Raw {
     </div>`;
 }
 
-function remoteCard(view: "iphone" | "ipad" | "android", install: Install, pageUrl: string): Raw {
+function remoteCard(view: "iphone" | "ipad" | "android", install: Install, pageUrl: string, tfVersion: string | null, version: string): Raw {
   const device = view === "android" ? "Android phone" : VIEW_LABEL[view];
   const steps =
     view === "android"
       ? html`<li>Tap <b>Get</b>; the app downloads.</li><li>The first time, allow installs from the browser when Android asks.</li><li>Tap <b>Install</b>.</li>`
       : install.ios?.testflight
-        ? html`<li>Get Apple's free <b>TestFlight</b> app from the App Store.</li><li>Tap <b>Open the invitation</b> on this page, on the ${device}.</li><li>In TestFlight tap <b>Accept</b>, then <b>Install</b>.</li>`
+        ? html`<li>Get Apple's free <b>TestFlight</b> app from the App Store.</li><li>Tap <b>Open the invitation</b> on this page, on the ${device}.</li><li>In TestFlight tap <b>Accept</b>, then <b>Install</b>.${tfVersion && tfVersion !== version ? html` TestFlight has version ${tfVersion}.` : ""}</li>`
         : html`<li>The ${device} version is coming soon${install.pwa ? "; the web version works there meanwhile" : ""}.</li>`;
   return html`
     <div class="install-card remote-card">

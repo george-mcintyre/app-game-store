@@ -423,6 +423,11 @@ export class Db {
     return res.results.map((r) => row<TestflightBuildRow>(r)!);
   }
 
+  // The newest build friends can install through TestFlight.
+  async latestOpenBuild(appId: string): Promise<TestflightBuildRow | null> {
+    return row<TestflightBuildRow>(await this.d1.prepare("SELECT * FROM testflight_builds WHERE app_id = ? AND state = 'open' ORDER BY id DESC LIMIT 1").bind(appId).first());
+  }
+
   async updateTestflightBuild(b: TestflightBuildRow): Promise<void> {
     await this.d1
       .prepare("UPDATE testflight_builds SET build_id = ?, whats_new = ?, state = ?, message = ?, apple_state = ?, submitted_at = ?, notified_at = ?, expires_at = ?, updated_at = ? WHERE id = ?")

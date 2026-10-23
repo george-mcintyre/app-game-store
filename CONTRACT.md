@@ -318,7 +318,7 @@ redirect there, so home screen icons made from them open the app.
 TestFlight updates iPhone apps itself. Android apps do not update by themselves; an app can poll
 `GET https://ourapps.app/api/public/links/<linkId>/latest` (any active share link; a dedicated
 "In-app updates" link is the convention), compare `version` with its own, and open
-`android.apkUrl` (or `testflightUrl` on iPhone, which opens TestFlight). The links inside expire after one hour. Bump
+`android.apkUrl` (or, on iPhone, compare with `testflightVersion`, the version TestFlight has, and open `testflightUrl`). The links inside expire after one hour. Bump
 `versionCode` / `CFBundleVersion` on every release and keep the Android signing key stable.
 
 ## Limits to design around

@@ -262,6 +262,31 @@ export async function checkInvitation(deps: Deps, url: string): Promise<LinkStat
   return null;
 }
 
+// Public reads check pending approvals at most once a minute; Apple receives no changes here.
+export async function refreshApprovedVersions(env: Env, deps: Deps, app: AppRow): Promise<void> {
+  if (!app.ascAppId || !app.betaGroupId) return;
+  if (app.testflightCheckedAt && deps.now().getTime() - Date.parse(app.testflightCheckedAt) < 60_000) return;
+  const db = Db.from(env);
+  const pending = await db.pendingTestflightBuilds(app.id);
+  if (pending.length === 0) return;
+  try {
+    const apple = appleClient(env, deps, await loadSecrets(env, app.developerId, ["appleIssuerId", "appleKeyId", "applePrivateKey"]));
+    for (const row of pending) {
+      if (!row.buildId) continue;
+      const detail = await apple.betaDetail(row.buildId);
+      if (!["READY_FOR_BETA_TESTING", "IN_BETA_TESTING"].includes(detail.externalBuildState)) continue;
+      row.state = "open";
+      row.appleState = detail.externalBuildState;
+      row.message = null;
+      row.updatedAt = deps.now().toISOString();
+      await db.updateTestflightBuild(row);
+    }
+    await checkLink(env, deps, apple, app);
+  } catch (err) {
+    console.error(`testflight approval ${app.id}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // Asks the app's repository to run its release workflow; the outcome is kept on the app.
 export async function requestBuild(env: Env, deps: Deps, app: AppRow, reason: string): Promise<void> {
   const at = deps.now().toISOString();

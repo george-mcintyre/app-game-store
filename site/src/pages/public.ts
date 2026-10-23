@@ -167,6 +167,43 @@ export async function installPage(root: HTMLElement, linkId: string): Promise<vo
   }
   const me = await whoAmI();
   renderInstall(root, data, { me, pageUrl: `${location.origin}/l/${linkId}` });
+  const marker = root.querySelector(".product");
+  let busy = false;
+  let checkedAt = Date.now();
+  const refresh = async () => {
+    if (!marker?.isConnected) return stop();
+    if (document.visibilityState !== "visible" || busy || Date.now() - checkedAt < 1000) return;
+    busy = true;
+    checkedAt = Date.now();
+    try {
+      const next = await api<LinkPage>("GET", `/api/public/links/${encodeURIComponent(linkId)}`);
+      const changed = next.release?.version !== data.release?.version
+        || next.release?.testflightVersion !== data.release?.testflightVersion
+        || next.release?.install.ios?.testflight !== data.release?.install.ios?.testflight;
+      if (changed && marker.isConnected) {
+        stop();
+        const y = scrollY;
+        await installPage(root, linkId);
+        scrollTo(0, y);
+      }
+    } catch {
+      // Keep the current page during a connection failure.
+    } finally {
+      busy = false;
+    }
+  };
+  const timer = window.setInterval(() => void refresh(), 60_000);
+  const stop = () => {
+    clearInterval(timer);
+    removeEventListener("focus", refresh);
+    document.removeEventListener("visibilitychange", refresh);
+    removeEventListener("navigate", stop);
+    removeEventListener("popstate", stop);
+  };
+  addEventListener("focus", refresh);
+  document.addEventListener("visibilitychange", refresh);
+  addEventListener("navigate", stop, { once: true });
+  addEventListener("popstate", stop, { once: true });
 }
 
 export async function previewPage(root: HTMLElement, appId: string): Promise<void> {

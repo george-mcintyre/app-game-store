@@ -1,5 +1,7 @@
 # Gotchas
 
+- Approved TestFlight versions refresh through `refreshApprovedVersions` on public page and update reads, at most once a minute while builds are pending. Install pages re-read on return to the foreground and every visible minute; `installPage` owns listener cleanup.
+
 - `@cloudflare/vitest-pool-workers` is deprecated; this repo uses `@cloudflare/vitest-plugin`
   with `cloudflareTest()` and `readD1Migrations` in `worker/vitest.config.ts`. Tests import
   `env` from `cloudflare:workers` and `applyD1Migrations` from `cloudflare:test`.

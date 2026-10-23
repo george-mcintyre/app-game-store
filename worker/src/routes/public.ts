@@ -8,6 +8,7 @@ import { loadHistory } from "../history.js";
 import { HttpError, json } from "../http.js";
 import { verifyLink } from "../links.js";
 import { loadSecrets } from "../secrets.js";
+import { refreshApprovedVersions } from "../testflight.js";
 import { fetchUpstream, loadManifest, resolveRelease } from "../upstream.js";
 import { isBundleUrl, webAppUrl } from "../webapp.js";
 
@@ -58,6 +59,7 @@ export async function devPage(env: Env, slug: string): Promise<Response> {
 
 // Everything an install page needs; shared by share links and the dashboard preview.
 export async function buildLinkPage(env: Env, deps: Deps, app: AppRow, dev: Developer, linkId: string | null) {
+  await refreshApprovedVersions(env, deps, app);
   const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
   const historyPromise = loadHistory(env, deps, app, secrets.githubToken);
   // Private release assets need the token; the browser gets signed links instead.
@@ -128,6 +130,7 @@ export async function linkPage(env: Env, deps: Deps, linkId: string): Promise<Re
 // GET /api/public/links/:id/latest - what an installed app polls to offer an update.
 export async function linkLatest(env: Env, deps: Deps, linkId: string): Promise<Response> {
   const { app, dev } = await activeLink(env, deps, linkId);
+  await refreshApprovedVersions(env, deps, app);
   const secrets = await loadSecrets(env, dev.id, ["githubToken"]);
   let release: Awaited<ReturnType<typeof resolveRelease>>;
   let manifest: Awaited<ReturnType<typeof loadManifest>>;
